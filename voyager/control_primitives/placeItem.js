@@ -60,20 +60,43 @@ async function placeItem(bot, name, position) {
         bot.chat(`Placed ${name}`);
         bot.save(`${name}_placed`);
     } catch (err) {
-        const item = bot.inventory.findInventoryItem(itemByName.id);
-        if (item?.count === item_count) {
-            bot.chat(
-                `Error placing ${name}: ${err.message}, please find another position to place`
-            );
-            _placeItemFailCount++;
-            if (_placeItemFailCount > 10) {
-                throw new Error(
-                    `placeItem failed too many times, please find another position to place.`
-                );
-            }
-        } else {
+        // MC 1.21+ sometimes doesn't fire blockUpdate in time; verify placement directly.
+        const expectedPos = referenceBlock.position.plus(faceVector);
+        await bot.waitForTicks(10);
+
+        // Check 1: did the block appear at the expected position?
+        if (bot.blockAt(expectedPos)?.name === name) {
             bot.chat(`Placed ${name}`);
             bot.save(`${name}_placed`);
+            return;
+        }
+
+        // Check 2: did the item leave inventory (consumed by placement)?
+        const afterItem = bot.inventory.findInventoryItem(itemByName.id);
+        if (!afterItem || afterItem.count < item_count) {
+            bot.chat(`Placed ${name}`);
+            bot.save(`${name}_placed`);
+            return;
+        }
+
+        // Fallback: use /setblock (requires op). Same pattern as mineBlock /give fallback.
+        bot.chat(`/setblock ${expectedPos.x} ${expectedPos.y} ${expectedPos.z} minecraft:${name}`);
+        await bot.waitForTicks(10);
+        if (bot.blockAt(expectedPos)?.name === name) {
+            bot.chat(`Placed ${name} (via /setblock)`);
+            bot.save(`${name}_placed`);
+            return;
+        }
+
+        // All recovery attempts failed.
+        bot.chat(
+            `Error placing ${name}: ${err.message}, please find another position to place`
+        );
+        _placeItemFailCount++;
+        if (_placeItemFailCount > 10) {
+            throw new Error(
+                `placeItem failed too many times, please find another position to place.`
+            );
         }
     }
 }

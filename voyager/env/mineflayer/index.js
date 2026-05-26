@@ -17,6 +17,23 @@ const { plugin: tool } = require("mineflayer-tool");
 
 let bot = null;
 
+// Prevent Node.js from exiting on EPIPE or other socket errors.
+// EPIPE happens when Python closes the HTTP connection before mineflayer
+// finishes writing; it is harmless and must not crash the process.
+process.on("uncaughtException", (err) => {
+    if (err && (err.code === "EPIPE" || err.code === "ECONNRESET" ||
+        (err.message && err.message.startsWith("unknown chat format code")))) {
+        return; // silently ignore benign connection errors
+    }
+    console.error("Unhandled exception:", err);
+});
+process.on("unhandledRejection", (reason) => {
+    if (reason && (reason.code === "EPIPE" || reason.code === "ECONNRESET")) {
+        return;
+    }
+    console.error("Unhandled rejection:", reason);
+});
+
 const app = express();
 
 app.use(bodyParser.json({ limit: "50mb" }));
@@ -99,7 +116,7 @@ app.post("/start", (req, res) => {
         const tool = require("mineflayer-tool").plugin;
         const collectBlock = require("mineflayer-collectblock").plugin;
         const pvp = require("mineflayer-pvp").plugin;
-        const minecraftHawkEye = require("minecrafthawkeye");
+        const minecraftHawkEye = require("minecrafthawkeye").default;
         bot.loadPlugin(pathfinder);
         bot.loadPlugin(tool);
         bot.loadPlugin(collectBlock);
@@ -153,6 +170,11 @@ app.post("/step", async (req, res) => {
     // import useful package
     let response_sent = false;
     function otherError(err) {
+        // MC 1.21+ sends playerChat type as an object; prismarine-chat can't parse it.
+        // This is a cosmetic display bug only — ignore it so mining isn't interrupted.
+        if (err && err.message && err.message.startsWith("unknown chat format code")) {
+            return;
+        }
         console.log("Uncaught Error");
         bot.emit("error", handleError(err));
         bot.waitForTicks(bot.waitTicks).then(() => {

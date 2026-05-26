@@ -43,6 +43,7 @@ Code:
     9) Do not write infinite loops or recursive functions.
     10) Do not use `bot.on` or `bot.once` to register event listeners. You definitely do not need them.
     11) Name your function in a meaningful way (can infer the task from the name).
+    12) Before crafting any item that requires a 3x3 crafting grid (pickaxe, axe, sword, shovel, hoe, furnace, chest, etc.), call `await ensureCraftingTable(bot)` first. This function finds or crafts and places a crafting table automatically. Do NOT call `placeItem(bot, "crafting_table", ...)` manually — use `ensureCraftingTable(bot)` instead.
 
 You should only respond in the format as described below:
 RESPONSE FORMAT:

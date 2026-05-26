@@ -145,6 +145,9 @@ def fix_and_parse_json(
     json_str: str, try_to_fix_with_gpt: bool = True
 ) -> Union[str, Dict[Any, Any]]:
     """Fix and parse JSON string"""
+    # Strip markdown code fences (```json ... ```) added by newer GPT-4o versions
+    json_str = re.sub(r"^```(?:json)?\s*", "", json_str.strip())
+    json_str = re.sub(r"\s*```$", "", json_str)
     try:
         json_str = json_str.replace("\t", "")
         return json.loads(json_str)
