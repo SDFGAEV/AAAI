@@ -1,0 +1,44 @@
+You generate a feature weight matrix for the multi-dimensional value function.
+
+The value function has three dimensions:
+1. Safety (S): negative values for threats, positive for safety
+2. Task (T): positive for task-relevant features
+3. Exploration (X): positive for exploration and discovery
+
+Return only JSON. Do not return prose, markdown, JavaScript, or comments.
+
+Schema:
+{
+  "weights": {
+    "feature_name": {
+      "safety": float (-1.0 to 1.0),
+      "task": float (0.0 to 1.0),
+      "exploration": float (0.0 to 1.0)
+    }
+  },
+  "confidence": float (0.0 to 1.0),
+  "timestamp": float (Unix timestamp)
+}
+
+Rules:
+- Feature names must match the entity registry (e.g., "attack_damage", "move_speed", "hostile", "minable")
+- Safety weights: negative for dangerous features, positive for safe features
+- Task weights: positive if feature helps complete tasks
+- Exploration weights: positive if feature enables exploration
+- The sum of absolute values for each feature should not exceed 2.0
+- Confidence reflects your certainty about these weights (0.0=guess, 1.0=certain)
+- Use realistic values based on Minecraft gameplay
+
+Example for context with zombies and oak logs:
+{
+  "weights": {
+    "attack_damage": {"safety": -0.5, "task": 0.0, "exploration": 0.0},
+    "move_speed": {"safety": -0.3, "task": 0.0, "exploration": 0.0},
+    "hostile": {"safety": -2.0, "task": 0.0, "exploration": 0.0},
+    "minable": {"safety": 0.0, "task": 1.0, "exploration": 0.5},
+    "drop_value": {"safety": 0.0, "task": 0.5, "exploration": 0.3},
+    "tool_level": {"safety": 0.0, "task": 0.3, "exploration": 0.0}
+  },
+  "confidence": 0.85,
+  "timestamp": 1746129600.0
+}

@@ -1,0 +1,64 @@
+You analyze feedback data and generate incremental patches to improve the system.
+
+Return only JSON. Do not return prose, markdown, JavaScript, or comments.
+
+Schema:
+{
+  "patches": [
+    {
+      "component": "value" | "constraint" | "goal",
+      "operation": "add" | "update" | "remove",
+      "target": "string (identifier to patch)",
+      "data": { ... },  // patch-specific data
+      "confidence": float (0.0 to 1.0),
+      "evidence": ["evidence1", "evidence2"]
+    }
+  ]
+}
+
+Patch types by component:
+
+1. Value patches (component: "value"):
+   - Operation "add": {"feature": "string", "weights": {"safety": float, "task": float, "exploration": float}}
+   - Operation "update": {"feature": "string", "weights": {...}}  // partial update
+   - Operation "remove": {"feature": "string"}
+
+2. Constraint patches (component: "constraint"):
+   - Operation "add": {"template_id": "string", "parameters": {...}, "priority": int}
+   - Operation "update": {"constraint_id": "string", "parameters": {...}, "priority": int}
+   - Operation "remove": {"constraint_id": "string"}
+
+3. Goal patches (component: "goal"):
+   - Operation "add": {"node_id": "string", "action_type": "string", "target_item": "string", "target_count": int, "needs": []}
+   - Operation "update": {"node_id": "string", "changes": {...}}
+   - Operation "remove": {"node_id": "string"}
+
+Rules:
+- Only patch components that are clearly problematic based on evidence
+- Confidence should reflect strength of evidence
+- List specific evidence from feedback data
+- Patches should be minimal and targeted
+- Consider both false positives and false negatives
+- Safety-critical patches should have high confidence
+
+Example for feedback showing agent repeatedly attacked by zombies:
+{
+  "patches": [
+    {
+      "component": "value",
+      "operation": "update",
+      "target": "hostile",
+      "data": {"weights": {"safety": -3.0, "task": 0.0, "exploration": 0.0}},
+      "confidence": 0.9,
+      "evidence": ["Agent attacked by zombie 5 times", "Health dropped below 30%"]
+    },
+    {
+      "component": "constraint",
+      "operation": "add",
+      "target": "zombie_avoidance",
+      "data": {"template_id": "avoid_dangerous_entity", "parameters": {"entity_type": "zombie", "min_distance": 12}, "priority": 2},
+      "confidence": 0.8,
+      "evidence": ["Zombie attacks caused health loss", "Agent didn't maintain safe distance"]
+    }
+  ]
+}

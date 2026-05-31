@@ -1,0 +1,121 @@
+{
+  "schema_version": "1.0",
+  "description": "Task definitions for evaluative interface experiments",
+  "tasks": [
+    {
+      "id": "A1",
+      "name": "mine_sand",
+      "description": "Mine 1 sand",
+      "difficulty": "easy",
+      "expected_steps": 2,
+      "prerequisites": [],
+      "success_criteria": {
+        "inventory": {"sand": 1},
+        "max_steps": 3
+      }
+    },
+    {
+      "id": "A2",
+      "name": "craft_stone_pickaxe",
+      "description": "Craft 1 stone_pickaxe",
+      "difficulty": "medium",
+      "expected_steps": 5,
+      "prerequisites": ["mine_cobblestone", "craft_stick", "craft_crafting_table"],
+      "success_criteria": {
+        "inventory": {"stone_pickaxe": 1},
+        "max_steps": 8
+      }
+    },
+    {
+      "id": "B1",
+      "name": "craft_crafting_table",
+      "description": "Craft 1 crafting_table",
+      "difficulty": "easy",
+      "expected_steps": 3,
+      "prerequisites": ["mine_oak_log", "craft_oak_planks"],
+      "success_criteria": {
+        "inventory": {"crafting_table": 1},
+        "max_steps": 5
+      }
+    },
+    {
+      "id": "B2",
+      "name": "smelt_iron_ingot",
+      "description": "Smelt 1 iron_ingot",
+      "difficulty": "medium",
+      "expected_steps": 4,
+      "prerequisites": ["mine_iron_ore", "craft_furnace", "collect_coal"],
+      "success_criteria": {
+        "inventory": {"iron_ingot": 1},
+        "max_steps": 6
+      }
+    },
+    {
+      "id": "B3",
+      "name": "kill_zombie",
+      "description": "Kill 1 zombie",
+      "difficulty": "hard",
+      "expected_steps": 3,
+      "prerequisites": ["craft_wooden_sword"],
+      "success_criteria": {
+        "killed_entities": ["zombie"],
+        "max_steps": 5,
+        "min_health_remaining": 0.3
+      }
+    },
+    {
+      "id": "C1",
+      "name": "build_shelter",
+      "description": "Build a 3x3x2 shelter with door",
+      "difficulty": "medium",
+      "expected_steps": 8,
+      "prerequisites": ["mine_wood", "craft_planks", "craft_door"],
+      "success_criteria": {
+        "structure_built": true,
+        "max_steps": 12,
+        "materials": ["oak_planks", "oak_door"]
+      }
+    },
+    {
+      "id": "C2",
+      "name": "farm_wheat",
+      "description": "Plant and harvest 3 wheat",
+      "difficulty": "medium",
+      "expected_steps": 6,
+      "prerequisites": ["craft_hoe", "find_seeds", "craft_water_bucket"],
+      "success_criteria": {
+        "inventory": {"wheat": 3},
+        "max_steps": 10
+      }
+    }
+  ],
+  "task_groups": {
+    "standard_layer": ["A1", "A2", "B1", "B2", "B3"],
+    "depth_layer": ["C1", "C2"],
+    "ablation_study": ["B1", "B2"],
+    "sanity_checks": ["A1", "B1"]
+  },
+  "experiment_configs": {
+    "standard_layer": {
+      "runs_per_task": 16,
+      "max_steps_multiplier": 2.0,
+      "use_llm_worker": true,
+      "use_feedback": true
+    },
+    "depth_layer": {
+      "runs_per_task": 18,
+      "max_steps_multiplier": 3.0,
+      "use_llm_worker": true,
+      "use_feedback": true
+    },
+    "ablation_study": {
+      "runs_per_task": 8,
+      "variants": [
+        {"name": "no_value_matrix", "use_value_matrix": false},
+        {"name": "no_constraints", "use_constraints": false},
+        {"name": "no_goal_graph", "use_goal_graph": false},
+        {"name": "no_feedback", "use_feedback": false}
+      ]
+    }
+  }
+}
