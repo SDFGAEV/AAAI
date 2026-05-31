@@ -101,6 +101,7 @@ class EvaluativeLLMWorker:
         )
         content = response.choices[0].message.content or ""
         data = self._parse_json(content)
+        self._validate_value_matrix(data)  # 验证schema
         return FeatureWeights.from_dict(data)
 
     def generate_constraints(self, context: Dict[str, Any]) -> List[ConstraintInstance]:
@@ -126,6 +127,7 @@ class EvaluativeLLMWorker:
         )
         content = response.choices[0].message.content or ""
         data = self._parse_json(content)
+        self._validate_constraints(data)  # 验证schema
 
         constraints = []
         for item in data.get("constraints", []):
@@ -153,6 +155,7 @@ class EvaluativeLLMWorker:
         )
         content = response.choices[0].message.content or ""
         data = self._parse_json(content)
+        # GoalGraph的验证由goal_manager.from_dict()完成
         return self.goal_manager.from_dict(task, data)
 
     def generate_diagnosis(self, feedback: Dict[str, Any]) -> List[DiagnosisPatch]:
@@ -178,6 +181,7 @@ class EvaluativeLLMWorker:
         )
         content = response.choices[0].message.content or ""
         data = self._parse_json(content)
+        self._validate_diagnosis(data)  # 验证schema
 
         patches = []
         for item in data.get("patches", []):
@@ -246,9 +250,206 @@ class EvaluativeLLMWorker:
         return prompt_path.read_text(encoding="utf-8")
 
     def _parse_json(self, content: str) -> dict:
+        """解析JSON内容，支持代码块格式
+
+        Args:
+            content: 包含JSON的字符串，可能被```json```包围
+
+        Returns:
+            dict: 解析后的字典
+
+        Raises:
+            json.JSONDecodeError: 如果JSON格式无效
+            ValueError: 如果内容为空
+        """
         content = content.strip()
+        if not content:
+            raise ValueError("Empty JSON content")
+
+        # 提取代码块中的JSON
         if content.startswith("```"):
             match = re.search(r"```(?:json)?\s*(.*?)```", content, re.DOTALL)
             if match:
                 content = match.group(1).strip()
-        return json.loads(content)
+            else:
+                # 如果开始有```但没有结束，尝试移除开头的```
+                content = re.sub(r"^```(?:json)?\s*", "", content)
+
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError as e:
+            # 尝试修复常见的JSON格式问题
+            content = self._fix_common_json_issues(content)
+            return json.loads(content)
+
+    def _fix_common_json_issues(self, content: str) -> str:
+        """修复常见的JSON格式问题
+
+        Args:
+            content: 可能有格式问题的JSON字符串
+
+        Returns:
+            str: 修复后的JSON字符串
+        """
+        # 1. 修复单引号
+        content = re.sub(r"(?<!\\)'", '"', content)
+
+        # 2. 修复未转义的双引号
+        content = re.sub(r'(?<!\\)"', r'\"', content)
+
+        # 3. 修复尾随逗号
+        content = re.sub(r',\s*}', '}', content)
+        content = re.sub(r',\s*]', ']', content)
+
+        # 4. 修复注释（移除单行和多行注释）
+        content = re.sub(r'//.*', '', content)
+        content = re.sub(r'/\*.*?\*/', '', content, flags=re.DOTALL)
+
+        # 5. 修复布尔值（Python风格转JSON风格）
+        content = re.sub(r'\bTrue\b', 'true', content)
+        content = re.sub(r'\bFalse\b', 'false', content)
+        content = re.sub(r'\bNone\b', 'null', content)
+
+        return content.strip()
+
+    def _validate_value_matrix(self, data: dict) -> None:
+        """验证价值矩阵JSON的schema
+
+        Args:
+            data: 解析后的价值矩阵数据
+
+        Raises:
+            ValueError: 如果schema验证失败
+        """
+        required_keys = {"weights", "confidence", "timestamp"}
+        if not required_keys.issubset(data.keys()):
+            missing = required_keys - set(data.keys())
+            raise ValueError(f"Value matrix missing required keys: {missing}")
+
+        weights = data["weights"]
+        if not isinstance(weights, dict):
+            raise ValueError("Value matrix 'weights' must be a dictionary")
+
+        for feature, dim_weights in weights.items():
+            if not isinstance(feature, str):
+                raise ValueError(f"Feature name must be string, got {type(feature)}")
+
+            if not isinstance(dim_weights, dict):
+                raise ValueError(f"Feature '{feature}' weights must be a dictionary")
+
+            required_dims = {"safety", "task", "exploration"}
+            if not required_dims.issubset(dim_weights.keys()):
+                missing = required_dims - set(dim_weights.keys())
+                raise ValueError(f"Feature '{feature}' missing dimensions: {missing}")
+
+            for dim, weight in dim_weights.items():
+                if not isinstance(weight, (int, float)):
+                    raise ValueError(f"Feature '{feature}' dimension '{dim}' weight must be number, got {type(weight)}")
+                # 检查值范围
+                if dim == "safety" and not (-1.0 <= weight <= 1.0):
+                    raise ValueError(f"Feature '{feature}' safety weight {weight} out of range [-1.0, 1.0]")
+                elif dim in ["task", "exploration"] and not (0.0 <= weight <= 1.0):
+                    raise ValueError(f"Feature '{feature}' {dim} weight {weight} out of range [0.0, 1.0]")
+
+        confidence = data["confidence"]
+        if not isinstance(confidence, (int, float)) or not (0.0 <= confidence <= 1.0):
+            raise ValueError(f"Confidence {confidence} out of range [0.0, 1.0]")
+
+        if not isinstance(data["timestamp"], (int, float)):
+            raise ValueError("Timestamp must be number")
+
+    def _validate_constraints(self, data: dict) -> None:
+        """验证约束JSON的schema
+
+        Args:
+            data: 解析后的约束数据
+
+        Raises:
+            ValueError: 如果schema验证失败
+        """
+        if "constraints" not in data:
+            raise ValueError("Constraints data must contain 'constraints' key")
+
+        constraints = data["constraints"]
+        if not isinstance(constraints, list):
+            raise ValueError("Constraints must be a list")
+
+        for i, constraint in enumerate(constraints):
+            if not isinstance(constraint, dict):
+                raise ValueError(f"Constraint at index {i} must be a dictionary")
+
+            required_keys = {"template_id", "parameters"}
+            if not required_keys.issubset(constraint.keys()):
+                missing = required_keys - set(constraint.keys())
+                raise ValueError(f"Constraint at index {i} missing keys: {missing}")
+
+            if not isinstance(constraint["template_id"], str):
+                raise ValueError(f"Constraint at index {i} template_id must be string")
+
+            if not isinstance(constraint["parameters"], dict):
+                raise ValueError(f"Constraint at index {i} parameters must be dictionary")
+
+            # 可选字段验证
+            if "priority" in constraint and not isinstance(constraint["priority"], int):
+                raise ValueError(f"Constraint at index {i} priority must be integer")
+
+            if "description" in constraint and not isinstance(constraint["description"], str):
+                raise ValueError(f"Constraint at index {i} description must be string")
+
+    def _validate_diagnosis(self, data: dict) -> None:
+        """验证诊断JSON的schema
+
+        Args:
+            data: 解析后的诊断数据
+
+        Raises:
+            ValueError: 如果schema验证失败
+        """
+        if "patches" not in data:
+            raise ValueError("Diagnosis data must contain 'patches' key")
+
+        patches = data["patches"]
+        if not isinstance(patches, list):
+            raise ValueError("Patches must be a list")
+
+        for i, patch in enumerate(patches):
+            if not isinstance(patch, dict):
+                raise ValueError(f"Patch at index {i} must be a dictionary")
+
+            required_keys = {"component", "operation", "target", "data"}
+            if not required_keys.issubset(patch.keys()):
+                missing = required_keys - set(patch.keys())
+                raise ValueError(f"Patch at index {i} missing keys: {missing}")
+
+            # 验证component
+            component = patch["component"]
+            if component not in ["value", "constraint", "goal"]:
+                raise ValueError(f"Patch at index {i} invalid component: {component}")
+
+            # 验证operation
+            operation = patch["operation"]
+            if operation not in ["add", "update", "remove"]:
+                raise ValueError(f"Patch at index {i} invalid operation: {operation}")
+
+            # 验证target
+            if not isinstance(patch["target"], str):
+                raise ValueError(f"Patch at index {i} target must be string")
+
+            # 验证data
+            if not isinstance(patch["data"], dict):
+                raise ValueError(f"Patch at index {i} data must be dictionary")
+
+            # 验证confidence
+            if "confidence" in patch:
+                confidence = patch["confidence"]
+                if not isinstance(confidence, (int, float)) or not (0.0 <= confidence <= 1.0):
+                    raise ValueError(f"Patch at index {i} confidence {confidence} out of range [0.0, 1.0]")
+
+            # 验证evidence
+            if "evidence" in patch:
+                evidence = patch["evidence"]
+                if not isinstance(evidence, list):
+                    raise ValueError(f"Patch at index {i} evidence must be list")
+                for j, item in enumerate(evidence):
+                    if not isinstance(item, str):
+                        raise ValueError(f"Patch at index {i} evidence item at index {j} must be string")
