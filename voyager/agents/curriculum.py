@@ -25,16 +25,19 @@ class CurriculumAgent:
         mode="auto",
         warm_up=None,
         core_inventory_items: str | None = None,
+        openai_api_base=None,
     ):
         self.llm = ChatOpenAI(
             model_name=model_name,
             temperature=temperature,
             request_timeout=request_timout,
+            openai_api_base=openai_api_base,
         )
         self.qa_llm = ChatOpenAI(
             model_name=qa_model_name,
             temperature=qa_temperature,
             request_timeout=request_timout,
+            openai_api_base=openai_api_base,
         )
         assert mode in [
             "auto",

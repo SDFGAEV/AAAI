@@ -11,11 +11,13 @@ class CriticAgent:
         temperature=0,
         request_timout=120,
         mode="auto",
+        openai_api_base=None,
     ):
         self.llm = ChatOpenAI(
             model_name=model_name,
             temperature=temperature,
             request_timeout=request_timout,
+            openai_api_base=openai_api_base,
         )
         assert mode in ["auto", "manual"]
         self.mode = mode

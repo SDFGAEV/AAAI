@@ -21,6 +21,7 @@ class ActionAgent:
         resume=False,
         chat_log=True,
         execution_error=True,
+        openai_api_base=None,
     ):
         self.ckpt_dir = ckpt_dir
         self.chat_log = chat_log
@@ -35,6 +36,7 @@ class ActionAgent:
             model_name=model_name,
             temperature=temperature,
             request_timeout=request_timout,
+            openai_api_base=openai_api_base,
         )
 
     def update_chest_memory(self, chests):
