@@ -291,11 +291,11 @@ class EvaluativeLLMWorker:
         Returns:
             str: 修复后的JSON字符串
         """
-        # 1. 修复单引号
-        content = re.sub(r"(?<!\\)'", '"', content)
+        # 1. 修复单引号（将'替换为"，但排除转义的单引号）
+        content = re.sub(r"(?<!(\\|'|\"))'", '"', content)
 
-        # 2. 修复未转义的双引号
-        content = re.sub(r'(?<!\\)"', r'\"', content)
+        # 2. 修复未配对的双引号（移除第2步，因为它会导致问题）
+        # 原来的第2步有问题：content = re.sub(r'(?<!\\)"', r'\"', content)
 
         # 3. 修复尾随逗号
         content = re.sub(r',\s*}', '}', content)
