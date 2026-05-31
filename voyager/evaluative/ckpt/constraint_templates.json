@@ -1,0 +1,230 @@
+{
+  "schema_version": "1.0",
+  "description": "Constraint templates for evaluative interface - L0/L1/L2 three-level constraint system",
+  "levels": {
+    "L0": {
+      "name": "Hard Constraint",
+      "description": "One-vote veto, action is denied when triggered",
+      "priority": 0,
+      "action": "deny"
+    },
+    "L1": {
+      "name": "Soft Constraint",
+      "description": "Significant penalty, action may be executed but will affect score",
+      "priority": 1,
+      "action": "penalize"
+    },
+    "L2": {
+      "name": "Preference",
+      "description": "Minor penalty, LLM should avoid but not enforced",
+      "priority": 2,
+      "action": "discourage"
+    }
+  },
+  "templates": [
+    {
+      "id": "T01",
+      "name": "Low health forbids dangerous actions",
+      "level": "L0",
+      "description": "When health is below 20%, forbid approaching hostile entities or attacking",
+      "condition": {
+        "type": "health_percent",
+        "threshold": 0.2,
+        "comparison": "less_than"
+      },
+      "forbidden_actions": ["approach_hostile", "attack_any", "fight_back"],
+      "required_action": "retreat",
+      "reason": "Low health prohibits dangerous actions"
+    },
+    {
+      "id": "T02",
+      "name": "Explosive entity nearby requires retreat",
+      "level": "L0",
+      "description": "When creeper is within 5 blocks, must flee",
+      "condition": {
+        "type": "entity_proximity",
+        "entity_type": "creeper",
+        "distance": 5,
+        "comparison": "less_than_or_equal"
+      },
+      "forbidden_actions": [],
+      "required_action": "flee",
+      "reason": "Creeper about to explode"
+    },
+    {
+      "id": "T03",
+      "name": "Forbidden to enter lava area",
+      "level": "L0",
+      "description": "When lava is within 3 blocks, forbid moving forward",
+      "condition": {
+        "type": "block_proximity",
+        "block_type": "lava",
+        "distance": 3,
+        "comparison": "less_than_or_equal"
+      },
+      "forbidden_actions": ["move_forward", "sprint"],
+      "required_action": "flee",
+      "reason": "Lava danger zone"
+    },
+    {
+      "id": "T04",
+      "name": "Forbidden to enter void",
+      "level": "L0",
+      "description": "When Y coordinate is below 5, forbid any movement",
+      "condition": {
+        "type": "position_y",
+        "threshold": 5,
+        "comparison": "less_than"
+      },
+      "forbidden_actions": ["move_any", "jump", "sprint"],
+      "required_action": "tp_safe",
+      "reason": "Void danger"
+    },
+    {
+      "id": "T05",
+      "name": "Forbidden to mine air",
+      "level": "L0",
+      "description": "Cannot mine air or empty target",
+      "condition": {
+        "type": "target_empty",
+        "value": true
+      },
+      "forbidden_actions": ["mine"],
+      "required_action": null,
+      "reason": "Cannot mine air"
+    },
+    {
+      "id": "T06",
+      "name": "Tool required but not equipped",
+      "level": "L0",
+      "description": "Mining ore requires corresponding tool level",
+      "condition": {
+        "type": "tool_required",
+        "check_equipped": true
+      },
+      "forbidden_actions": ["mine_ore"],
+      "required_action": "equip_tool",
+      "reason": "Tool required to mine"
+    },
+    {
+      "id": "T07",
+      "name": "Low hunger forbids intense work",
+      "level": "L1",
+      "description": "When hunger is below 30%, forbid sprinting and attacking",
+      "condition": {
+        "type": "hunger_percent",
+        "threshold": 0.3,
+        "comparison": "less_than"
+      },
+      "forbidden_actions": ["sprint", "attack_any", "mine_fast"],
+      "penalty": -50,
+      "reason": "Hunger too low"
+    },
+    {
+      "id": "T08",
+      "name": "Inventory nearly full forbids gathering",
+      "level": "L1",
+      "description": "When inventory usage exceeds 90%, restrict gathering actions",
+      "condition": {
+        "type": "inventory_full_percent",
+        "threshold": 0.9,
+        "comparison": "greater_than_or_equal"
+      },
+      "forbidden_actions": ["mine", "collect", "gather"],
+      "penalty": -30,
+      "reason": "Inventory nearly full"
+    },
+    {
+      "id": "T09",
+      "name": "Night exploration without weapon forbidden",
+      "level": "L1",
+      "description": "At night without weapon, forbid exploration",
+      "condition": {
+        "type": "time_night_no_weapon",
+        "value": true
+      },
+      "forbidden_actions": ["explore", "enter_cave"],
+      "penalty": -40,
+      "reason": "Night exploration without protection is dangerous"
+    },
+    {
+      "id": "T10",
+      "name": "Underwater mining forbidden",
+      "level": "L1",
+      "description": "Limit mining operations when underwater",
+      "condition": {
+        "type": "submerged",
+        "value": true
+      },
+      "forbidden_actions": ["mine", "dig"],
+      "penalty": -35,
+      "reason": "Underwater mining dangerous"
+    },
+    {
+      "id": "T11",
+      "name": "Crafting without crafting table forbidden",
+      "level": "L1",
+      "description": "Crafting needed but no crafting table nearby",
+      "condition": {
+        "type": "no_crafting_table",
+        "craft_needed": true
+      },
+      "forbidden_actions": ["craft_complex"],
+      "penalty": -20,
+      "reason": "Crafting table required"
+    },
+    {
+      "id": "T12",
+      "name": "Smelting without furnace forbidden",
+      "level": "L1",
+      "description": "Smelting needed but no furnace nearby",
+      "condition": {
+        "type": "no_furnace",
+        "smelting_needed": true
+      },
+      "forbidden_actions": ["smelt"],
+      "penalty": -20,
+      "reason": "Furnace required"
+    },
+    {
+      "id": "T13",
+      "name": "Avoid unnecessary grass breaking",
+      "level": "L2",
+      "description": "Avoid destroying grass blocks without clear purpose",
+      "condition": {
+        "type": "unnecessary_grass_break",
+        "value": true
+      },
+      "forbidden_actions": ["mine_grass"],
+      "penalty": -5,
+      "reason": "Avoid unnecessary grass breaking"
+    },
+    {
+      "id": "T14",
+      "name": "Avoid destroying leaves",
+      "level": "L2",
+      "description": "Unless necessary, avoid destroying leaves",
+      "condition": {
+        "type": "unnecessary_leaves_break",
+        "value": true
+      },
+      "forbidden_actions": ["mine_leaves"],
+      "penalty": -3,
+      "reason": "Avoid destroying leaves"
+    },
+    {
+      "id": "T15",
+      "name": "Long distance movement should use pathfinding",
+      "level": "L2",
+      "description": "When moving distance exceeds 10 blocks, recommend pathfinding",
+      "condition": {
+        "type": "long_distance",
+        "threshold": 10,
+        "comparison": "greater_than"
+      },
+      "forbidden_actions": ["random_walk"],
+      "penalty": -2,
+      "reason": "Long distance movement should use pathfinding"
+    }
+  ]
+}

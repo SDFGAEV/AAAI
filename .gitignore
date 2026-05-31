@@ -1,4 +1,5 @@
-ckpt*
+ckpt*/
+!voyager/evaluative/ckpt/
 local_minecraft_server/
 package-lock.json
 

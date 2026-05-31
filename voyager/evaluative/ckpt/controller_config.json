@@ -1,0 +1,87 @@
+{
+  "schema_version": "1.0",
+  "description": "Controller global configuration for evaluative interface",
+  "controller": {
+    "fps": 15,
+    "decision_timeout_ms": 66,
+    "max_retries": 3
+  },
+  "llm_worker": {
+    "cooldown_seconds": 60,
+    "heartbeat_seconds": 240,
+    "batch_size": 10,
+    "timeout_seconds": 30
+  },
+  "value_weights": {
+    "alpha": 0.7,
+    "beta": 0.3,
+    "goal_bonus": 2.0,
+    "default_weights": {
+      "safety": 0.33,
+      "task": 0.5,
+      "exploration": 0.17
+    }
+  },
+  "threat_detection": {
+    "range_blocks": 16,
+    "hostile_entities": ["zombie", "skeleton", "spider", "creeper", "enderman", "witch", "phantom"],
+    "dangerous_blocks": ["lava", "fire", "magma_block", "cactus"],
+    "safe_health_threshold": 0.5,
+    "critical_health_threshold": 0.2
+  },
+  "action_space": {
+    "primitive_actions": [
+      "move_forward",
+      "move_back",
+      "turn_left",
+      "turn_right",
+      "jump",
+      "sprint",
+      "attack",
+      "mine",
+      "place",
+      "equip",
+      "use",
+      "craft",
+      "smelt",
+      "open_chest",
+      "drop_item",
+      "discard",
+      "retreat",
+      "flee",
+      "wait",
+      "noop"
+    ],
+    "movement_actions": ["move_forward", "move_back", "turn_left", "turn_right", "jump", "sprint", "retreat", "flee"],
+    "combat_actions": ["attack", "retreat", "flee"],
+    "gathering_actions": ["mine", "collect", "gather"],
+    "crafting_actions": ["craft", "smelt", "equip", "place"]
+  },
+  "observation": {
+    "entity_scan_radius": 16,
+    "block_scan_radius": 8,
+    "inventory_slots": 36,
+    "equipment_slots": 6,
+    "health_max": 20,
+    "hunger_max": 20
+  },
+  "goal_tracking": {
+    "subgoal_timeout_seconds": 300,
+    "task_timeout_seconds": 1200,
+    "max_subgoals_per_task": 20,
+    "completion_check_interval_seconds": 10
+  },
+  "feedback": {
+    "success_threshold": 0.8,
+    "failure_threshold": 0.3,
+    "drift_detection_window": 300,
+    "patch_cooldown_seconds": 120
+  },
+  "debugging": {
+    "log_level": "INFO",
+    "log_decisions": true,
+    "log_constraint_violations": true,
+    "log_value_scores": true,
+    "snapshot_interval_seconds": 60
+  }
+}

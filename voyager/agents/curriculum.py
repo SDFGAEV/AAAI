@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import random
 import re
+import os
+import shutil
 
 import voyager.utils as U
 from voyager.prompts import load_prompt
@@ -57,6 +59,8 @@ class CurriculumAgent:
             self.completed_tasks = []
             self.failed_tasks = []
             self.qa_cache = {}
+            if os.path.exists(f"{ckpt_dir}/curriculum/vectordb"):
+                shutil.rmtree(f"{ckpt_dir}/curriculum/vectordb")
         # vectordb for qa cache
         self.qa_cache_questions_vectordb = Chroma(
             collection_name="qa_cache_questions_vectordb",

@@ -33,6 +33,28 @@ class ConstraintSet:
 
 
 @dataclass(frozen=True)
+class ThreatConfig:
+    hostile_entities: set[str] = field(default_factory=set)
+    dangerous_blocks: set[str] = field(default_factory=set)
+    entity_scan_radius: int = 16
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "ThreatConfig":
+        return cls(
+            hostile_entities=set(data.get("hostile_entities", [])),
+            dangerous_blocks=set(data.get("dangerous_blocks", [])),
+            entity_scan_radius=data.get("entity_scan_radius", 16),
+        )
+
+    def to_dict(self) -> dict:
+        return {
+            "hostile_entities": list(self.hostile_entities),
+            "dangerous_blocks": list(self.dangerous_blocks),
+            "entity_scan_radius": self.entity_scan_radius,
+        }
+
+
+@dataclass(frozen=True)
 class EvaluativeConfig:
     ckpt_dir: str = "ckpt_evaluative"
     env_wait_ticks: int = 20

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from .action_space import ActionSpace
+from .config import ThreatConfig
 from .constraint_engine import ConstraintEngine
 from .goal_graph import GoalGraphManager
 from .schemas import Decision, Observation
@@ -22,12 +26,28 @@ class EvaluativeController:
         action_space: ActionSpace | None = None,
         constraint_engine: ConstraintEngine | None = None,
         value_matrix: ValueMatrix | None = None,
+        config_path: Path | None = None,
     ):
         self.shared_state = shared_state
         self.goal_manager = goal_manager or GoalGraphManager()
         self.action_space = action_space or ActionSpace()
-        self.constraint_engine = constraint_engine or ConstraintEngine(self.goal_manager)
-        self.value_matrix = value_matrix or ValueMatrix(self.goal_manager)
+
+        if config_path is None:
+            config_path = Path(__file__).parent / "ckpt" / "controller_config.json"
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+
+        threat_config = ThreatConfig.from_dict(config.get("threat_detection", {}))
+
+        if constraint_engine is not None:
+            self.constraint_engine = constraint_engine
+        else:
+            self.constraint_engine = ConstraintEngine(self.goal_manager, threat_config=threat_config)
+
+        if value_matrix is not None:
+            self.value_matrix = value_matrix
+        else:
+            self.value_matrix = ValueMatrix(self.goal_manager, threat_config=threat_config)
 
     def decide(self, observation: Observation) -> Decision:
         snapshot = self.shared_state.get_snapshot()
