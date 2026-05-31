@@ -1,22 +1,22 @@
 {
   "schema_version": "1.0",
-  "description": "Constraint templates for evaluative interface - L0/L1/L2三级约束体系",
+  "description": "Constraint templates for evaluative interface - L0/L1/L2 three-level constraint system",
   "levels": {
     "L0": {
-      "name": "硬约束",
-      "description": "一票否决，触发后动作被禁止",
+      "name": "Hard Constraint",
+      "description": "One-vote veto, action is denied when triggered",
       "priority": 0,
       "action": "deny"
     },
     "L1": {
-      "name": "软约束",
-      "description": "大幅扣分，动作可能被执行但会影响评分",
+      "name": "Soft Constraint",
+      "description": "Significant penalty, action may be executed but will affect score",
       "priority": 1,
       "action": "penalize"
     },
     "L2": {
-      "name": "偏好",
-      "description": "轻微扣分，LLM生成时避免但不强制",
+      "name": "Preference",
+      "description": "Minor penalty, LLM should avoid but not enforced",
       "priority": 2,
       "action": "discourage"
     }
@@ -24,9 +24,9 @@
   "templates": [
     {
       "id": "T01",
-      "name": "血量过低禁止危险动作",
+      "name": "Low health forbids dangerous actions",
       "level": "L0",
-      "description": "当生命值低于20%时，禁止接近敌对实体或进行攻击",
+      "description": "When health is below 20%, forbid approaching hostile entities or attacking",
       "condition": {
         "type": "health_percent",
         "threshold": 0.2,
@@ -34,13 +34,13 @@
       },
       "forbidden_actions": ["approach_hostile", "attack_any", "fight_back"],
       "required_action": "retreat",
-      "reason": "血量过低时禁止危险动作"
+      "reason": "Low health prohibits dangerous actions"
     },
     {
       "id": "T02",
-      "name": "爆炸实体近距离强制逃离",
+      "name": "Explosive entity nearby requires retreat",
       "level": "L0",
-      "description": "当苦力怕在5格范围内时，必须逃离",
+      "description": "When creeper is within 5 blocks, must flee",
       "condition": {
         "type": "entity_proximity",
         "entity_type": "creeper",
@@ -49,13 +49,13 @@
       },
       "forbidden_actions": [],
       "required_action": "flee",
-      "reason": "苦力怕即将爆炸"
+      "reason": "Creeper about to explode"
     },
     {
       "id": "T03",
-      "name": "禁入岩浆区域",
+      "name": "Forbidden to enter lava area",
       "level": "L0",
-      "description": "当岩浆在3格范围内时，禁止向前移动",
+      "description": "When lava is within 3 blocks, forbid moving forward",
       "condition": {
         "type": "block_proximity",
         "block_type": "lava",
@@ -64,13 +64,13 @@
       },
       "forbidden_actions": ["move_forward", "sprint"],
       "required_action": "flee",
-      "reason": "岩浆危险区域"
+      "reason": "Lava danger zone"
     },
     {
       "id": "T04",
-      "name": "禁入虚空",
+      "name": "Forbidden to enter void",
       "level": "L0",
-      "description": "当Y坐标低于5时，禁止任何移动",
+      "description": "When Y coordinate is below 5, forbid any movement",
       "condition": {
         "type": "position_y",
         "threshold": 5,
@@ -78,39 +78,39 @@
       },
       "forbidden_actions": ["move_any", "jump", "sprint"],
       "required_action": "tp_safe",
-      "reason": "虚空危险"
+      "reason": "Void danger"
     },
     {
       "id": "T05",
-      "name": "禁挖空气",
+      "name": "Forbidden to mine air",
       "level": "L0",
-      "description": "不能挖掘空气或空目标",
+      "description": "Cannot mine air or empty target",
       "condition": {
         "type": "target_empty",
         "value": true
       },
       "forbidden_actions": ["mine"],
       "required_action": null,
-      "reason": "不能挖掘空气"
+      "reason": "Cannot mine air"
     },
     {
       "id": "T06",
-      "name": "需要工具但未装备",
+      "name": "Tool required but not equipped",
       "level": "L0",
-      "description": "挖掘矿石需要对应工具等级",
+      "description": "Mining ore requires corresponding tool level",
       "condition": {
         "type": "tool_required",
         "check_equipped": true
       },
       "forbidden_actions": ["mine_ore"],
       "required_action": "equip_tool",
-      "reason": "需要工具才能挖掘"
+      "reason": "Tool required to mine"
     },
     {
       "id": "T07",
-      "name": "饥饿度过低禁止高强度工作",
+      "name": "Low hunger forbids intense work",
       "level": "L1",
-      "description": "饥饿度低于30%时，禁止奔跑和攻击",
+      "description": "When hunger is below 30%, forbid sprinting and attacking",
       "condition": {
         "type": "hunger_percent",
         "threshold": 0.3,
@@ -118,13 +118,13 @@
       },
       "forbidden_actions": ["sprint", "attack_any", "mine_fast"],
       "penalty": -50,
-      "reason": "饥饿度过低"
+      "reason": "Hunger too low"
     },
     {
       "id": "T08",
-      "name": "背包接近满时禁止采集",
+      "name": "Inventory nearly full forbids gathering",
       "level": "L1",
-      "description": "背包使用率超过90%时，限制采集动作",
+      "description": "When inventory usage exceeds 90%, restrict gathering actions",
       "condition": {
         "type": "inventory_full_percent",
         "threshold": 0.9,
@@ -132,91 +132,91 @@
       },
       "forbidden_actions": ["mine", "collect", "gather"],
       "penalty": -30,
-      "reason": "背包接近满"
+      "reason": "Inventory nearly full"
     },
     {
       "id": "T09",
-      "name": "夜晚禁止无防护探索",
+      "name": "Night exploration without weapon forbidden",
       "level": "L1",
-      "description": "夜间在没有武器时禁止探索",
+      "description": "At night without weapon, forbid exploration",
       "condition": {
         "type": "time_night_no_weapon",
         "value": true
       },
       "forbidden_actions": ["explore", "enter_cave"],
       "penalty": -40,
-      "reason": "夜间无防护探索危险"
+      "reason": "Night exploration without protection is dangerous"
     },
     {
       "id": "T10",
-      "name": "水下禁止挖掘",
+      "name": "Underwater mining forbidden",
       "level": "L1",
-      "description": "在水下时限制挖掘操作",
+      "description": "Limit mining operations when underwater",
       "condition": {
         "type": "submerged",
         "value": true
       },
       "forbidden_actions": ["mine", "dig"],
       "penalty": -35,
-      "reason": "水下挖掘危险"
+      "reason": "Underwater mining dangerous"
     },
     {
       "id": "T11",
-      "name": "没有工作台时禁止合成",
+      "name": "Crafting without crafting table forbidden",
       "level": "L1",
-      "description": "需要合成但附近没有工作台",
+      "description": "Crafting needed but no crafting table nearby",
       "condition": {
         "type": "no_crafting_table",
         "craft_needed": true
       },
       "forbidden_actions": ["craft_complex"],
       "penalty": -20,
-      "reason": "需要工作台"
+      "reason": "Crafting table required"
     },
     {
       "id": "T12",
-      "name": "没有熔炉时禁止冶炼",
+      "name": "Smelting without furnace forbidden",
       "level": "L1",
-      "description": "需要冶炼但附近没有熔炉",
+      "description": "Smelting needed but no furnace nearby",
       "condition": {
         "type": "no_furnace",
         "smelting_needed": true
       },
       "forbidden_actions": ["smelt"],
       "penalty": -20,
-      "reason": "需要熔炉"
+      "reason": "Furnace required"
     },
     {
       "id": "T13",
-      "name": "非必要不打草",
+      "name": "Avoid unnecessary grass breaking",
       "level": "L2",
-      "description": "没有明确目的时避免破坏草方块",
+      "description": "Avoid destroying grass blocks without clear purpose",
       "condition": {
         "type": "unnecessary_grass_break",
         "value": true
       },
       "forbidden_actions": ["mine_grass"],
       "penalty": -5,
-      "reason": "非必要不打草"
+      "reason": "Avoid unnecessary grass breaking"
     },
     {
       "id": "T14",
-      "name": "避免破坏树叶",
+      "name": "Avoid destroying leaves",
       "level": "L2",
-      "description": "除非必要，否则避免破坏树叶",
+      "description": "Unless necessary, avoid destroying leaves",
       "condition": {
         "type": "unnecessary_leaves_break",
         "value": true
       },
       "forbidden_actions": ["mine_leaves"],
       "penalty": -3,
-      "reason": "避免破坏树叶"
+      "reason": "Avoid destroying leaves"
     },
     {
       "id": "T15",
-      "name": "远距离移动优先使用路径追踪",
+      "name": "Long distance movement should use pathfinding",
       "level": "L2",
-      "description": "移动距离超过10格时建议使用路径追踪",
+      "description": "When moving distance exceeds 10 blocks, recommend pathfinding",
       "condition": {
         "type": "long_distance",
         "threshold": 10,
@@ -224,7 +224,7 @@
       },
       "forbidden_actions": ["random_walk"],
       "penalty": -2,
-      "reason": "远距离移动建议使用路径追踪"
+      "reason": "Long distance movement should use pathfinding"
     }
   ]
 }
