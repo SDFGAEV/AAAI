@@ -1,4 +1,5 @@
 import os
+import shutil
 
 import voyager.utils as U
 from langchain.chat_models import ChatOpenAI
@@ -37,6 +38,8 @@ class SkillManager:
             self.skills = U.load_json(f"{ckpt_dir}/skill/skills.json")
         else:
             self.skills = {}
+            if os.path.exists(f"{ckpt_dir}/skill/vectordb"):
+                shutil.rmtree(f"{ckpt_dir}/skill/vectordb")
         self.retrieval_top_k = retrieval_top_k
         self.ckpt_dir = ckpt_dir
         self.vectordb = Chroma(
