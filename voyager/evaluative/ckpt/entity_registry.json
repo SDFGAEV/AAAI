@@ -1,0 +1,953 @@
+{
+  "schema_version": "1.0",
+  "description": "Minecraft entity feature registry for evaluative interface",
+  "features": [
+    "attack_damage",
+    "move_speed",
+    "can_explode",
+    "drop_value",
+    "health",
+    "armor",
+    "tool_level",
+    "minable",
+    "hostile",
+    "swimming",
+    "flying",
+    "liquid",
+    "solid",
+    "flammable",
+    "gravity",
+    "light_level",
+    "reach",
+    "tame",
+    "breeding",
+    "transparency"
+  ],
+  "features_description": {
+    "attack_damage": "Physical damage dealt when attacking (0-10 scale)",
+    "move_speed": "Movement speed relative to player (0.0-2.0)",
+    "can_explode": "Whether entity can explode (0 or 1)",
+    "drop_value": "Value of dropped items (0-10 scale)",
+    "health": "Entity health points (0-40 scale)",
+    "armor": "Armor points (0-20 scale)",
+    "tool_level": "Required tool tier to mine (0=hand, 1=wood, 2=stone, 3=iron, 4=diamond)",
+    "minable": "Whether block can be mined (0 or 1)",
+    "hostile": "Whether entity attacks players (0 or 1)",
+    "swimming": "Whether entity can swim (0 or 1)",
+    "flying": "Whether entity can fly (0 or 1)",
+    "liquid": "Whether block is liquid (0 or 1)",
+    "solid": "Whether block is solid (0 or 1)",
+    "flammable": "Whether block is flammable (0 or 1)",
+    "gravity": "Whether block has gravity (0 or 1)",
+    "light_level": "Light emission level (0-15)",
+    "reach": "Attack reach distance (0-5 scale)",
+    "tame": "Whether entity can be tamed (0 or 1)",
+    "breeding": "Whether entity can be bred (0 or 1)",
+    "transparency": "Block transparency (0=opaque, 1=transparent)"
+  },
+  "entities": {
+    "zombie": {
+      "category": "hostile_mob",
+      "features": {
+        "attack_damage": 3,
+        "move_speed": 1.0,
+        "hostile": 1,
+        "drop_value": 2,
+        "health": 20,
+        "reach": 2,
+        "swimming": 0,
+        "flying": 0,
+        "tame": 0,
+        "breeding": 0
+      },
+      "defaults": {
+        "safety": -10,
+        "task": 0,
+        "exploration": 0
+      }
+    },
+    "skeleton": {
+      "category": "hostile_mob",
+      "features": {
+        "attack_damage": 2,
+        "move_speed": 1.0,
+        "hostile": 1,
+        "drop_value": 3,
+        "health": 20,
+        "reach": 4,
+        "swimming": 0,
+        "flying": 0,
+        "tame": 0,
+        "breeding": 0
+      },
+      "defaults": {
+        "safety": -10,
+        "task": 0,
+        "exploration": 0
+      }
+    },
+    "creeper": {
+      "category": "hostile_mob",
+      "features": {
+        "attack_damage": 0,
+        "move_speed": 1.0,
+        "can_explode": 1,
+        "hostile": 1,
+        "drop_value": 3,
+        "health": 20,
+        "reach": 1,
+        "swimming": 0,
+        "flying": 0,
+        "tame": 0,
+        "breeding": 0
+      },
+      "defaults": {
+        "safety": -15,
+        "task": 0,
+        "exploration": 5
+      }
+    },
+    "spider": {
+      "category": "hostile_mob",
+      "features": {
+        "attack_damage": 2,
+        "move_speed": 1.3,
+        "hostile": 1,
+        "drop_value": 2,
+        "health": 16,
+        "reach": 2,
+        "swimming": 1,
+        "flying": 0,
+        "tame": 0,
+        "breeding": 0
+      },
+      "defaults": {
+        "safety": -8,
+        "task": 0,
+        "exploration": 0
+      }
+    },
+    "enderman": {
+      "category": "neutral",
+      "features": {
+        "attack_damage": 4,
+        "move_speed": 1.5,
+        "hostile": 1,
+        "drop_value": 5,
+        "health": 40,
+        "reach": 3,
+        "swimming": 0,
+        "flying": 1,
+        "tame": 0,
+        "breeding": 0
+      },
+      "defaults": {
+        "safety": -12,
+        "task": 0,
+        "exploration": 3
+      }
+    },
+    "wolf": {
+      "category": "neutral",
+      "features": {
+        "attack_damage": 3,
+        "move_speed": 1.3,
+        "hostile": 0,
+        "drop_value": 2,
+        "health": 8,
+        "reach": 2,
+        "swimming": 0,
+        "flying": 0,
+        "tame": 1,
+        "breeding": 1
+      },
+      "defaults": {
+        "safety": 2,
+        "task": 0,
+        "exploration": 2
+      }
+    },
+    "dolphin": {
+      "category": "neutral",
+      "features": {
+        "attack_damage": 0,
+        "move_speed": 1.4,
+        "hostile": 0,
+        "drop_value": 1,
+        "health": 10,
+        "reach": 1,
+        "swimming": 1,
+        "flying": 0,
+        "tame": 0,
+        "breeding": 0
+      },
+      "defaults": {
+        "safety": 1,
+        "task": 0,
+        "exploration": 3
+      }
+    },
+    "cow": {
+      "category": "animal",
+      "features": {
+        "attack_damage": 0,
+        "move_speed": 0.8,
+        "hostile": 0,
+        "drop_value": 4,
+        "health": 10,
+        "reach": 1,
+        "swimming": 0,
+        "flying": 0,
+        "tame": 0,
+        "breeding": 1
+      },
+      "defaults": {
+        "safety": 3,
+        "task": 3,
+        "exploration": 1
+      }
+    },
+    "sheep": {
+      "category": "animal",
+      "features": {
+        "attack_damage": 0,
+        "move_speed": 0.8,
+        "hostile": 0,
+        "drop_value": 3,
+        "health": 8,
+        "reach": 1,
+        "swimming": 0,
+        "flying": 0,
+        "tame": 0,
+        "breeding": 1
+      },
+      "defaults": {
+        "safety": 3,
+        "task": 3,
+        "exploration": 1
+      }
+    },
+    "pig": {
+      "category": "animal",
+      "features": {
+        "attack_damage": 0,
+        "move_speed": 1.0,
+        "hostile": 0,
+        "drop_value": 3,
+        "health": 10,
+        "reach": 1,
+        "swimming": 0,
+        "flying": 0,
+        "tame": 0,
+        "breeding": 1
+      },
+      "defaults": {
+        "safety": 3,
+        "task": 3,
+        "exploration": 1
+      }
+    },
+    "chicken": {
+      "category": "animal",
+      "features": {
+        "attack_damage": 0,
+        "move_speed": 0.9,
+        "hostile": 0,
+        "drop_value": 2,
+        "health": 4,
+        "reach": 1,
+        "swimming": 0,
+        "flying": 0,
+        "tame": 0,
+        "breeding": 1
+      },
+      "defaults": {
+        "safety": 2,
+        "task": 2,
+        "exploration": 1
+      }
+    },
+    "oak_log": {
+      "category": "resource_wood",
+      "features": {
+        "minable": 1,
+        "tool_level": 0,
+        "drop_value": 1,
+        "solid": 1,
+        "flammable": 1,
+        "gravity": 1,
+        "transparency": 0
+      },
+      "defaults": {
+        "safety": 0,
+        "task": 8,
+        "exploration": 2
+      }
+    },
+    "spruce_log": {
+      "category": "resource_wood",
+      "features": {
+        "minable": 1,
+        "tool_level": 0,
+        "drop_value": 1,
+        "solid": 1,
+        "flammable": 1,
+        "gravity": 1,
+        "transparency": 0
+      },
+      "defaults": {
+        "safety": 0,
+        "task": 8,
+        "exploration": 2
+      }
+    },
+    "birch_log": {
+      "category": "resource_wood",
+      "features": {
+        "minable": 1,
+        "tool_level": 0,
+        "drop_value": 1,
+        "solid": 1,
+        "flammable": 1,
+        "gravity": 1,
+        "transparency": 0
+      },
+      "defaults": {
+        "safety": 0,
+        "task": 8,
+        "exploration": 2
+      }
+    },
+    "oak_planks": {
+      "category": "processed_wood",
+      "features": {
+        "minable": 1,
+        "tool_level": 0,
+        "drop_value": 1,
+        "solid": 1,
+        "flammable": 1,
+        "gravity": 0,
+        "transparency": 0
+      },
+      "defaults": {
+        "safety": 0,
+        "task": 3,
+        "exploration": 0
+      }
+    },
+    "cobblestone": {
+      "category": "resource_stone",
+      "features": {
+        "minable": 1,
+        "tool_level": 0,
+        "drop_value": 2,
+        "solid": 1,
+        "flammable": 0,
+        "gravity": 1,
+        "transparency": 0
+      },
+      "defaults": {
+        "safety": 0,
+        "task": 5,
+        "exploration": 1
+      }
+    },
+    "iron_ore": {
+      "category": "resource_ore",
+      "features": {
+        "minable": 1,
+        "tool_level": 1,
+        "drop_value": 5,
+        "solid": 1,
+        "flammable": 0,
+        "gravity": 1,
+        "transparency": 0
+      },
+      "defaults": {
+        "safety": 0,
+        "task": 10,
+        "exploration": 5
+      }
+    },
+    "coal_ore": {
+      "category": "resource_ore",
+      "features": {
+        "minable": 1,
+        "tool_level": 0,
+        "drop_value": 4,
+        "solid": 1,
+        "flammable": 0,
+        "gravity": 1,
+        "transparency": 0
+      },
+      "defaults": {
+        "safety": 0,
+        "task": 8,
+        "exploration": 4
+      }
+    },
+    "gold_ore": {
+      "category": "resource_ore",
+      "features": {
+        "minable": 1,
+        "tool_level": 2,
+        "drop_value": 8,
+        "solid": 1,
+        "flammable": 0,
+        "gravity": 1,
+        "transparency": 0
+      },
+      "defaults": {
+        "safety": 0,
+        "task": 12,
+        "exploration": 6
+      }
+    },
+    "diamond_ore": {
+      "category": "resource_ore",
+      "features": {
+        "minable": 1,
+        "tool_level": 3,
+        "drop_value": 10,
+        "solid": 1,
+        "flammable": 0,
+        "gravity": 1,
+        "transparency": 0
+      },
+      "defaults": {
+        "safety": 0,
+        "task": 15,
+        "exploration": 10
+      }
+    },
+    "copper_ore": {
+      "category": "resource_ore",
+      "features": {
+        "minable": 1,
+        "tool_level": 1,
+        "drop_value": 4,
+        "solid": 1,
+        "flammable": 0,
+        "gravity": 1,
+        "transparency": 0
+      },
+      "defaults": {
+        "safety": 0,
+        "task": 7,
+        "exploration": 3
+      }
+    },
+    "lapis_ore": {
+      "category": "resource_ore",
+      "features": {
+        "minable": 1,
+        "tool_level": 1,
+        "drop_value": 5,
+        "solid": 1,
+        "flammable": 0,
+        "gravity": 1,
+        "transparency": 0
+      },
+      "defaults": {
+        "safety": 0,
+        "task": 6,
+        "exploration": 4
+      }
+    },
+    "redstone_ore": {
+      "category": "resource_ore",
+      "features": {
+        "minable": 1,
+        "tool_level": 1,
+        "drop_value": 5,
+        "solid": 1,
+        "flammable": 0,
+        "gravity": 1,
+        "transparency": 0
+      },
+      "defaults": {
+        "safety": 0,
+        "task": 6,
+        "exploration": 4
+      }
+    },
+    "emerald_ore": {
+      "category": "resource_ore",
+      "features": {
+        "minable": 1,
+        "tool_level": 2,
+        "drop_value": 10,
+        "solid": 1,
+        "flammable": 0,
+        "gravity": 1,
+        "transparency": 0
+      },
+      "defaults": {
+        "safety": 0,
+        "task": 15,
+        "exploration": 8
+      }
+    },
+    "deepslate_iron_ore": {
+      "category": "resource_ore",
+      "features": {
+        "minable": 1,
+        "tool_level": 2,
+        "drop_value": 6,
+        "solid": 1,
+        "flammable": 0,
+        "gravity": 1,
+        "transparency": 0
+      },
+      "defaults": {
+        "safety": 0,
+        "task": 11,
+        "exploration": 5
+      }
+    },
+    "deepslate_diamond_ore": {
+      "category": "resource_ore",
+      "features": {
+        "minable": 1,
+        "tool_level": 3,
+        "drop_value": 12,
+        "solid": 1,
+        "flammable": 0,
+        "gravity": 1,
+        "transparency": 0
+      },
+      "defaults": {
+        "safety": 0,
+        "task": 18,
+        "exploration": 12
+      }
+    },
+    "crafting_table": {
+      "category": "tool_block",
+      "features": {
+        "minable": 1,
+        "tool_level": 0,
+        "drop_value": 1,
+        "solid": 1,
+        "flammable": 1,
+        "gravity": 1,
+        "transparency": 0
+      },
+      "defaults": {
+        "safety": 0,
+        "task": 10,
+        "exploration": 0
+      }
+    },
+    "furnace": {
+      "category": "tool_block",
+      "features": {
+        "minable": 1,
+        "tool_level": 0,
+        "drop_value": 1,
+        "solid": 1,
+        "flammable": 0,
+        "gravity": 1,
+        "transparency": 0,
+        "light_level": 3
+      },
+      "defaults": {
+        "safety": 0,
+        "task": 8,
+        "exploration": 0
+      }
+    },
+    "chest": {
+      "category": "storage_block",
+      "features": {
+        "minable": 1,
+        "tool_level": 0,
+        "drop_value": 1,
+        "solid": 1,
+        "flammable": 1,
+        "gravity": 1,
+        "transparency": 0
+      },
+      "defaults": {
+        "safety": 0,
+        "task": 5,
+        "exploration": 0
+      }
+    },
+    "snow": {
+      "category": "environmental",
+      "features": {
+        "minable": 1,
+        "tool_level": 0,
+        "drop_value": 1,
+        "solid": 1,
+        "flammable": 0,
+        "gravity": 1,
+        "transparency": 1
+      },
+      "defaults": {
+        "safety": 1,
+        "task": 2,
+        "exploration": 1
+      }
+    },
+    "ice": {
+      "category": "environmental",
+      "features": {
+        "minable": 1,
+        "tool_level": 0,
+        "drop_value": 1,
+        "solid": 1,
+        "flammable": 0,
+        "gravity": 0,
+        "transparency": 1
+      },
+      "defaults": {
+        "safety": 0,
+        "task": 1,
+        "exploration": 1
+      }
+    },
+    "water": {
+      "category": "environmental",
+      "features": {
+        "liquid": 1,
+        "solid": 0,
+        "flammable": 0,
+        "gravity": 1,
+        "transparency": 1,
+        "swimming": 1
+      },
+      "defaults": {
+        "safety": 2,
+        "task": 5,
+        "exploration": 2
+      }
+    },
+    "lava": {
+      "category": "environmental",
+      "features": {
+        "liquid": 1,
+        "solid": 0,
+        "flammable": 0,
+        "gravity": 1,
+        "transparency": 1,
+        "light_level": 15
+      },
+      "defaults": {
+        "safety": -20,
+        "task": 0,
+        "exploration": 0
+      }
+    },
+    "cactus": {
+      "category": "environmental",
+      "features": {
+        "minable": 1,
+        "tool_level": 0,
+        "drop_value": 1,
+        "solid": 1,
+        "flammable": 0,
+        "gravity": 1,
+        "transparency": 0,
+        "attack_damage": 1
+      },
+      "defaults": {
+        "safety": -5,
+        "task": 1,
+        "exploration": 0
+      }
+    },
+    "sand": {
+      "category": "environmental",
+      "features": {
+        "minable": 1,
+        "tool_level": 0,
+        "drop_value": 1,
+        "solid": 1,
+        "flammable": 0,
+        "gravity": 1,
+        "transparency": 0
+      },
+      "defaults": {
+        "safety": 0,
+        "task": 1,
+        "exploration": 1
+      }
+    },
+    "gravel": {
+      "category": "environmental",
+      "features": {
+        "minable": 1,
+        "tool_level": 0,
+        "drop_value": 1,
+        "solid": 1,
+        "flammable": 0,
+        "gravity": 1,
+        "transparency": 0
+      },
+      "defaults": {
+        "safety": 0,
+        "task": 1,
+        "exploration": 1
+      }
+    },
+    "dirt": {
+      "category": "environmental",
+      "features": {
+        "minable": 1,
+        "tool_level": 0,
+        "drop_value": 1,
+        "solid": 1,
+        "flammable": 0,
+        "gravity": 1,
+        "transparency": 0
+      },
+      "defaults": {
+        "safety": 0,
+        "task": 0,
+        "exploration": 0
+      }
+    },
+    "grass_block": {
+      "category": "environmental",
+      "features": {
+        "minable": 1,
+        "tool_level": 0,
+        "drop_value": 1,
+        "solid": 1,
+        "flammable": 0,
+        "gravity": 1,
+        "transparency": 0
+      },
+      "defaults": {
+        "safety": 0,
+        "task": 0,
+        "exploration": 0
+      }
+    },
+    "stone": {
+      "category": "resource_stone",
+      "features": {
+        "minable": 1,
+        "tool_level": 0,
+        "drop_value": 1,
+        "solid": 1,
+        "flammable": 0,
+        "gravity": 1,
+        "transparency": 0
+      },
+      "defaults": {
+        "safety": 0,
+        "task": 3,
+        "exploration": 0
+      }
+    },
+    "oak_sapling": {
+      "category": "plant",
+      "features": {
+        "minable": 1,
+        "tool_level": 0,
+        "drop_value": 1,
+        "solid": 0,
+        "flammable": 1,
+        "gravity": 0,
+        "transparency": 1
+      },
+      "defaults": {
+        "safety": 1,
+        "task": 2,
+        "exploration": 1
+      }
+    },
+    "wheat": {
+      "category": "plant",
+      "features": {
+        "minable": 1,
+        "tool_level": 0,
+        "drop_value": 2,
+        "solid": 0,
+        "flammable": 1,
+        "gravity": 0,
+        "transparency": 1
+      },
+      "defaults": {
+        "safety": 1,
+        "task": 4,
+        "exploration": 0
+      }
+    },
+    "carrot": {
+      "category": "plant",
+      "features": {
+        "minable": 1,
+        "tool_level": 0,
+        "drop_value": 2,
+        "solid": 0,
+        "flammable": 1,
+        "gravity": 0,
+        "transparency": 1
+      },
+      "defaults": {
+        "safety": 1,
+        "task": 3,
+        "exploration": 1
+      }
+    },
+    "potato": {
+      "category": "plant",
+      "features": {
+        "minable": 1,
+        "tool_level": 0,
+        "drop_value": 2,
+        "solid": 0,
+        "flammable": 1,
+        "gravity": 0,
+        "transparency": 1
+      },
+      "defaults": {
+        "safety": 1,
+        "task": 3,
+        "exploration": 1
+      }
+    },
+    "bedrock": {
+      "category": "indestructible",
+      "features": {
+        "minable": 0,
+        "solid": 1,
+        "flammable": 0,
+        "gravity": 0,
+        "transparency": 0
+      },
+      "defaults": {
+        "safety": 0,
+        "task": 0,
+        "exploration": 0
+      }
+    },
+    "oak_leaves": {
+      "category": " Leaves",
+      "features": {
+        "minable": 0,
+        "solid": 0,
+        "flammable": 1,
+        "gravity": 0,
+        "transparency": 1
+      },
+      "defaults": {
+        "safety": 0,
+        "task": 0,
+        "exploration": 1
+      }
+    },
+    "spruce_leaves": {
+      "category": "leaves",
+      "features": {
+        "minable": 0,
+        "solid": 0,
+        "flammable": 1,
+        "gravity": 0,
+        "transparency": 1
+      },
+      "defaults": {
+        "safety": 0,
+        "task": 0,
+        "exploration": 1
+      }
+    }
+  },
+  "hierarchy": {
+    "entity": {
+      "safety": 0,
+      "task": 0,
+      "exploration": 0
+    },
+    "hostile_mob": {
+      "safety": -12,
+      "task": 0,
+      "exploration": 0
+    },
+    "neutral": {
+      "safety": 0,
+      "task": 0,
+      "exploration": 2
+    },
+    "animal": {
+      "safety": 3,
+      "task": 2,
+      "exploration": 1
+    },
+    "resource": {
+      "safety": 0,
+      "task": 3,
+      "exploration": 1
+    },
+    "resource_wood": {
+      "safety": 0,
+      "task": 5,
+      "exploration": 2
+    },
+    "processed_wood": {
+      "safety": 0,
+      "task": 3,
+      "exploration": 0
+    },
+    "resource_stone": {
+      "safety": 0,
+      "task": 4,
+      "exploration": 1
+    },
+    "resource_ore": {
+      "safety": 0,
+      "task": 6,
+      "exploration": 4
+    },
+    "tool_block": {
+      "safety": 0,
+      "task": 8,
+      "exploration": 0
+    },
+    "storage_block": {
+      "safety": 0,
+      "task": 5,
+      "exploration": 0
+    },
+    "environmental": {
+      "safety": 0,
+      "task": 1,
+      "exploration": 1
+    },
+    "plant": {
+      "safety": 1,
+      "task": 2,
+      "exploration": 1
+    },
+    "indestructible": {
+      "safety": 0,
+      "task": 0,
+      "exploration": 0
+    },
+    "leaves": {
+      "safety": 0,
+      "task": 0,
+      "exploration": 1
+    }
+  },
+  "category_parents": {
+    "hostile_mob": "entity",
+    "neutral": "entity",
+    "animal": "entity",
+    "resource": "entity",
+    "resource_wood": "resource",
+    "processed_wood": "resource",
+    "resource_stone": "resource",
+    "resource_ore": "resource",
+    "tool_block": "resource",
+    "storage_block": "resource",
+    "environmental": "entity",
+    "plant": "resource",
+    "indestructible": "entity",
+    "leaves": "environmental"
+  }
+}
