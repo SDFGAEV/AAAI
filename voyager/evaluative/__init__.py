@@ -4,6 +4,7 @@ __all__ = [
     "SharedState",
     "ConstraintEngine",
     "ValueMatrix",
+    "ThreatConfig",
     "AsyncLLMWorker",
 ]
 
@@ -33,4 +34,8 @@ def __getattr__(name):
         from .async_worker import AsyncLLMWorker
 
         return AsyncLLMWorker
+    if name == "ThreatConfig":
+        from .config import ThreatConfig
+
+        return ThreatConfig
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

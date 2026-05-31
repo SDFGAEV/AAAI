@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
+from .config import ThreatConfig
 from .entity_registry import EntityRegistry, load_entity_registry
 from .schemas import Observation, StructuredAction
 
@@ -64,30 +65,31 @@ class ValueMatrix:
         entity_registry: Optional[EntityRegistry] = None,
         config_path: Optional[str | Path] = None,
         feature_weights: Optional[FeatureWeights] = None,
+        threat_config: Optional[ThreatConfig] = None,
     ):
         self.goal_manager = goal_manager
-        
-        # 加载实体注册表
+
         self.entity_registry = entity_registry or load_entity_registry()
 
-        # 加载配置文件
         if config_path is None:
             config_path = Path(__file__).parent / "ckpt" / "controller_config.json"
         with open(config_path, "r", encoding="utf-8") as f:
             self.config = json.load(f)
 
-        # 从配置中读取权重参数
         self.value_weights_config = self.config.get("value_weights", {})
-        self.alpha = self.value_weights_config.get("alpha", 0.7)  # 健康度权重
-        self.beta = self.value_weights_config.get("beta", 0.3)  # 威胁密度权重
-        self.goal_bonus = self.value_weights_config.get("goal_bonus", 2.0)  # 目标奖励
+        self.alpha = self.value_weights_config.get("alpha", 0.7)
+        self.beta = self.value_weights_config.get("beta", 0.3)
+        self.goal_bonus = self.value_weights_config.get("goal_bonus", 2.0)
         self.default_weights = self.value_weights_config.get("default_weights", {})
 
-        # 威胁检测配置
-        self.threat_config = self.config.get("threat_detection", {})
-        self.hostile_entities: Set[str] = set(self.threat_config.get("hostile_entities", []))
+        if threat_config is not None:
+            self._threat_config = threat_config
+        else:
+            threat_data = self.config.get("threat_detection", {})
+            self._threat_config = ThreatConfig.from_dict(threat_data)
 
-        # 初始化特征权重（LLM 更新的部分）
+        self.hostile_entities: Set[str] = self._threat_config.hostile_entities
+
         self._feature_weights = feature_weights or self._init_default_feature_weights()
 
     def _init_default_feature_weights(self) -> FeatureWeights:
@@ -376,6 +378,7 @@ class ValueMatrix:
 def load_value_matrix(
     entity_registry: Optional[EntityRegistry] = None,
     config_path: Optional[str | Path] = None,
+    threat_config: Optional[ThreatConfig] = None,
 ) -> ValueMatrix:
     """便捷加载函数"""
-    return ValueMatrix(entity_registry, config_path)
+    return ValueMatrix(entity_registry, config_path, threat_config=threat_config)

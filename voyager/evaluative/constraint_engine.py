@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
+from .config import ThreatConfig
 from .schemas import Observation, StructuredAction
 
 
@@ -32,6 +33,7 @@ class ConstraintEngine:
         goal_manager=None,
         templates_path: Optional[str | Path] = None,
         config_path: Optional[str | Path] = None,
+        threat_config: Optional[ThreatConfig] = None,
     ):
         self.goal_manager = goal_manager
         if templates_path is None:
@@ -39,21 +41,24 @@ class ConstraintEngine:
         if config_path is None:
             config_path = Path(__file__).parent / "ckpt" / "controller_config.json"
 
-        # 加载约束模板
         with open(templates_path, "r", encoding="utf-8") as f:
             templates_data = json.load(f)
 
-        self.templates = templates_data["templates"]  # 约束规则列表
-        self.levels = templates_data["levels"]  # 级别定义
+        self.templates = templates_data["templates"]
+        self.levels = templates_data["levels"]
 
-        # 加载控制器配置
         with open(config_path, "r", encoding="utf-8") as f:
             config = json.load(f)
 
-        self.threat_config = config.get("threat_detection", {})
-        self.hostile_entities: Set[str] = set(self.threat_config.get("hostile_entities", []))
-        self.dangerous_blocks: Set[str] = set(self.threat_config.get("dangerous_blocks", []))
-        self.entity_scan_radius = config.get("observation", {}).get("entity_scan_radius", 16)
+        if threat_config is not None:
+            self._threat_config = threat_config
+        else:
+            threat_data = config.get("threat_detection", {})
+            self._threat_config = ThreatConfig.from_dict(threat_data)
+
+        self.hostile_entities: Set[str] = self._threat_config.hostile_entities
+        self.dangerous_blocks: Set[str] = self._threat_config.dangerous_blocks
+        self.entity_scan_radius: int = self._threat_config.entity_scan_radius
 
     def evaluate(
         self,
@@ -395,6 +400,7 @@ class ConstraintEngine:
 def load_constraint_engine(
     templates_path: Optional[str | Path] = None,
     config_path: Optional[str | Path] = None,
+    threat_config: Optional[ThreatConfig] = None,
 ) -> ConstraintEngine:
     """便捷加载函数"""
-    return ConstraintEngine(templates_path, config_path)
+    return ConstraintEngine(templates_path, config_path, threat_config)
