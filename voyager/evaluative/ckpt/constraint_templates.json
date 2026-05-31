@@ -1,0 +1,230 @@
+{
+  "schema_version": "1.0",
+  "description": "Constraint templates for evaluative interface - L0/L1/L2三级约束体系",
+  "levels": {
+    "L0": {
+      "name": "硬约束",
+      "description": "一票否决，触发后动作被禁止",
+      "priority": 0,
+      "action": "deny"
+    },
+    "L1": {
+      "name": "软约束",
+      "description": "大幅扣分，动作可能被执行但会影响评分",
+      "priority": 1,
+      "action": "penalize"
+    },
+    "L2": {
+      "name": "偏好",
+      "description": "轻微扣分，LLM生成时避免但不强制",
+      "priority": 2,
+      "action": "discourage"
+    }
+  },
+  "templates": [
+    {
+      "id": "T01",
+      "name": "血量过低禁止危险动作",
+      "level": "L0",
+      "description": "当生命值低于20%时，禁止接近敌对实体或进行攻击",
+      "condition": {
+        "type": "health_percent",
+        "threshold": 0.2,
+        "comparison": "less_than"
+      },
+      "forbidden_actions": ["approach_hostile", "attack_any", "fight_back"],
+      "required_action": "retreat",
+      "reason": "血量过低时禁止危险动作"
+    },
+    {
+      "id": "T02",
+      "name": "爆炸实体近距离强制逃离",
+      "level": "L0",
+      "description": "当苦力怕在5格范围内时，必须逃离",
+      "condition": {
+        "type": "entity_proximity",
+        "entity_type": "creeper",
+        "distance": 5,
+        "comparison": "less_than_or_equal"
+      },
+      "forbidden_actions": [],
+      "required_action": "flee",
+      "reason": "苦力怕即将爆炸"
+    },
+    {
+      "id": "T03",
+      "name": "禁入岩浆区域",
+      "level": "L0",
+      "description": "当岩浆在3格范围内时，禁止向前移动",
+      "condition": {
+        "type": "block_proximity",
+        "block_type": "lava",
+        "distance": 3,
+        "comparison": "less_than_or_equal"
+      },
+      "forbidden_actions": ["move_forward", "sprint"],
+      "required_action": "flee",
+      "reason": "岩浆危险区域"
+    },
+    {
+      "id": "T04",
+      "name": "禁入虚空",
+      "level": "L0",
+      "description": "当Y坐标低于5时，禁止任何移动",
+      "condition": {
+        "type": "position_y",
+        "threshold": 5,
+        "comparison": "less_than"
+      },
+      "forbidden_actions": ["move_any", "jump", "sprint"],
+      "required_action": "tp_safe",
+      "reason": "虚空危险"
+    },
+    {
+      "id": "T05",
+      "name": "禁挖空气",
+      "level": "L0",
+      "description": "不能挖掘空气或空目标",
+      "condition": {
+        "type": "target_empty",
+        "value": true
+      },
+      "forbidden_actions": ["mine"],
+      "required_action": null,
+      "reason": "不能挖掘空气"
+    },
+    {
+      "id": "T06",
+      "name": "需要工具但未装备",
+      "level": "L0",
+      "description": "挖掘矿石需要对应工具等级",
+      "condition": {
+        "type": "tool_required",
+        "check_equipped": true
+      },
+      "forbidden_actions": ["mine_ore"],
+      "required_action": "equip_tool",
+      "reason": "需要工具才能挖掘"
+    },
+    {
+      "id": "T07",
+      "name": "饥饿度过低禁止高强度工作",
+      "level": "L1",
+      "description": "饥饿度低于30%时，禁止奔跑和攻击",
+      "condition": {
+        "type": "hunger_percent",
+        "threshold": 0.3,
+        "comparison": "less_than"
+      },
+      "forbidden_actions": ["sprint", "attack_any", "mine_fast"],
+      "penalty": -50,
+      "reason": "饥饿度过低"
+    },
+    {
+      "id": "T08",
+      "name": "背包接近满时禁止采集",
+      "level": "L1",
+      "description": "背包使用率超过90%时，限制采集动作",
+      "condition": {
+        "type": "inventory_full_percent",
+        "threshold": 0.9,
+        "comparison": "greater_than_or_equal"
+      },
+      "forbidden_actions": ["mine", "collect", "gather"],
+      "penalty": -30,
+      "reason": "背包接近满"
+    },
+    {
+      "id": "T09",
+      "name": "夜晚禁止无防护探索",
+      "level": "L1",
+      "description": "夜间在没有武器时禁止探索",
+      "condition": {
+        "type": "time_night_no_weapon",
+        "value": true
+      },
+      "forbidden_actions": ["explore", "enter_cave"],
+      "penalty": -40,
+      "reason": "夜间无防护探索危险"
+    },
+    {
+      "id": "T10",
+      "name": "水下禁止挖掘",
+      "level": "L1",
+      "description": "在水下时限制挖掘操作",
+      "condition": {
+        "type": "submerged",
+        "value": true
+      },
+      "forbidden_actions": ["mine", "dig"],
+      "penalty": -35,
+      "reason": "水下挖掘危险"
+    },
+    {
+      "id": "T11",
+      "name": "没有工作台时禁止合成",
+      "level": "L1",
+      "description": "需要合成但附近没有工作台",
+      "condition": {
+        "type": "no_crafting_table",
+        "craft_needed": true
+      },
+      "forbidden_actions": ["craft_complex"],
+      "penalty": -20,
+      "reason": "需要工作台"
+    },
+    {
+      "id": "T12",
+      "name": "没有熔炉时禁止冶炼",
+      "level": "L1",
+      "description": "需要冶炼但附近没有熔炉",
+      "condition": {
+        "type": "no_furnace",
+        "smelting_needed": true
+      },
+      "forbidden_actions": ["smelt"],
+      "penalty": -20,
+      "reason": "需要熔炉"
+    },
+    {
+      "id": "T13",
+      "name": "非必要不打草",
+      "level": "L2",
+      "description": "没有明确目的时避免破坏草方块",
+      "condition": {
+        "type": "unnecessary_grass_break",
+        "value": true
+      },
+      "forbidden_actions": ["mine_grass"],
+      "penalty": -5,
+      "reason": "非必要不打草"
+    },
+    {
+      "id": "T14",
+      "name": "避免破坏树叶",
+      "level": "L2",
+      "description": "除非必要，否则避免破坏树叶",
+      "condition": {
+        "type": "unnecessary_leaves_break",
+        "value": true
+      },
+      "forbidden_actions": ["mine_leaves"],
+      "penalty": -3,
+      "reason": "避免破坏树叶"
+    },
+    {
+      "id": "T15",
+      "name": "远距离移动优先使用路径追踪",
+      "level": "L2",
+      "description": "移动距离超过10格时建议使用路径追踪",
+      "condition": {
+        "type": "long_distance",
+        "threshold": 10,
+        "comparison": "greater_than"
+      },
+      "forbidden_actions": ["random_walk"],
+      "penalty": -2,
+      "reason": "远距离移动建议使用路径追踪"
+    }
+  ]
+}
