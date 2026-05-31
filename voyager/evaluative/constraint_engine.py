@@ -29,9 +29,11 @@ class ConstraintEngine:
 
     def __init__(
         self,
+        goal_manager=None,
         templates_path: Optional[str | Path] = None,
         config_path: Optional[str | Path] = None,
     ):
+        self.goal_manager = goal_manager
         if templates_path is None:
             templates_path = Path(__file__).parent / "ckpt" / "constraint_templates.json"
         if config_path is None:
@@ -259,20 +261,26 @@ class ConstraintEngine:
     def filter_actions(
         self,
         actions: List[StructuredAction],
-        observation: Observation,
-    ) -> tuple[List[StructuredAction], Dict[str, ConstraintResult]]:
+        graph=None,
+        observation: Observation = None,
+    ) -> tuple[List[StructuredAction], List[str]]:
         """过滤允许的动作列表"""
+        # 兼容两种调用方式
+        if observation is None:
+            observation = graph
+            graph = None
+
         allowed = []
-        results = {}
+        rejections = []
 
         for action in actions:
             result = self.evaluate(action, observation)
-            results[action.id] = result
-
-            if result.allowed:
+            if not result.allowed:
+                rejections.extend(result.reasons)
+            else:
                 allowed.append(action)
 
-        return allowed, results
+        return allowed, rejections
 
     def filter_actions_with_penalty(
         self,

@@ -60,10 +60,13 @@ class ValueMatrix:
 
     def __init__(
         self,
+        goal_manager=None,
         entity_registry: Optional[EntityRegistry] = None,
         config_path: Optional[str | Path] = None,
         feature_weights: Optional[FeatureWeights] = None,
     ):
+        self.goal_manager = goal_manager
+        
         # 加载实体注册表
         self.entity_registry = entity_registry or load_entity_registry()
 
@@ -182,7 +185,8 @@ class ValueMatrix:
     def score(
         self,
         action: StructuredAction,
-        observation: Observation,
+        graph=None,
+        observation: Observation = None,
         dynamic_weights: Optional[Dict[str, float]] = None,
         goal_progress: float = 0.0,
     ) -> ValueScore:
@@ -190,17 +194,27 @@ class ValueMatrix:
 
         评分公式: Score(a) = Σ w_d(t) · v_d(entity(a), c) + goal_bonus
 
+        支持两种调用方式：
+        1. 新方式（带动态权重）: score(action, observation, dynamic_weights, goal_progress)
+        2. 兼容旧方式: score(action, graph, observation)
+
         Args:
             action: 待评分动作
+            graph: GoalGraph（兼容旧接口）
             observation: 当前观察
             dynamic_weights: 动态权重（可选，默认自动计算）
             goal_progress: 目标进度 0.0-1.0
         """
+        # 兼容两种调用方式
+        if observation is None:
+            observation = graph
+            graph = None
+
         # 获取健康度和威胁密度
         health_percent = observation.get("health_percent", 1.0)
         threat_density = self._compute_threat_density(observation)
 
-        # 计算动态权重
+        # 计算动态权重（核心功能）
         if dynamic_weights is None:
             dynamic_weights = self.compute_dynamic_weights(
                 health_percent, threat_density, has_active_goal=(goal_progress > 0)
@@ -235,7 +249,8 @@ class ValueMatrix:
             f"base_{dim}": base_values.get(dim, 0.0)
             for dim in ("safety", "task", "exploration")
         }
-        breakdown[f"weighted_{dim}"] = dynamic_weights.get(dim, 0.0) * base_values.get(dim, 0.0)
+        for dim in ("safety", "task", "exploration"):
+            breakdown[f"weighted_{dim}"] = dynamic_weights.get(dim, 0.0) * base_values.get(dim, 0.0)
         breakdown["goal_bonus"] = self.goal_bonus * goal_progress
 
         # 生成评分原因
@@ -322,7 +337,10 @@ class ValueMatrix:
         scores = []
         for action in actions:
             score = self.score(
-                action, observation, dynamic_weights, goal_progress
+                action,
+                observation=observation,
+                dynamic_weights=dynamic_weights,
+                goal_progress=goal_progress,
             )
             scores.append(score)
         return scores
@@ -343,7 +361,10 @@ class ValueMatrix:
 
         for action in actions:
             score = self.score(
-                action, observation, dynamic_weights, goal_progress
+                action,
+                observation=observation,
+                dynamic_weights=dynamic_weights,
+                goal_progress=goal_progress,
             )
             if best_score is None or score.total > best_score.total:
                 best_action = action
