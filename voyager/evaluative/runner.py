@@ -13,7 +13,7 @@ from .async_worker import AsyncLLMWorker
 from .config import EvaluativeConfig
 from .feedback import FeedbackTracker
 from .goal_graph import GoalGraphManager
-from .llm_worker import GoalGraphLLMWorker
+from .llm_worker import EvaluativeLLMWorker
 from .schemas import Decision, GoalGraph, Observation, StructuredAction
 from .shared_state import SharedState
 from .snapshot_store import SnapshotStore
@@ -51,7 +51,7 @@ class EvaluativeRunner:
             goal_graph_dir=self.config.goal_graph_dir,
             shared_snapshot_dir=self.config.shared_snapshot_dir,
         )
-        self.llm_worker = GoalGraphLLMWorker(
+        self.llm_worker = EvaluativeLLMWorker(
             self.goal_manager,
             snapshot_store=self.snapshot_store,
         )

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from .goal_graph import GoalGraphManager
 from .config import ConstraintSet, ValueMatrixConfig
-from .llm_worker import GoalGraphLLMWorker
+from .llm_worker import EvaluativeLLMWorker
 from .shared_state import SharedState
 from .snapshot_store import SnapshotStore
 
@@ -25,14 +25,14 @@ class AsyncLLMWorker:
         self,
         shared_state: SharedState,
         goal_manager: GoalGraphManager | None = None,
-        llm_worker: GoalGraphLLMWorker | None = None,
+        llm_worker: EvaluativeLLMWorker | None = None,
         snapshot_store: SnapshotStore | None = None,
         value_matrix: ValueMatrixConfig | None = None,
         constraints: ConstraintSet | None = None,
     ):
         self.shared_state = shared_state
         self.goal_manager = goal_manager or GoalGraphManager()
-        self.llm_worker = llm_worker or GoalGraphLLMWorker(self.goal_manager)
+        self.llm_worker = llm_worker or EvaluativeLLMWorker(self.goal_manager)
         self.snapshot_store = snapshot_store or SnapshotStore(
             goal_manager=self.goal_manager
         )

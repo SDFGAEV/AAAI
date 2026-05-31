@@ -1,6 +1,6 @@
 __all__ = [
     "EvaluativeRunner",
-    "GoalGraphLLMWorker",
+    "EvaluativeLLMWorker",
     "SharedState",
     "ConstraintEngine",
     "ValueMatrix",
@@ -14,10 +14,10 @@ def __getattr__(name):
         from .runner import EvaluativeRunner
 
         return EvaluativeRunner
-    if name == "GoalGraphLLMWorker":
-        from .llm_worker import GoalGraphLLMWorker
+    if name == "EvaluativeLLMWorker":
+        from .llm_worker import EvaluativeLLMWorker
 
-        return GoalGraphLLMWorker
+        return EvaluativeLLMWorker
     if name == "SharedState":
         from .shared_state import SharedState
 
