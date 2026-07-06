@@ -38,8 +38,8 @@ class Agent:
             logger.info("gpt4o as planning model")
             self.reflection_model = self.plan_model
         else:
-            if plan_model == "Qwen/Qwen2.5-VL-7B-Instruct":
-                logger.info("Using Qwen-2.5-VL for planning.")
+            if plan_model in ("Qwen/Qwen2.5-VL-7B-Instruct", "Qwen/Qwen2-VL-2B-Instruct"):
+                logger.info(f"Using Qwen-VL for planning: {plan_model}")
                 self.plan_model = QwenVLPlanningModel(plan_model)
             # if plan_model == "Qwen/Qwen2.5-7B-Instruct":
             #     logger.info("Using Qwen-2.5 for planning.")
