@@ -163,8 +163,10 @@ def main():
     print(f"\nE1: Accumulation — NoTrust, {len(TRAIN)} seeds")
     ar["e1"] = run_seeds("E1", TRAIN, method="NoTrust", bench="cask_train")
 
-    # ═══ E2 ═══
-    print(f"\nE2: Calibration + CF Branching — {len(CALIB)} seeds")
+    # ═══ E2: Risk Calibration (observational uplift estimation) ═══
+    # Note: uses cross-episode observational comparison, not true counterfactual branching.
+    # True CF branching (world snapshot + replay) requires Mineflayer executor.
+    print(f"\nE2: Risk Calibration — {len(CALIB)} seeds (observational uplift)")
     ar["e2"] = run_seeds("E2", CALIB, method="NoTrust", bench="cask_calib")
     ar["e2_cf"] = run_seeds("E2_CF", CALIB[::2], method="NoTrust",
                             extra="+cask_cf_branching=true", bench="cask_calib")
@@ -224,10 +226,13 @@ def main():
         tok_med = np.median([x.get("tokens", 0) for x in emk]) if emk else 0
         call_med = np.median([x.get("llm_calls", 0) for x in emk]) if emk else 0
         if m in e3r:
+            sr_val = e3r[m]["SR"]
+            ras = round(sr_val * (1.0 - hr), 3)  # Risk-Adjusted Score = SR * (1-HRR)
             e3r[m].update({"KUS": round(ku, 3), "HRR": round(hr, 3), "IRR": round(ir, 3),
                            "Coverage": round(co, 3), "ECE": round(ec, 3),
                            "Cov@Risk<=10%": cr, "Cov@Risk<=5%": cr5,
                            "RCR": round(rcr, 3), "CFR": round(cfr, 3),
+                           "RAS": ras,
                            "Tokens_med": int(tok_med), "Calls_med": int(call_med)})
 
     # Paired comparisons
@@ -267,11 +272,12 @@ def main():
                                "IRR": round(IRR(mk), 3)})
 
     # ═══ E5: Online Safe Evolution ═══
-    print(f"\nE5: Online Safe Evolution - 5 rounds x 2 methods")
+    # 10 rounds x 5 seeds x 2 methods = 100 evolution episodes
+    print(f"\nE5: Online Safe Evolution - 10 rounds x 5 seeds x 2 methods")
     for m in ["CounterfactualTrust", "Full-Frozen"]:
         mt = te
-        for rn in range(5):
-            r = run_seeds(f"E5_{m}_r{rn}", range(4001, 4004), method=m, t_eps=mt, bench="cask_p3")
+        for rn in range(10):
+            r = run_seeds(f"E5_{m}_r{rn}", range(4001, 4006), method=m, t_eps=mt, bench="cask_p3")
             ar[f"e5_{m}_r{rn}"] = r
 
     # ═══ E6: Cross-Base Portability ═══
@@ -306,16 +312,35 @@ def main():
             evo_rounds.append({"round": k, "SR": ok / tot if tot else 0, "total": tot})
     with open(os.path.join(OUT, "fig5_evolution.json"), "w") as f: json.dump(evo_rounds, f)
 
-    # ═══ Final Table ═══
-    print(f"\n{'='*70}\nE3 MAIN TABLE\n{'='*70}")
-    hdr = f"{'Method':25s} {'SR':>6} {'HardSR':>6} {'KUS':>6} {'HRR':>6} {'Cov@10%':>7} {'ECE':>6} {'Tok':>8} {'Call':>5}"
-    print(hdr)
-    print("-" * 75)
+    # Fig 6: SR-HRR tradeoff scatter (all methods)
+    fig6 = []
     for m in METHODS:
         r = e3r.get(m, {})
         if r:
-            hardsr_val = r.get("HardSR", r.get("SR", 0))
-            print(f"{m:25s} {r['SR']:5.3f} {hardsr_val:5.3f} {r['KUS']:5.3f} {r['HRR']:5.3f} {r['Cov@Risk<=10%']:6.3f} {r['ECE']:5.3f} {r.get('Tokens_med',0):7d} {r.get('Calls_med',0):4d}")
+            fig6.append({"method": m, "SR": r.get("SR", 0), "HRR": r.get("HRR", 0),
+                         "RAS": r.get("RAS", 0), "Cov@Risk<=10%": r.get("Cov@Risk<=10%", 0)})
+    with open(os.path.join(OUT, "fig6_sr_hrr_tradeoff.json"), "w") as f: json.dump(fig6, f)
+
+    # ═══ Final Table ═══
+    print(f"\n{'='*80}\nE3 MAIN TABLE\n{'='*80}")
+    hdr = f"{'Method':25s} {'SR':>6} {'RAS':>6} {'HRR':>6} {'KUS':>6} {'Cov@10%':>7} {'ECE':>6} {'Tok':>8} {'Call':>5}"
+    print(hdr)
+    print("-" * 80)
+    for m in METHODS:
+        r = e3r.get(m, {})
+        if r:
+            print(f"{m:25s} {r['SR']:5.3f} {r.get('RAS',0):5.3f} {r['HRR']:5.3f} {r['KUS']:5.3f} {r['Cov@Risk<=10%']:6.3f} {r['ECE']:5.3f} {r.get('Tokens_med',0):7d} {r.get('Calls_med',0):4d}")
+
+    # NoTrust vs Full-Frozen risk comparison
+    nt = e3r.get("NoTrust", {}); ff = e3r.get("Full-Frozen", {})
+    if nt and ff:
+        print(f"\n{'='*60}\nRISK TRADEOFF: NoTrust vs Full-Frozen\n{'='*60}")
+        sr_gap = ff.get("SR", 0) - nt.get("SR", 0)
+        hrr_gap = nt.get("HRR", 0) - ff.get("HRR", 0)  # positive = Full-Frozen safer
+        ras_gap = ff.get("RAS", 0) - nt.get("RAS", 0)
+        print(f"  SR gap (FF - NT): {sr_gap:+.3f}  {'(Full-Frozen keeps pace)' if sr_gap > -0.03 else '(SR loss > 3%, concerning)' if sr_gap < -0.05 else ''}")
+        print(f"  HRR gap (NT - FF): {hrr_gap:+.3f}  {'(Full-Frozen much safer)' if hrr_gap > 0.03 else ''}")
+        print(f"  RAS gap (FF - NT): {ras_gap:+.3f}  {'(Full-Frozen wins risk-adjusted)' if ras_gap > 0 else '(NoTrust wins risk-adjusted — check your method!)'}")
 
     # E4 Ablation table
     if e4r:
@@ -326,7 +351,7 @@ def main():
             print(f"{vname:25s} {r['SR']:5.3f} {r.get('KUS',0):5.3f} {r.get('HRR',0):5.3f} {r.get('IRR',0):5.3f}")
 
     final = os.path.join(OUT, f"final_{int(time.time())}.json")
-    with open(final, "w") as f: json.dump({"config": {"t_eps": te, "n_calib": nc}, "e3": e3r, "e4": e4r, "pairs": pairs, "e1": ar.get("e1", []), "fig2": fig2[:10], "fig3": fig3, "fig4": fig4[:10], "fig5": evo_rounds}, f, indent=2)
+    with open(final, "w") as f: json.dump({"config": {"t_eps": te, "n_calib": nc}, "e3": e3r, "e4": e4r, "pairs": pairs, "e1": ar.get("e1", []), "fig2": fig2[:10], "fig3": fig3, "fig4": fig4[:10], "fig5": evo_rounds, "fig6_sr_hrr": fig6}, f, indent=2)
     print(f"\nSaved: {final} | t_eps={te:.4f}")
 
 
