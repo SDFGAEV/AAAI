@@ -91,12 +91,12 @@ all_task:
   group: exploration
 - id: 16
   type: craft
-  instruction: Tech tree: from barehand to wooden sword.
+  instruction: "Tech tree: from barehand to wooden sword."
   goal: techtree_from_barehand_to_wooden_sword
   group: tech_tree
 - id: 17
   type: craft
-  instruction: Tech tree: from barehand to diamond sword.
+  instruction: "Tech tree: from barehand to diamond sword."
   goal: techtree_from_barehand_to_diamond_sword
   group: tech_tree
 - id: 18
@@ -126,7 +126,7 @@ all_task:
   group: tech_tree
 - id: 23
   type: craft
-  instruction: Recover from missing furnace: craft a furnace after losing one.
+  instruction: "Recover from missing furnace: craft a furnace after losing one."
   goal: recover_missing_furnace
   group: failure_recovery
 

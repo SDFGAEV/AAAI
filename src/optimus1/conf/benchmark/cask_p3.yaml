@@ -138,12 +138,12 @@ all_task:
   group: tech_tree
 - id: 24
   type: craft
-  instruction: Tech tree: from barehand to wooden sword.
+  instruction: "Tech tree: from barehand to wooden sword."
   goal: techtree_barehand_to_wooden_sword
   group: tech_tree
 - id: 25
   type: craft
-  instruction: Tech tree: from barehand to diamond sword.
+  instruction: "Tech tree: from barehand to diamond sword."
   goal: techtree_barehand_to_diamond_sword
   group: tech_tree
 - id: 26
@@ -153,7 +153,7 @@ all_task:
   group: tech_tree
 - id: 27
   type: mine
-  instruction: Obtain obsidian: craft diamond pickaxe, find lava, mine obsidian.
+  instruction: "Obtain obsidian: craft diamond pickaxe, find lava, mine obsidian."
   goal: obtain_obsidian_chain
   group: tech_tree
 
@@ -197,7 +197,7 @@ all_task:
   group: interaction_stress
 - id: 35
   type: craft
-  instruction: Diamond chain resource conflict: limited resources force choices between tools.
+  instruction: "Diamond chain resource conflict: limited resources force choices between tools."
   goal: diamond_chain_resource_conflict
   group: interaction_stress
 

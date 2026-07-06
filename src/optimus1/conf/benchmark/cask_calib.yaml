@@ -51,7 +51,7 @@ all_task:
   group: exploration
 - id: 8
   type: craft
-  instruction: Tech tree: from barehand to wooden sword.
+  instruction: "Tech tree: from barehand to wooden sword."
   goal: techtree_from_barehand_to_wooden_sword
   group: tech_tree
 - id: 9
