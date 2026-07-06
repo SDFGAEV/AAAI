@@ -1,0 +1,153 @@
+# @package _global_
+env:
+  name: CASKTaskEnv-v0
+  max_minutes: 3
+  times: 1
+  prefer_biome: forest
+  initial_inventory: []
+all_task:
+- id: 0
+  type: craft
+  instruction: Craft oak planks from oak logs
+  goal: oak_planks
+- id: 1
+  type: craft
+  instruction: Craft a crafting table
+  goal: crafting_table
+- id: 2
+  type: craft
+  instruction: Craft a ladder using sticks
+  goal: ladder
+- id: 3
+  type: craft
+  instruction: Craft a furnace for smelting
+  goal: furnace
+- id: 4
+  type: smelt
+  instruction: Smelt raw beef into steak
+  goal: cooked_beef
+- id: 5
+  type: craft
+  instruction: Craft a stonecutter
+  goal: stonecutter
+- id: 6
+  type: equip
+  instruction: Equip and use a shield
+  goal: shield
+- id: 7
+  type: equip
+  instruction: Use a bow as your weapon
+  goal: bow
+- id: 8
+  type: mine
+  instruction: Collect wood from trees
+  goal: oak_log
+- id: 9
+  type: mine
+  instruction: Mine stone blocks with a pickaxe
+  goal: cobblestone
+- id: 10
+  type: mine
+  instruction: Collect dirt blocks
+  goal: dirt
+- id: 11
+  type: mine
+  instruction: Mine iron ore with a stone pickaxe
+  goal: raw_iron
+- id: 12
+  type: mine
+  instruction: Collect grass blocks
+  goal: dirt
+- id: 13
+  type: mine
+  instruction: Shear sheep to collect wool
+  goal: wool
+- id: 14
+  type: mine
+  instruction: Mine diamond ore with an iron pickaxe
+  goal: diamond
+- id: 15
+  type: mine
+  instruction: Find and collect sand
+  goal: sand
+- id: 16
+  type: mine
+  instruction: Find a forest biome
+  goal: oak_log
+- id: 17
+  type: mine
+  instruction: Find a lava pool
+  goal: cobblestone
+- id: 18
+  type: mine
+  instruction: Explore and climb a mountain
+  goal: stone
+- id: 19
+  type: mine
+  instruction: Find and mine diamond ore
+  goal: diamond
+- id: 20
+  type: mine
+  instruction: Find a village
+  goal: oak_log
+- id: 21
+  type: craft
+  instruction: 'Tech tree: barehand to wooden sword'
+  goal: wooden_sword
+- id: 22
+  type: craft
+  instruction: 'Tech tree: barehand to stone pickaxe'
+  goal: stone_pickaxe
+- id: 23
+  type: craft
+  instruction: 'Tech tree: barehand to wooden pickaxe'
+  goal: wooden_pickaxe
+- id: 24
+  type: craft
+  instruction: 'Tech tree: barehand to furnace'
+  goal: furnace
+- id: 25
+  type: craft
+  instruction: 'Tech tree: barehand to stone axe'
+  goal: stone_axe
+- id: 26
+  type: craft
+  instruction: 'Tech tree: barehand to wooden axe'
+  goal: wooden_axe
+- id: 27
+  type: craft
+  instruction: 'Tech tree: barehand to torch'
+  goal: torch
+- id: 28
+  type: mine
+  instruction: Mine diamond with wrong tool (stone pickaxe)
+  goal: diamond
+- id: 29
+  type: craft
+  instruction: Craft table without enough planks
+  goal: crafting_table
+- id: 30
+  type: smelt
+  instruction: Smelt iron without fuel
+  goal: iron_ingot
+- id: 31
+  type: place
+  instruction: Place a block not in inventory
+  goal: crafting_table
+- id: 32
+  type: craft
+  instruction: Craft furnace then stone pickaxe (share cobblestone)
+  goal: stone_pickaxe
+- id: 33
+  type: craft
+  instruction: Craft torch without coal
+  goal: torch
+- id: 34
+  type: craft
+  instruction: Craft sticks then ladder (compete for planks)
+  goal: ladder
+- id: 35
+  type: craft
+  instruction: Craft chest then door (compete for planks)
+  goal: door
+evaluate: []

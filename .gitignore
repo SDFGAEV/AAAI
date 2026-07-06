@@ -1,0 +1,30 @@
+# Runtime outputs
+logs/
+exp_results/
+cask_ckpt/
+test_ckpt/
+videos/
+*.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
+
+# Node
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp
+*.tmp.*
+*.swp
+*~

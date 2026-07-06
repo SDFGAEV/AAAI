@@ -1,0 +1,60 @@
+# @package _global_
+env:
+  name: CASKTaskEnv-v0
+  max_minutes: 3
+  times: 1
+  prefer_biome: forest
+  initial_inventory: []
+all_task:
+- id: 0
+  type: craft
+  instruction: Open your inventory and craft a stonecutter.
+  goal: craft_stonecut
+- id: 1
+  type: craft
+  instruction: drop an item from your inventory
+  goal: drop_an_item
+- id: 2
+  type: craft
+  instruction: Explore the world of Minecraft by traveling across various biomes and
+    finding interesting locations.
+  goal: explore_run
+- id: 3
+  type: craft
+  instruction: Locate and explore a buried treasure using a treasure map.
+  goal: explore_the_treasure
+- id: 4
+  type: craft
+  instruction: place an item frame on a solid surface
+  goal: place_a_item_frame
+- id: 5
+  type: craft
+  instruction: Plant wheat seeds in tilled soil.
+  goal: plant_wheats
+- id: 6
+  type: craft
+  instruction: 'Prepare a birthday present for your neighbor using various decorative
+    items and a cake.  '
+  goal: prepare_a_birthday_present_for_your_neighbor
+- id: 7
+  type: craft
+  instruction: throw a snowball
+  goal: throw_a_snowball
+- id: 8
+  type: place
+  instruction: Build a gate to secure your area in Minecraft.
+  goal: build_gate
+- id: 9
+  type: place
+  instruction: Build a nether portal using obsidian blocks and activate it with flint
+    and steel.
+  goal: build_nether_portal
+- id: 10
+  type: place
+  instruction: Build a snow golem using snow blocks and a pumpkin.
+  goal: build_snow_golem
+- id: 11
+  type: craft
+  instruction: Carve pumpkins to create jack-o'-lanterns.
+  goal: carve_pumpkins
+evaluate: []
