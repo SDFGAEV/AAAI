@@ -165,35 +165,44 @@ def main():
     print(f"\nE1: Accumulation — NoTrust, {len(TRAIN)} seeds")
     ar["e1"] = run_seeds("E1", TRAIN, method="NoTrust", bench="cask_train")
 
-    # ═══ E2: Risk Calibration (observational uplift estimation) ═══
-    # Note: uses cross-episode observational comparison, not true counterfactual branching.
-    # True CF branching (world snapshot + replay) requires Mineflayer executor.
-    print(f"\nE2: Risk Calibration — {len(CALIB)} seeds (observational uplift)")
+    # ═══ E2: Adaptive Calibration ═══
+    # Runs NoTrust with active calibration, then learns per-group thresholds.
+    print(f"\nE2: Adaptive Calibration — {len(CALIB)} seeds (active calib + per-group sweep)")
     ar["e2"] = run_seeds("E2", CALIB, method="NoTrust", bench="cask_calib")
     ar["e2_cf"] = run_seeds("E2_CF", CALIB[::2], method="NoTrust",
                             extra="+cask_cf_branching=true", bench="cask_calib")
 
-    # Compute t_eps from logs
-    logs = collect_logs(); te, nc = 0.0, 0
-    if logs.get("knowledge_reuse"):
-        kr = logs["knowledge_reuse"]
-        sc = []
-        for x in kr:
-            up = x.get("uplift", x.get("use_lcb", 0.1) - x.get("base_ucb", 0.9))
-            hu = x.get("harm_ucb", 0.0)
-            score = up - 0.2 * hu
-            sc.append({"score": score, "ih": 1.0 if not x.get("success") else 0.0})
-        if sc:
-            sc.sort(key=lambda d: d["score"], reverse=True); N = len(sc)
-            bt, bc = -float("inf"), 0
-            for d in sc:
-                acc = sum(1 for d2 in sc if d2["score"] >= d["score"]); cov = acc / N
-                h = sum(1 for d2 in sc if d2["score"] >= d["score"] and d2["ih"])
-                ru = float(beta_dist.ppf(0.95, h + 1, acc - h + 1)) if acc else 1.0
-                if ru <= EPS and cov > bc: bc, bt = cov, d["score"]
-            if bt == -float("inf"): bt = max(d["score"] for d in sc) + 0.01
-            te, nc = float(bt), N
-    print(f"\n  t_eps={te:.4f} (n_calib={nc})")
+    # Collect per-group calibration data
+    logs_e2 = collect_logs(); kr_data_e2 = logs_e2.get("knowledge_reuse", [])
+    data_by_group = {}
+    for x in kr_data_e2:
+        grp = x.get("task_group", x.get("group", "crafting"))
+        data_by_group.setdefault(grp, []).append(x)
+
+    # Run per-group adaptive calibration
+    try:
+        from cask.trust_gate import TrustGate
+        gate = TrustGate()
+        calib_result = gate.calibrate_all_groups(data_by_group)
+        te = gate.tau.get("crafting", 0.90)  # use crafting as reference
+        print(f"\n  Calibration complete. Groups calibrated: {len(calib_result)}")
+        for grp, cfg in sorted(calib_result.items()):
+            print(f"    {grp}: τ={cfg['tau']:.2f} δ={cfg['delta']:.3f} h={cfg['harm']:.3f} cov={cfg.get('coverage','?'):.3f}")
+        # Estimate empirical priors
+        type_data = {}
+        for x in kr_data_e2:
+            kt = x.get("type", "skill")
+            type_data.setdefault(kt, []).append(x)
+        from cask.trust_store import TrustStore
+        ts = TrustStore(); ts.estimate_type_priors(type_data)
+        print(f"  Empirical priors: {len(ts._type_stats)} types")
+        with open(os.path.join(OUT, "adaptive_calibration.json"), "w") as f:
+            json.dump({"per_group": calib_result, "type_priors": {
+                k: {s: {"a": v[s][0], "b": v[s][1], "n": v[s][2]} for s in v}
+                for k, v in ts._type_stats.items()}}, f, indent=2)
+    except Exception as e:
+        print(f"  Calibration failed: {e}, using defaults")
+        te = 0.0
 
     # ═══ E3: Strict Frozen ═══
     print(f"\nE3: Strict Frozen — {len(METHODS)} methods × {len(TEST)} seeds")
@@ -290,8 +299,28 @@ def main():
     for m in ["NoTrust", "ACT-RL-Full"]:
         r = run_seeds(f"E6_{m}", TEST, method=m, t_eps=te,
                       extra="+cask_frozen=true", bench="cask_p3")
+        ar[f"e6_{m}"] = r
 
-    # ═══ Fig 2-5 ═══
+    # ═══ E7: Drift / OOD Stress ═══
+    print(f"\nE7: Drift Stress - 18 tasks x 5 seeds x 3 methods")
+    DRIFT_METHODS = ["Fixed-Bayes", "Adaptive-Bayes", "ACT-RL-Full"]
+    DRIFT_SEEDS = range(5001, 5006)
+    for method in DRIFT_METHODS:
+        mt = te
+        r = run_seeds(f"E7_{method}", DRIFT_SEEDS, method=method, t_eps=mt,
+                      extra="+cask_frozen=true", bench="cask_p3")
+        ar[f"e7_{method}"] = r
+    # Compute drift metrics
+    drift_metrics = {}
+    e7_logs = collect_logs(); kr_e7 = e7_logs.get("knowledge_reuse", [])
+    for method in DRIFT_METHODS:
+        mk = [x for x in kr_e7 if x.get("method") == method]
+        if mk:
+            drift_metrics[method] = {"post_drift_hrr": round(HRR(mk), 3),
+                "post_drift_sr": round(sum(1 for x in mk if x.get("outcome_success")) / max(len(mk), 1), 3)}
+    with open(os.path.join(OUT, "fig7_drift_stress.json"), "w") as f: json.dump(drift_metrics, f)
+
+    # ═══ Fig 2-7 ═══
     print("\nExporting figures...")
     # Fig 2: Raw Success vs Uplift
     fig2 = [{"raw": x.get("use_lcb", 0.5), "uplift": x.get("uplift", 0.0),

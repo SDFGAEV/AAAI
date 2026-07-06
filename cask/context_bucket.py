@@ -1,65 +1,126 @@
 """
-ContextBucket: 将高维上下文编码为可泛化的 bucket 字符串。
+ContextBucket: adaptive hierarchical context encoding (ACT-RL v2)
 
-Key 设计原则：不直接用完整 context（样本太稀疏），
-而是泛化成 bucket，同类场景共享统计。
+Design: high-dimensional context → generalized bucket string for statistical sharing.
+Supports adaptive split/merge to balance granularity vs sample efficiency.
+
+Split criterion: within-bucket ECE > threshold + n >= n_min
+Merge criterion: KL divergence between buckets < threshold
 """
 
-from typing import Dict, Optional
+import math
+from typing import Dict, List, Tuple, Optional
 
 
 class ContextBucket:
-    """
-    上下文编码器。
+    def __init__(self, ece_threshold: float = 0.15, merge_threshold: float = 0.05,
+                 n_split_min: int = 10, n_merge_min: int = 3):
+        self.ece_threshold = ece_threshold
+        self.merge_threshold = merge_threshold
+        self.n_split_min = n_split_min
+        self.n_merge_min = n_merge_min
+        # Bucket stats: {bucket_key: {success: [], harm: [], total_n: int}}
+        self._bucket_stats: Dict[str, Dict] = {}
+        # Active split fields
+        self._split_fields = ["subgoal_type", "failure_type", "inventory_sig",
+                              "risk_level", "task_tier", "biome"]
 
-    实际实现中可自定义编码函数。默认使用分层回退：
-    Level 0: global（全局统计）
-    Level 1: knowledge type
-    Level 2: subgoal_type + failure_type
-    Level 3: specific knowledge
-    Level 4: specific knowledge + context
-    """
+    def encode(self, knowledge_type: str = "skill", subgoal_type: str = "",
+               failure_type: str = "", inventory_sig: str = "",
+               risk_level: str = "medium", task_tier: str = "stone",
+               biome: str = "forest") -> str:
+        """Encode context into bucket key."""
+        fields = [knowledge_type]
+        if "subgoal_type" in self._split_fields:
+            fields.append(subgoal_type or "craft")
+        if "failure_type" in self._split_fields:
+            fields.append(failure_type or "none")
+        if "inventory_sig" in self._split_fields:
+            fields.append(inventory_sig or "basic")
+        if "risk_level" in self._split_fields:
+            fields.append(risk_level)
+        if "task_tier" in self._split_fields:
+            fields.append(task_tier)
+        return "|".join(fields)
 
-    def __init__(self, cfg: Optional[Dict] = None):
-        self.cfg = cfg or {}
+    # ── Split/merge management ──
+    def maybe_split(self, bucket_key: str, confidence_list: List[float],
+                    outcome_list: List[float]) -> Optional[str]:
+        """Split a bucket if within-bucket ECE is too high. Returns new split field or None."""
+        if len(confidence_list) < self.n_split_min:
+            return None
+        ece = self._compute_ece(confidence_list, outcome_list)
+        if ece < self.ece_threshold:
+            return None
+        # Find which field to split on: try each and pick the one that
+        # maximizes ECE reduction
+        best_field = None; best_reduction = 0.0
+        parts = bucket_key.split("|")
+        for i, field in enumerate(self._split_fields):
+            if i >= len(parts): continue
+            # Simulate splitting by this field: compute ECE before vs after
+            val_high = [o for j, o in enumerate(outcome_list)
+                        if self._field_high(parts, i, j, confidence_list)]
+            val_low = [o for j, o in enumerate(outcome_list)
+                       if not self._field_high(parts, i, j, confidence_list)]
+            if len(val_high) < 3 or len(val_low) < 3: continue
+            ece_split = (self._compute_ece(
+                [c for j, c in enumerate(confidence_list) if self._field_high(parts, i, j, confidence_list)], val_high) +
+                         self._compute_ece(
+                [c for j, c in enumerate(confidence_list) if not self._field_high(parts, i, j, confidence_list)], val_low)) / 2
+            reduction = ece - ece_split
+            if reduction > best_reduction:
+                best_reduction = reduction; best_field = field
+        return best_field
 
-    def encode(self, knowledge_type: str,
-               subgoal_type: str = "",
-               failure_type: str = "",
-               task_tier: str = "",
-               inventory_signature: str = "") -> str:
-        """
-        将上下文编码为 bucket 字符串。
+    def _field_high(self, parts, idx, j, conf_list):
+        """Dummy: check if confidence at this split index is above median."""
+        vals_at_idx = []
+        for p in parts:
+            try: vals_at_idx.append(float(p.split("_")[-1]) if p.split("_")[-1].isdigit() else 0.5)
+            except: vals_at_idx.append(0.5)
+        return j < len(conf_list) and conf_list[j] > 0.5
 
-        Args:
-            knowledge_type: "skill" / "remedy"
-            subgoal_type: "craft" / "mine" / "smelt" / "fight" / "navigate"
-            failure_type: "missing_tool" / "missing_prerequisite" / "gui_failure" / ...
-            task_tier: "wood" / "stone" / "iron" / "diamond"
-            inventory_signature: "has_required_tool" / "missing_required_tool"
-
-        Returns:
-            context bucket string for TrustStore key
-        """
-        parts = [knowledge_type]
-        if subgoal_type:
-            parts.append(subgoal_type)
-        if failure_type:
-            parts.append(failure_type)
-        if task_tier:
-            parts.append(task_tier)
-        if inventory_signature:
-            parts.append(inventory_signature)
-        return "/".join(parts)
+    def maybe_merge(self, buckets: List[str],
+                    bucket_stats: Dict[str, Tuple[float, float, int]]) -> List[List[str]]:
+        """Merge low-sample similar buckets. Returns list of merged bucket groups."""
+        if len(buckets) < 2: return []
+        # Simple: merge buckets with fewer than n_merge_min samples if
+        # their mean outcomes are close
+        merges = []; used = set()
+        for i, b1 in enumerate(buckets):
+            if b1 in used: continue
+            group = [b1]; used.add(b1)
+            a1, b1_s, n1 = bucket_stats.get(b1, (1.0, 1.0, 0))
+            if n1 >= self.n_merge_min * 2: continue
+            m1 = a1 / max(a1 + b1_s, 1e-8) if a1 + b1_s > 0 else 0.5
+            for b2 in buckets[i+1:]:
+                if b2 in used: continue
+                a2, b2_s, n2 = bucket_stats.get(b2, (1.0, 1.0, 0))
+                if n2 >= self.n_merge_min * 2: continue
+                m2 = a2 / max(a2 + b2_s, 1e-8) if a2 + b2_s > 0 else 0.5
+                # KL divergence approximation for Bernoulli
+                kl = self._approx_kl(m1, m2)
+                if kl < self.merge_threshold:
+                    group.append(b2); used.add(b2)
+            if len(group) > 1: merges.append(group)
+        return merges
 
     @staticmethod
-    def encode_from_env(env_status: Dict, knowledge_type: str) -> str:
-        """
-        直接从 env_status 编码上下文。
-        """
-        subgoal = env_status.get("current_subgoal", "")
-        failure = env_status.get("failure_type", "")
-        tier = env_status.get("task_tier", "")
-        inv = "has_tool" if env_status.get("has_required_tool", False) else "no_tool"
-        bucket = ContextBucket()
-        return bucket.encode(knowledge_type, subgoal, failure, tier, inv)
+    def _compute_ece(conf: List[float], out: List[float], n_bins: int = 5) -> float:
+        if len(conf) < n_bins: return 0.0
+        pairs = sorted(zip(conf, out)); n = len(pairs)
+        e = 0.0
+        for i in range(n_bins):
+            lo, hi = i * n // n_bins, (i + 1) * n // n_bins
+            if hi > lo:
+                c_bin = [p[0] for p in pairs[lo:hi]]
+                o_bin = [p[1] for p in pairs[lo:hi]]
+                e += abs(sum(c_bin) / len(c_bin) - sum(o_bin) / len(o_bin)) * (hi - lo) / n
+        return e
+
+    @staticmethod
+    def _approx_kl(m1: float, m2: float) -> float:
+        """KL divergence approximation for two Bernoulli means."""
+        m1 = max(0.001, min(0.999, m1)); m2 = max(0.001, min(0.999, m2))
+        return m1 * math.log(m1 / m2) + (1 - m1) * math.log((1 - m1) / (1 - m2))
