@@ -125,6 +125,30 @@ def paired_bs(a, b, n=1000):
         ds.append(sa - sb)
     ds = np.array(ds); return np.mean(ds), np.percentile(ds, 2.5), np.percentile(ds, 97.5)
 
+def hierarchical_bs(episodes: list, n_boot=1000):
+    """Hierarchical bootstrap over seed x task for proper CI."""
+    if not episodes: return 0, 0, 0
+    seeds = {}; tasks = {}
+    for ep in episodes:
+        s, t = ep.get("seed"), ep.get("task")
+        if s is None or t is None: continue
+        seeds.setdefault(s, []).append(ep); tasks.setdefault(t, []).append(ep)
+    seed_ids = list(seeds.keys())
+    vals = []
+    for _ in range(n_boot):
+        bs = np.random.choice(seed_ids, len(seed_ids), replace=True)
+        val = 0.0; n = 0
+        for s in bs:
+            tsk_eps = seeds.get(s, episodes)
+            bt = np.random.choice(len(tsk_eps), len(tsk_eps), replace=True)
+            for i in bt:
+                e = tsk_eps[i]
+                val += 1.0 if e.get("ok", e.get("success")) else 0.0
+                n += 1
+        vals.append(val / n if n else 0)
+    vals = np.array(vals)
+    return np.mean(vals), np.percentile(vals, 2.5), np.percentile(vals, 97.5)
+
 # ═══════════════════ Main ═══════════════════
 def main():
     print("=" * 60 + "\nCASK Full Experiment — E0-E6\n" + "=" * 60)
@@ -195,11 +219,16 @@ def main():
         cr, cs, rs = CovR(mk, EPS); cr5, _, _ = CovR(mk, 0.05)
         rcr = sum(1 for x in int_data if x.get("resource_conflict")) / max(len(int_data), 1)
         cfr = sum(1 for x in int_data if not x.get("chain_success")) / max(len(int_data), 1)
+        # Budget: aggregate tokens/calls from episode logs
+        emk = [x for x in ep_data if x.get("method") == m]
+        tok_med = np.median([x.get("tokens", 0) for x in emk]) if emk else 0
+        call_med = np.median([x.get("llm_calls", 0) for x in emk]) if emk else 0
         if m in e3r:
             e3r[m].update({"KUS": round(ku, 3), "HRR": round(hr, 3), "IRR": round(ir, 3),
                            "Coverage": round(co, 3), "ECE": round(ec, 3),
                            "Cov@Risk<=10%": cr, "Cov@Risk<=5%": cr5,
-                           "RCR": round(rcr, 3), "CFR": round(cfr, 3)})
+                           "RCR": round(rcr, 3), "CFR": round(cfr, 3),
+                           "Tokens_med": int(tok_med), "Calls_med": int(call_med)})
 
     # Paired comparisons
     pairs = {}
@@ -278,14 +307,23 @@ def main():
     with open(os.path.join(OUT, "fig5_evolution.json"), "w") as f: json.dump(evo_rounds, f)
 
     # ═══ Final Table ═══
-    print(f"\n{'='*60}\nE3 MAIN TABLE (per 实验设计2)\n{'='*60}")
-    print(f"{'Method':25s} {'SR':>7} {'HardSR':>7} {'KUS':>7} {'HRR↓':>7} {'IRR↓':>7} {'Cov@R10':>8} {'ECE':>7} {'RCR':>7} {'CFR':>7}")
-    print("-" * 90)
+    print(f"\n{'='*70}\nE3 MAIN TABLE\n{'='*70}")
+    hdr = f"{'Method':25s} {'SR':>6} {'HardSR':>6} {'KUS':>6} {'HRR':>6} {'Cov@10%':>7} {'ECE':>6} {'Tok':>8} {'Call':>5}"
+    print(hdr)
+    print("-" * 75)
     for m in METHODS:
         r = e3r.get(m, {})
         if r:
-            hardsr_val = e3r.get(m, {}).get("HardSR", e3r.get(m, {}).get("SR", 0))
-            print(f"{m:25s} {r['SR']:6.3f} {hardsr_val:6.3f} {r['KUS']:6.3f} {r['HRR']:6.3f} {r['IRR']:6.3f} {r['Cov@Risk<=10%']:7.3f} {r['ECE']:6.3f} {r['RCR']:6.3f} {r['CFR']:6.3f}")
+            hardsr_val = r.get("HardSR", r.get("SR", 0))
+            print(f"{m:25s} {r['SR']:5.3f} {hardsr_val:5.3f} {r['KUS']:5.3f} {r['HRR']:5.3f} {r['Cov@Risk<=10%']:6.3f} {r['ECE']:5.3f} {r.get('Tokens_med',0):7d} {r.get('Calls_med',0):4d}")
+
+    # E4 Ablation table
+    if e4r:
+        print(f"\n{'='*60}\nE4 ABLATION TABLE\n{'='*60}")
+        print(f"{'Variant':25s} {'SR':>6} {'KUS':>6} {'HRR':>6} {'IRR':>6}")
+        print("-" * 50)
+        for vname, r in e4r.items():
+            print(f"{vname:25s} {r['SR']:5.3f} {r.get('KUS',0):5.3f} {r.get('HRR',0):5.3f} {r.get('IRR',0):5.3f}")
 
     final = os.path.join(OUT, f"final_{int(time.time())}.json")
     with open(final, "w") as f: json.dump({"config": {"t_eps": te, "n_calib": nc}, "e3": e3r, "e4": e4r, "pairs": pairs, "e1": ar.get("e1", []), "fig2": fig2[:10], "fig3": fig3, "fig4": fig4[:10], "fig5": evo_rounds}, f, indent=2)

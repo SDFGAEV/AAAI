@@ -26,8 +26,9 @@ class CaskMemory:
         self.log_dir = log_dir; self._cf_branches = []
         # All 7 log types
         self.elogs = []; self.slogs = []; self.klogs = []
-        self.blogs = []; self.cflogs = []; self.ilogs = []
+        self.blogs = []; self.cflogs = []; self.ilogs = []; self.vlogs = []
         self._prev_kid = None; self._pairwise_harm = {}
+        self._knowledge_cnt = 0
         self._backtrack = 0; self._repfail = {}
 
     # --- Pass-through ---
@@ -60,6 +61,14 @@ class CaskMemory:
         if harmful: self._pairwise_harm[key][0] += 1.0
         else: self._pairwise_harm[key][1] += 1.0
 
+    # --- version log (E5 online evolution) ---
+    def record_version(self, version_id="", prev_version="", new_knowledge=0,
+                       shadow_eval=0, promote=False, rollback=False):
+        self.vlogs.append({"version_id": version_id, "previous_version": prev_version,
+            "new_knowledge_count": new_knowledge, "shadow_eval_episodes": shadow_eval,
+            "promote": promote, "rollback": rollback,
+            "knowledge_store_size": self._knowledge_cnt})
+
     # --- update episode stats before flush ---
     def update_last_episode(self, total_steps=0, llm_calls=0, wall_time_sec=0.0,
                             input_tokens=0, output_tokens=0):
@@ -81,6 +90,7 @@ class CaskMemory:
             "episode.jsonl": self.elogs, "subgoal.jsonl": self.slogs,
             "knowledge_reuse.jsonl": self.klogs, "fallback.jsonl": self.blogs,
             "cf_branch.jsonl": self.cflogs, "interaction.jsonl": self.ilogs,
+            "version.jsonl": self.vlogs,
         }
         for fname, data in files.items():
             if data:
@@ -88,7 +98,7 @@ class CaskMemory:
                     for e in data: f.write(json.dumps(e) + "\n")
         # Clear flushed logs
         self.elogs.clear(); self.slogs.clear(); self.klogs.clear()
-        self.blogs.clear(); self.cflogs.clear(); self.ilogs.clear()
+        self.blogs.clear(); self.cflogs.clear(); self.ilogs.clear(); self.vlogs.clear()
 
     # --- Intercepted: save_success_failure ---
     def save_success_failure(self, waypoint, language_action_str, is_success,
@@ -137,6 +147,7 @@ class CaskMemory:
         # Structured knowledge
         if is_success and n >= 2 and lcb > 0.3:
             self.elogs[-1]["knowledge_generated"] = f"s_{waypoint}_{int(n):02d}"
+            self._knowledge_cnt += 1
         if not is_success and n >= 2:
             self._backtrack += 1; self._repfail[waypoint] = self._repfail.get(waypoint, 0) + 1
             # Remedy type to klogs for IRR
@@ -156,8 +167,10 @@ class CaskMemory:
         trusted = self._decide(kid, ctx)
         n = self._store.total_count(kid, ctx); lcb = self._store.lcb(kid, ctx)
 
-        # §7: Interaction check — block reuse if conflict with previous knowledge
+        # Interaction check — block reuse if conflict with previous knowledge
+        _conflict_pair = None
         if trusted and self._prev_kid and self._check_interaction(self._prev_kid, kid):
+            _conflict_pair = [self._prev_kid, kid]
             trusted = False
 
         if trusted:
@@ -165,6 +178,15 @@ class CaskMemory:
             result = (True, sg) if is_ok else (False, None)
         else:
             result = (False, None)
+            # Log interaction conflict for RCR/CFR tracking
+            if _conflict_pair:
+                self.ilogs.append({
+                    "used_knowledge_chain": _conflict_pair,
+                    "chain_success": 0,
+                    "failure_reason": "trust_gate_rejected" if not _conflict_pair else "resource_conflict",
+                    "conflict_pairs": [_conflict_pair] if _conflict_pair else [],
+                    "resource_conflict": 1 if _conflict_pair else 0,
+                })
             if self.method != "NoKnowledge":
                 self._store.record_episode(kid, ctx, used=False, success=0.0, is_harmful=0.0)
 
