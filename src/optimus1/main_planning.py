@@ -678,8 +678,9 @@ def main(cfg: DictConfig):
             #     "prefix": prefix,
             # }, allow_val_change=True)
 
-            # Per-task timeout (300s = 5 min)
+            # Per-task timeout (300s = 5 min) with wall-time + token tracking
             from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+            _t_start = time.time()
             TASK_TIMEOUT = 300
             with ThreadPoolExecutor(max_workers=1) as executor:
                 future = executor.submit(
@@ -690,9 +691,13 @@ def main(cfg: DictConfig):
                 except FutureTimeoutError:
                     logger.error(f"Task timeout ({TASK_TIMEOUT}s): {goal}")
                     status, steps, completed_subgoals, failed_subgoals, failed_waypoints = "timeout", 0, [], [], []
+            _wall_time = time.time() - _t_start
+            _llm_calls = (len(completed_subgoals) + len(failed_subgoals) + len(failed_waypoints)) * 2  # plan + action per subgoal
+            _tokens_est = _llm_calls * 600  # rough estimate: ~300 in + ~300 out per call
                 except Exception as e:
                     logger.error(f"Task exception: {e}")
                     status, steps, completed_subgoals, failed_subgoals, failed_waypoints = "exception", 0, [], [], []
+                    _wall_time, _llm_calls, _tokens_est = 0.0, 0, 0
 
             if status == "env_malmo_logger_error":
                 logger.error("env_malmo_logger_error")
@@ -793,7 +798,8 @@ def main(cfg: DictConfig):
             # CASKe: update stats and dump structured logs after each trial
             if hasattr(action_memory, 'dump_logs') and not cask_frozen:
                 if hasattr(action_memory, 'update_last_episode'):
-                    action_memory.update_last_episode(total_steps=steps)
+                    action_memory.update_last_episode(total_steps=steps,
+                        llm_calls=_llm_calls, wall_time_sec=round(_wall_time, 1))
                 action_memory.dump_logs()
 
             img_dir = os.path.join(hydra_path, run_uuid, "imgs")
