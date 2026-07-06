@@ -618,7 +618,7 @@ def main(cfg: DictConfig):
     cask_t_eps = cfg.get("cask_t_eps", 0.0)
     cask_frozen = cfg.get("cask_frozen", False)
     cask_cf = cfg.get("cask_cf_branching", False)
-    cask_log_dir = os.path.join(cfg["results"]["path"], "cask_logs") if cfg.get("results", {}).get("path") else None
+    cask_log_dir = os.path.join(os.getcwd(), "exp_results", "cask_logs") if cfg.get("results", {}).get("path") else None
     # Adaptive active calibration: rate auto-adjusted by CaskMemory per decision
     ac_rate = 0.15 if cask_cf else 0.0  # default, overridden by adaptive logic per-call
     action_memory = CaskMemory(action_memory, method=cask_method, t_eps=cask_t_eps,

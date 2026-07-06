@@ -93,21 +93,19 @@ def save_ckpt(name, data):
 # ═══════════════════ Collect logs ═══════════════════
 def collect_logs():
     """Load all 7 log types from CaskMemory dump directory."""
-    log_dir = os.path.join(OUT, "cask_logs", "logs")
-    if not os.path.exists(log_dir):
-        log_dir = os.path.join(SRC, "logs", "eval")
-        # Find latest hydra run's cask_logs
-        subdirs = sorted(glob.glob(os.path.join(log_dir, "*", "cask_logs"))) if os.path.exists(log_dir) else []
-        if subdirs: log_dir = subdirs[-1]
+    log_dir = os.path.join(OUT, "cask_logs")
+    if not os.path.exists(os.path.join(log_dir, "knowledge_reuse.jsonl")):
+        # Fallback: search hydra output dirs under logs/
+        hydra_dirs = sorted(glob.glob(os.path.join(PROJ, "logs", "eval", "*")))
+        for d in reversed(hydra_dirs):
+            cask_dir = os.path.join(d, "cask_logs")
+            if os.path.exists(os.path.join(cask_dir, "knowledge_reuse.jsonl")):
+                log_dir = cask_dir; break
         else:
-            # Try OUT/cask_logs
-            alt = os.path.join(OUT, "cask_logs")
-            if os.path.exists(alt): log_dir = alt
-            else:
-                for d in [OUT, PROJ]:
-                    for root, dirs, files in os.walk(d):
-                        if "knowledge_reuse.jsonl" in files:
-                            log_dir = root; break
+            # Last resort: walk the project
+            for root, dirs, files in os.walk(OUT):
+                if "knowledge_reuse.jsonl" in files:
+                    log_dir = root; break
     logs = {}
     for fname in ["episode","subgoal","knowledge_reuse","fallback","cf_branch","interaction"]:
         path = os.path.join(log_dir, f"{fname}.jsonl")
