@@ -1,12 +1,18 @@
 """
 CASK Full Experiment — 满配。E0-E6, 7 logs, all metrics, Fig 2-5.
 """
-import subprocess, os, sys, json, time, copy, math, hashlib, glob
+import subprocess, os, sys, json, time, copy, math, hashlib, glob, platform
 import numpy as np; from scipy.stats import beta as beta_dist
 
 PY = sys.executable; PROJ = os.path.dirname(os.path.dirname(__file__))
 SRC = os.path.join(PROJ, "src"); OUT = os.path.join(PROJ, "exp_results")
 os.makedirs(OUT, exist_ok=True); EPS = 0.10
+IS_WIN = platform.system() == "Windows"
+
+# --- platform-aware defaults ---
+_MINERL = os.environ.get("XENON_MINERL", os.path.join(PROJ, "..", "XENON_original", "minerl"))
+_JAVA   = os.environ.get("XENON_JAVA_HOME", os.environ.get("JAVA_HOME", "D:/mc java/JAVA8" if IS_WIN else ""))
+_HF_CACHE = os.environ.get("HF_HOME", os.environ.get("HF_HUB_CACHE", "D:/huggingface_cache" if IS_WIN else ""))
 METHODS = ["NoKnowledge","NoTrust","RawSuccess","MeanUplift","CounterfactualTrust","Full-Frozen"]
 TRAIN = range(2001, 2009); CALIB = range(3001, 3009); TEST = range(4001, 4009)
 
@@ -16,10 +22,14 @@ def run_seeds(phase, seeds, method="NoTrust", t_eps=0.0, extra="", bench="cask_t
     overrides = f"+cask_method={method} +cask_t_eps={t_eps} {extra}".strip()
     for s in seeds:
         cmd = [PY, "-u", "-m", "optimus1.main_planning", f"benchmark={bench}", f"seed={s}"] + overrides.split()
-        env = os.environ.copy(); env["PYTHONPATH"] = f"{SRC};{PROJ};E:/open-world agent/XENON_original/minerl"; env["HYDRA_FULL_ERROR"] = "1"
-        env["JAVA_HOME"] = "D:/mc java/JAVA8"
+        env = os.environ.copy()
+        env["PYTHONPATH"] = os.pathsep.join([SRC, PROJ, _MINERL])
+        env["HYDRA_FULL_ERROR"] = "1"
+        if _JAVA:
+            env["JAVA_HOME"] = _JAVA
         env["HF_HUB_OFFLINE"] = "1"; env["TRANSFORMERS_OFFLINE"] = "1"
-        env["HF_HOME"] = "D:/huggingface_cache"
+        if _HF_CACHE:
+            env["HF_HOME"] = _HF_CACHE
         env["WANDB_MODE"] = "disabled"; env["PYTHONIOENCODING"] = "utf-8"
         print(f"  {phase} s={s} m={method}: ", end="", flush=True)
         try:

@@ -1,10 +1,12 @@
-# Windows fcntl monkey-patch for MineRL
-import fcntl as _fcntl
-_fcntl.fcntl = lambda fd, cmd, arg=0: 0
-_fcntl.F_GETFD = 1; _fcntl.F_SETFD = 2; _fcntl.FD_CLOEXEC = 1
-_fcntl.lockf = lambda fd, cmd, len=0, start=0, whence=0: None
-_fcntl.LOCK_EX = getattr(_fcntl, 'LOCK_EX', 2)
-_fcntl.LOCK_UN = getattr(_fcntl, 'LOCK_UN', 8)
+# Windows fcntl monkey-patch for MineRL (no-op on Linux)
+import os as _os
+if _os.name == 'nt':
+    import fcntl as _fcntl
+    _fcntl.fcntl = lambda fd, cmd, arg=0: 0
+    _fcntl.F_GETFD = 1; _fcntl.F_SETFD = 2; _fcntl.FD_CLOEXEC = 1
+    _fcntl.lockf = lambda fd, cmd, len=0, start=0, whence=0: None
+    _fcntl.LOCK_EX = getattr(_fcntl, 'LOCK_EX', 2)
+    _fcntl.LOCK_UN = getattr(_fcntl, 'LOCK_UN', 8)
 
 import copy
 import json
