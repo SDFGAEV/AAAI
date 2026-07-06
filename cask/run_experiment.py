@@ -107,38 +107,8 @@ def collect_logs():
     return logs
 
 # ═══════════════════ Metrics ═══════════════════
-def KUS(data):
-    r = [x for x in data if x.get("decision") == "reuse"]
-    return sum(1 for x in r if x.get("outcome_success")) / len(r) if r else 0.0
-def HRR(data):
-    r = [x for x in data if x.get("decision") == "reuse"]
-    return sum(1 for x in r if x.get("is_harmful")) / len(r) if r else 0.0
-def IRR(data):
-    rem = [x for x in data if x.get("type") == "remedy"]
-    return sum(1 for x in rem if not x.get("failure_resolved", False)) / len(rem) if rem else 0.0
-def Cov(data):
-    return sum(1 for x in data if x.get("decision") == "reuse") / len(data) if data else 0.0
-def ECE(data):
-    ss = [x["trust_score"] for x in data if "trust_score" in x and x["trust_score"] is not None]
-    os_ = [1.0 if x.get("outcome_success") else 0.0 for x in data if "trust_score" in x and x["trust_score"] is not None]
-    if len(ss) < 10: return 0.0
-    ss, os_ = np.array(ss), np.array(os_); idx = np.argsort(ss); ss, os_ = ss[idx], os_[idx]
-    n, nb, e = len(ss), 5, 0.0
-    for i in range(nb):
-        lo, hi = i * n // nb, (i + 1) * n // nb
-        if hi > lo: e += abs(np.mean(ss[lo:hi]) - np.mean(os_[lo:hi])) * (hi - lo) / n
-    return float(e)
-def CovR(data, eps=EPS):
-    sc = sorted([x for x in data if "trust_score" in x], key=lambda x: x["trust_score"], reverse=True)
-    if not sc: return 0.0, [], []
-    N, best, cs, rs = len(sc), 0.0, [], []
-    for x in sc:
-        t = x["trust_score"]; acc = sum(1 for s in sc if s["trust_score"] >= t); cov = acc / N
-        harm = sum(1 for s in sc if s["trust_score"] >= t and s.get("is_harmful"))
-        ru = float(beta_dist.ppf(0.95, harm + 1, acc - harm + 1)) if acc else 1.0
-        cs.append(cov); rs.append(harm / acc if acc else 0)
-        if ru <= eps and cov > best: best = cov
-    return round(best, 3), cs, rs
+from cask.metrics import (compute_kus as KUS, compute_hrr as HRR, compute_irr as IRR,
+                           compute_coverage as Cov, compute_ece as ECE, compute_cov_risk as CovR)
 def wilson_ci(s, t, z=1.96):
     if t == 0: return (0, 0)
     p = s / t; d = 1 + z * z / t; c = (p + z * z / (2 * t)) / d

@@ -1,147 +1,87 @@
 """
-Metrics: 知识使用评估指标。
+Metrics for CASK trust gate evaluation.
 
-KUS  = Knowledge Usage Success    — 使用知识后推进任务的比例
-HRR  = Harmful Reuse Rate         — 复用知识后失败的比例
-IRR  = Invalid Repair Rate        — remedy 修复无效的比例
-ECE  = Expected Calibration Error — 置信度校准误差
+Log schema (produced by CaskMemory):
+  decision:      "reuse" | "fallback" | "no_knowledge"
+  outcome_success: bool
+  is_harmful:    bool
+  type:          "skill" | "remedy"
+  failure_resolved: bool
+  trust_score:   float | None
+
+KUS  = Knowledge Usage Success   — P(success | reused knowledge)
+HRR  = Harmful Reuse Rate        — P(harmful | reused)
+IRR  = Invalid Repair Rate       — P(remedy fails to fix)
+ECE  = Expected Calibration Error
 """
 
-import math
 import numpy as np
 from typing import Dict, List, Tuple
 
 
-def compute_kus(usage_log: List[Dict]) -> float:
-    """
-    KUS = knowledge_advanced_task / total_knowledge_used
-
-    分母: 所有被使用（reuse）的知识次数
-    分子: 使用后任务推进（subgoal 完成 / progress 增加）
-    """
-    total = len(usage_log)
-    if total == 0:
+def compute_kus(data: List[Dict]) -> float:
+    reused = [x for x in data if x.get("decision") == "reuse"]
+    if not reused:
         return 0.0
-    successful = sum(1 for entry in usage_log if entry.get("advanced_task", False))
-    return successful / total
+    return sum(1 for x in reused if x.get("outcome_success")) / len(reused)
 
 
-def compute_hrr(usage_log: List[Dict]) -> float:
-    """
-    HRR = harmful_uses / total_knowledge_used
-
-    有害复用 = 使用了知识但 subgoal 失败 或 导致不可恢复失败
-    """
-    total = len(usage_log)
-    if total == 0:
+def compute_hrr(data: List[Dict]) -> float:
+    reused = [x for x in data if x.get("decision") == "reuse"]
+    if not reused:
         return 0.0
-    harmful = sum(1 for entry in usage_log
-                  if not entry.get("advanced_task", False))
-    return harmful / total
+    return sum(1 for x in reused if x.get("is_harmful")) / len(reused)
 
 
-def compute_irr(remedy_log: List[Dict]) -> float:
-    """
-    IRR = remedy_failed_to_recover / remedy_used
-
-    只针对 remedy：用了 remedy 但未能修复 failure
-    """
-    total = len(remedy_log)
-    if total == 0:
+def compute_irr(data: List[Dict]) -> float:
+    remedies = [x for x in data if x.get("type") == "remedy"]
+    if not remedies:
         return 0.0
-    invalid = sum(1 for entry in remedy_log
-                  if not entry.get("failure_resolved", False))
-    return invalid / total
+    return sum(1 for x in remedies if not x.get("failure_resolved", False)) / len(remedies)
 
 
-def compute_ece(confidence_list: List[float],
-                outcome_list: List[float],
-                n_bins: int = 10) -> float:
-    """
-    ECE = Expected Calibration Error
-
-    将 confidence 分桶，计算每个桶内置信度均值与真实准确率的差异。
-    越低说明校准越好。
-    """
-    if len(confidence_list) == 0:
+def compute_coverage(data: List[Dict]) -> float:
+    if not data:
         return 0.0
+    return sum(1 for x in data if x.get("decision") == "reuse") / len(data)
 
-    conf = np.array(confidence_list)
-    out = np.array(outcome_list)
 
-    bin_edges = np.linspace(0, 1, n_bins + 1)
-    bin_indices = np.digitize(conf, bin_edges) - 1
-    bin_indices = np.clip(bin_indices, 0, n_bins - 1)
-
-    ece = 0.0
+def compute_ece(data: List[Dict], n_bins: int = 5) -> float:
+    pairs = [(x["trust_score"], 1.0 if x.get("outcome_success") else 0.0)
+             for x in data if "trust_score" in x and x["trust_score"] is not None]
+    if len(pairs) < n_bins:
+        return 0.0
+    scores = np.array([p[0] for p in pairs])
+    outcomes = np.array([p[1] for p in pairs])
+    idx = np.argsort(scores)
+    scores, outcomes = scores[idx], outcomes[idx]
+    n = len(scores)
+    e = 0.0
     for i in range(n_bins):
-        mask = bin_indices == i
-        if np.sum(mask) == 0:
-            continue
-        bin_conf = np.mean(conf[mask])
-        bin_acc = np.mean(out[mask])
-        ece += np.sum(mask) * abs(bin_conf - bin_acc)
-
-    return ece / len(conf)
+        lo, hi = i * n // n_bins, (i + 1) * n // n_bins
+        if hi > lo:
+            e += abs(np.mean(scores[lo:hi]) - np.mean(outcomes[lo:hi])) * (hi - lo) / n
+    return float(e)
 
 
-def compute_risk_coverage(usage_log: List[Dict],
-                          gate_decisions: List[bool]) -> Tuple[List[float], List[float]]:
-    """
-    计算 risk-coverage 曲线。
-
-    coverage = reused / (reused + fallback)
-    risk = harmful_reuse / reused
-
-    返回 (coverage_list, risk_list) 用于绘图。
-    """
-    total_decisions = len(gate_decisions)
-    if total_decisions == 0:
-        return [], []
-
-    coverages = []
-    risks = []
-
-    for threshold in np.linspace(0, 1, 20):
-        accepted = sum(1 for d in gate_decisions if d >= threshold)
-        harmful = sum(1 for i, d in enumerate(gate_decisions)
-                      if d >= threshold and not usage_log[i].get("advanced_task", False))
-
-        coverage = accepted / total_decisions if total_decisions > 0 else 0
-        risk = harmful / accepted if accepted > 0 else 0
-
-        coverages.append(coverage)
-        risks.append(risk)
-
-    return coverages, risks
-
-
-def calibration_diagram(confidence_list: List[float],
-                        outcome_list: List[float],
-                        n_bins: int = 10):
-    """
-    生成 reliability diagram 的数据。
-
-    返回 (bin_confidences, bin_accuracies) 用于绘制校准曲线。
-    """
-    conf = np.array(confidence_list)
-    out = np.array(outcome_list)
-
-    if len(conf) == 0:
-        return [], []
-
-    bin_edges = np.linspace(0, 1, n_bins + 1)
-    bin_indices = np.digitize(conf, bin_edges) - 1
-    bin_indices = np.clip(bin_indices, 0, n_bins - 1)
-
-    bin_confs = []
-    bin_accs = []
-
-    for i in range(n_bins):
-        mask = bin_indices == i
-        if np.sum(mask) == 0:
-            continue
-        bin_confs.append(float(np.mean(conf[mask])))
-        bin_accs.append(float(np.mean(out[mask])))
-
-    return bin_confs, bin_accs
+def compute_cov_risk(data: List[Dict], eps: float = 0.10
+                     ) -> Tuple[float, List[float], List[float]]:
+    """Coverage at risk <= eps, plus full (coverage, risk) curves."""
+    from scipy.stats import beta as beta_dist
+    sc = sorted([x for x in data if "trust_score" in x],
+                key=lambda x: x["trust_score"], reverse=True)
+    if not sc:
+        return 0.0, [], []
+    N = len(sc)
+    best_cov, covs, risks = 0.0, [], []
+    for x in sc:
+        t = x["trust_score"]
+        acc = sum(1 for s in sc if s["trust_score"] >= t)
+        cov = acc / N
+        harm = sum(1 for s in sc if s["trust_score"] >= t and s.get("is_harmful"))
+        risk_ub = float(beta_dist.ppf(0.95, harm + 1, acc - harm + 1)) if acc else 1.0
+        covs.append(cov)
+        risks.append(harm / acc if acc else 0)
+        if risk_ub <= eps and cov > best_cov:
+            best_cov = cov
+    return round(best_cov, 3), covs, risks
