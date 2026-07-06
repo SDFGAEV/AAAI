@@ -691,13 +691,12 @@ def main(cfg: DictConfig):
                 except FutureTimeoutError:
                     logger.error(f"Task timeout ({TASK_TIMEOUT}s): {goal}")
                     status, steps, completed_subgoals, failed_subgoals, failed_waypoints = "timeout", 0, [], [], []
-            _wall_time = time.time() - _t_start
-            _llm_calls = (len(completed_subgoals) + len(failed_subgoals) + len(failed_waypoints)) * 2  # plan + action per subgoal
-            _tokens_est = _llm_calls * 600  # rough estimate: ~300 in + ~300 out per call
                 except Exception as e:
                     logger.error(f"Task exception: {e}")
                     status, steps, completed_subgoals, failed_subgoals, failed_waypoints = "exception", 0, [], [], []
-                    _wall_time, _llm_calls, _tokens_est = 0.0, 0, 0
+            _wall_time = time.time() - _t_start
+            _llm_calls = (len(completed_subgoals) + len(failed_subgoals) + len(failed_waypoints)) * 2
+            _tokens_est = _llm_calls * 600
 
             if status == "env_malmo_logger_error":
                 logger.error("env_malmo_logger_error")
