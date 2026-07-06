@@ -562,8 +562,8 @@ def new_agent_do(
 
 @hydra.main(version_base=None, config_path="conf", config_name="evaluate")
 def main(cfg: DictConfig):
-    # Project root: go up 3 levels from this file (src/optimus1/main_planning.py -> XENON_cask/)
-    _PROJ = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+    # Project root: go up 2 levels from src/optimus1/ -> XENON_cask/
+    _PROJ = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     register_custom_env(cfg)
 
     logger = get_logger(__name__)
