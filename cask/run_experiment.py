@@ -111,7 +111,7 @@ def collect_logs():
 # ═══════════════════ Metrics ═══════════════════
 from cask.metrics import (compute_kus as KUS, compute_hrr as HRR, compute_irr as IRR,
                            compute_coverage as Cov, compute_ece as ECE, compute_cov_risk as CovR,
-                           compute_hardsr, compute_rcr, compute_cfr)
+                           compute_hardsr, compute_rcr, compute_cfr, compute_kpr as KPR)
 def wilson_ci(s, t, z=1.96):
     if t == 0: return (0, 0)
     p = s / t; d = 1 + z * z / t; c = (p + z * z / (2 * t)) / d
@@ -244,7 +244,8 @@ def main():
                            "Cov@Risk<=10%": cr, "Cov@Risk<=5%": cr5,
                            "RCR": round(rcr, 3), "CFR": round(cfr, 3),
                            "RAS": ras,
-                           "Tokens_med": int(tok_med), "Calls_med": int(call_med)})
+                           "Tokens_med": int(tok_med), "Calls_med": int(call_med),
+                           "KPR": round(KPR(e3r.get(m, {}).get("version_logs", [])), 3)})
 
     # Paired comparisons
     pairs = {}
