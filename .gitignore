@@ -33,3 +33,4 @@ minerl/minerl/MCP-Reborn/
 checkpoints/
 *.jar
 ckpt/
+*.tar.gz
