@@ -51,9 +51,19 @@ def _ensure_minecraft():
 
 # ═══════════════════ Run ═══════════════════
 def run_seeds(phase, seeds, method="NoTrust", t_eps=0.0, extra="", bench="cask_train"):
+    ckpt_path = os.path.join(OUT, f"ckpt_{phase}.json")
+    # Resume: load completed seeds
     results = []
+    done_seeds = set()
+    if os.path.exists(ckpt_path):
+        prev = json.load(open(ckpt_path))
+        results = prev
+        done_seeds = {r["seed"] for r in prev}
     overrides = f"+cask_method={method} +cask_t_eps={t_eps} {extra}".strip()
     for s in seeds:
+        if s in done_seeds:
+            print(f"  {phase} s={s} m={method}: SKIP (cached)")
+            continue
         cmd = [PY, "-u", "-m", "optimus1.main_planning", f"benchmark={bench}", f"seed={s}"] + overrides.split()
         env = os.environ.copy()
         env["PYTHONPATH"] = os.pathsep.join([SRC, PROJ, _MINERL])
