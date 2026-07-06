@@ -13,7 +13,7 @@ IS_WIN = platform.system() == "Windows"
 _MINERL = os.environ.get("XENON_MINERL", os.path.join(PROJ, "minerl"))
 _JAVA   = os.environ.get("XENON_JAVA_HOME", os.environ.get("JAVA_HOME", "D:/mc java/JAVA8" if IS_WIN else ""))
 _HF_CACHE = os.environ.get("HF_HOME", os.environ.get("HF_HUB_CACHE", "D:/huggingface_cache" if IS_WIN else ""))
-METHODS = ["NoKnowledge","NoTrust","RawSuccess","MeanUplift","CounterfactualTrust","Fixed-Bayes","Adaptive-Bayes","ACT-RL-Full"]
+METHODS = ["NoKnowledge","NoTrust","RawSuccess","MeanUplift","Fixed-Bayes","Adaptive-Bayes","ACT-RL-Full"]
 E3_METHODS = ["NoKnowledge","NoTrust","RawSuccess","MeanUplift","Fixed-Bayes","Adaptive-Bayes","ACT-RL-Full"]  # 7 methods for E3
 E4_VARIANTS = ["ACT-RL-Full","w/o_adaptive_priors","w/o_adaptive_thresholds","w/o_conformal","w/o_decay","w/o_interaction","w/o_active_calib","w/o_thompson"]
 TRAIN = range(2001, 2009); CALIB = range(3001, 3009); TEST = range(4001, 4009)
@@ -199,7 +199,7 @@ def main():
     print(f"\nE3: Strict Frozen — {len(METHODS)} methods × {len(TEST)} seeds")
     e3r, e3_raw = {}, {}
     for m in METHODS:
-        mt = te if m in ("CounterfactualTrust", "Full-Frozen") else 0.0
+        mt = te if m in ("Fixed-Bayes", "Adaptive-Bayes", "ACT-RL-Full") else 0.0
         e3_raw[m] = run_seeds(f"E3_{m}", TEST, method=m, t_eps=mt,
                               extra="+cask_frozen=true", bench="cask_p3")
         ok = sum(1 for r in e3_raw[m] if r["ok"]); tot = len(e3_raw[m])
@@ -239,11 +239,11 @@ def main():
 
     # Paired comparisons
     pairs = {}
-    for mn in ["NoTrust", "CounterfactualTrust"]:
-        if "Full-Frozen" in e3_raw and mn in e3_raw:
-            d, lo, hi = paired_bs(e3_raw["Full-Frozen"], e3_raw[mn])
+    for mn in ["NoTrust", "Adaptive-Bayes"]:
+        if "ACT-RL-Full" in e3_raw and mn in e3_raw:
+            d, lo, hi = paired_bs(e3_raw["ACT-RL-Full"], e3_raw[mn])
             pairs[mn] = f"{d:+.3f} [{lo:.3f}, {hi:.3f}]"
-    if pairs: print(f"\nPaired vs Full-Frozen: {pairs}")
+    if pairs: print(f"\nPaired vs ACT-RL-Full: {pairs}")
 
     # ═══ E4: Ablation ═══
     # 5 variants on 12 hard tasks x 5 seeds = 300 episodes
@@ -251,14 +251,17 @@ def main():
     ABL_SEEDS = range(4001, 4006)
     e4r = {}
     abl_variants = [
-        ("Full-Frozen",     "Full-Frozen", "CounterfactualTrust"),
-        ("NoCalibration",   "t_eps=0",     "CounterfactualTrust"),
-        ("NoCFCert",        "RawSuccess",  "RawSuccess"),
-        ("NoInteraction",   "no_L3",       "CounterfactualTrust"),
-        ("NoTrust",         "baseline",    "NoTrust"),
+        ("ACT-RL-Full",             "complete",       "ACT-RL-Full"),
+        ("w/o_adaptive_priors",     "fixed priors",   "Adaptive-Bayes"),
+        ("w/o_adaptive_thresholds", "fixed tau=0.9",  "Fixed-Bayes"),
+        ("w/o_decay",               "fixed rho=0.95", "Adaptive-Bayes"),
+        ("w/o_interaction",         "no L3 check",    "Adaptive-Bayes"),
+        ("w/o_active_calib",        "no rand base",   "Adaptive-Bayes"),
+        ("w/o_thompson",            "no cold probe",  "Adaptive-Bayes"),
+        ("NoTrust",                 "baseline",       "NoTrust"),
     ]
     for vname, vdesc, vmethod in abl_variants:
-        vt = te if vmethod in ("CounterfactualTrust", "Full-Frozen") and vname != "NoCalibration" else 0.0
+        vt = te if vmethod in ("ACT-RL-Full", "Adaptive-Bayes", "Fixed-Bayes") and vname != "ACT-RL-Full" else te
         r = run_seeds(f"E4_{vname}", ABL_SEEDS, method=vmethod, t_eps=vt,
                       extra="+cask_frozen=true", bench="cask_p3")
         ok = sum(1 for x in r if x["ok"]); tot = len(r)
@@ -276,7 +279,7 @@ def main():
     # ═══ E5: Online Safe Evolution ═══
     # 10 rounds x 5 seeds x 2 methods = 100 evolution episodes
     print(f"\nE5: Online Safe Evolution - 10 rounds x 5 seeds x 2 methods")
-    for m in ["CounterfactualTrust", "Full-Frozen"]:
+    for m in ["Adaptive-Bayes", "ACT-RL-Full"]:
         mt = te
         for rn in range(10):
             r = run_seeds(f"E5_{m}_r{rn}", range(4001, 4006), method=m, t_eps=mt, bench="cask_p3")
@@ -284,7 +287,7 @@ def main():
 
     # ═══ E6: Cross-Base Portability ═══
     print(f"\nE6: Cross-Base - 8 seeds x 2 methods")
-    for m in ["NoTrust", "CounterfactualTrust"]:
+    for m in ["NoTrust", "ACT-RL-Full"]:
         r = run_seeds(f"E6_{m}", TEST, method=m, t_eps=te,
                       extra="+cask_frozen=true", bench="cask_p3")
 
@@ -333,16 +336,16 @@ def main():
         if r:
             print(f"{m:25s} {r['SR']:5.3f} {r.get('RAS',0):5.3f} {r['HRR']:5.3f} {r['KUS']:5.3f} {r['Cov@Risk<=10%']:6.3f} {r['ECE']:5.3f} {r.get('Tokens_med',0):7d} {r.get('Calls_med',0):4d}")
 
-    # NoTrust vs Full-Frozen risk comparison
-    nt = e3r.get("NoTrust", {}); ff = e3r.get("Full-Frozen", {})
-    if nt and ff:
-        print(f"\n{'='*60}\nRISK TRADEOFF: NoTrust vs Full-Frozen\n{'='*60}")
-        sr_gap = ff.get("SR", 0) - nt.get("SR", 0)
-        hrr_gap = nt.get("HRR", 0) - ff.get("HRR", 0)  # positive = Full-Frozen safer
-        ras_gap = ff.get("RAS", 0) - nt.get("RAS", 0)
-        print(f"  SR gap (FF - NT): {sr_gap:+.3f}  {'(Full-Frozen keeps pace)' if sr_gap > -0.03 else '(SR loss > 3%, concerning)' if sr_gap < -0.05 else ''}")
-        print(f"  HRR gap (NT - FF): {hrr_gap:+.3f}  {'(Full-Frozen much safer)' if hrr_gap > 0.03 else ''}")
-        print(f"  RAS gap (FF - NT): {ras_gap:+.3f}  {'(Full-Frozen wins risk-adjusted)' if ras_gap > 0 else '(NoTrust wins risk-adjusted — check your method!)'}")
+    # NoTrust vs ACT-RL-Full risk comparison
+    nt = e3r.get("NoTrust", {}); arl = e3r.get("ACT-RL-Full", {})
+    if nt and arl:
+        print(f"\n{'='*60}\nRISK TRADEOFF: NoTrust vs ACT-RL-Full\n{'='*60}")
+        sr_gap = arl.get("SR", 0) - nt.get("SR", 0)
+        hrr_gap = nt.get("HRR", 0) - arl.get("HRR", 0)  # positive = ACT-RL safer
+        ras_gap = arl.get("RAS", 0) - nt.get("RAS", 0)
+        print(f"  SR gap (ACT - NT): {sr_gap:+.3f}  {'(ACT-RL keeps pace)' if sr_gap > -0.03 else '(SR loss > 3%, concerning)' if sr_gap < -0.05 else ''}")
+        print(f"  HRR gap (NT - ACT): {hrr_gap:+.3f}  {'(ACT-RL much safer)' if hrr_gap > 0.03 else ''}")
+        print(f"  RAS gap (ACT - NT): {ras_gap:+.3f}  {'(ACT-RL wins risk-adjusted)' if ras_gap > 0 else '(NoTrust wins — check method!)'}")
 
     # E4 Ablation table
     if e4r:
