@@ -562,6 +562,8 @@ def new_agent_do(
 
 @hydra.main(version_base=None, config_path="conf", config_name="evaluate")
 def main(cfg: DictConfig):
+    # Project root: go up 3 levels from this file (src/optimus1/main_planning.py -> XENON_cask/)
+    _PROJ = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
     register_custom_env(cfg)
 
     logger = get_logger(__name__)
@@ -618,7 +620,7 @@ def main(cfg: DictConfig):
     cask_t_eps = cfg.get("cask_t_eps", 0.0)
     cask_frozen = cfg.get("cask_frozen", False)
     cask_cf = cfg.get("cask_cf_branching", False)
-    cask_log_dir = os.path.join(os.getcwd(), "exp_results", "cask_logs") if cfg.get("results", {}).get("path") else None
+    cask_log_dir = os.path.join(_PROJ, "exp_results", "cask_logs")
     # Adaptive active calibration: rate auto-adjusted by CaskMemory per decision
     ac_rate = 0.15 if cask_cf else 0.0  # default, overridden by adaptive logic per-call
     action_memory = CaskMemory(action_memory, method=cask_method, t_eps=cask_t_eps,
