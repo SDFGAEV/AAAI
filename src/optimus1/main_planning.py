@@ -619,8 +619,10 @@ def main(cfg: DictConfig):
     cask_frozen = cfg.get("cask_frozen", False)
     cask_cf = cfg.get("cask_cf_branching", False)
     cask_log_dir = os.path.join(cfg["results"]["path"], "cask_logs") if cfg.get("results", {}).get("path") else None
+    ac_rate = 0.15 if cask_cf else 0.0  # 15% forced-base exploration during calibration
     action_memory = CaskMemory(action_memory, method=cask_method, t_eps=cask_t_eps,
-                               frozen=cask_frozen, cf_branching=cask_cf, log_dir=cask_log_dir)
+                               frozen=cask_frozen, cf_branching=cask_cf,
+                               active_calib_rate=ac_rate, log_dir=cask_log_dir)
 
     if cfg["task"]["interactive"] and cfg["type"] != "headless":
         raise NotImplementedError("Not implemented yet!")

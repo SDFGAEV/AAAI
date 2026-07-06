@@ -13,7 +13,7 @@ class CaskMemory:
     def __init__(self, xenon_memory, method="CounterfactualTrust",
                  store_path: str = None, t_eps: float = 0.0, frozen_store=None,
                  frozen: bool = False, cf_branching: bool = False,
-                 log_dir: str = None):
+                 active_calib_rate: float = 0.0, log_dir: str = None):
         self._mem = xenon_memory
         self._store = TrustStore(store_path or "cask_ckpt/trust_store")
         if frozen_store is not None:
@@ -23,6 +23,7 @@ class CaskMemory:
         self._logger = logging.getLogger("CaskMemory")
         self.method = method; self.t_eps = t_eps
         self.frozen = frozen; self.cf_branching = cf_branching
+        self.active_calib_rate = active_calib_rate
         self.log_dir = log_dir; self._cf_branches = []
         # All 7 log types
         self.elogs = []; self.slogs = []; self.klogs = []
@@ -170,11 +171,25 @@ class CaskMemory:
         trusted = self._decide(kid, ctx)
         n = self._store.total_count(kid, ctx); lcb = self._store.lcb(kid, ctx)
 
+        # Active calibration: randomly force base outcomes for unbiased estimates
+        if trusted and self.active_calib_rate > 0 and np.random.random() < self.active_calib_rate:
+            trusted = False  # force fallback → record base outcome
+            self._store.record_episode(kid, ctx, used=False, success=0.5, is_harmful=0.0)
+            # Note: actual outcome updated later via save_success_failure
+
         # Interaction check — block reuse if conflict with previous knowledge
         _conflict_pair = None
         if trusted and self._prev_kid and self._check_interaction(self._prev_kid, kid):
             _conflict_pair = [self._prev_kid, kid]
-            trusted = False
+            # Check for synergy
+            delta_mean, delta_lcb, is_synergy, is_conflict = \
+                self._store.interaction_uplift(self._prev_kid, kid, ctx)
+            if is_conflict:
+                trusted = False
+            elif is_synergy:
+                pass  # keep trusted=True, synergy is good
+            else:
+                trusted = False  # default conservative: uncertain → block
 
         if trusted:
             is_ok, sg = self._mem.is_succeeded_waypoint(waypoint)

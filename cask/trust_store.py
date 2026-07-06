@@ -13,14 +13,28 @@ from scipy.stats import beta as beta_dist
 
 
 class TrustStore:
+    # Informative priors: pessimism about knowledge effectiveness,
+    # pessimism about base planner, optimism about safety.
+    PRIORS = {
+        "use":  (0.8, 1.2),   # mean=0.40 → "knowledge probably doesn't work"
+        "base": (0.6, 1.4),   # mean=0.30 → "base planner is bad"
+        "harm": (0.1, 2.0),   # mean=0.048 → "harms are rare"
+        "joint": (1.0, 1.0),  # uniform for joint outcomes
+    }
 
-    def __init__(self, store_path: str = None):
+    def __init__(self, store_path: str = None, prior_strength: float = 1.0):
+        """
+        prior_strength: multiplier for prior alpha/beta values.
+        1.0 = full informative prior, 0.0 = Beta(1,1) uniform.
+        """
         self.store_path = store_path or os.path.join(
             os.path.dirname(__file__), "..", "ckpt", "cask_cert"
         )
         os.makedirs(self.store_path, exist_ok=True)
         self._db_file = os.path.join(self.store_path, "cert_db.json")
         self._data: Dict[str, Dict] = {}
+        self._decay_events = 0
+        self._prior_strength = prior_strength
         self._load()
 
     def _make_key(self, kid: str, context: str, stat: str) -> str:
@@ -43,8 +57,27 @@ class TrustStore:
     def _get(self, kid: str, context: str, stat: str) -> Dict:
         k = self._make_key(kid, context, stat)
         if k not in self._data:
-            self._data[k] = {"alpha": 1.0, "beta": 1.0}
+            a0, b0 = self.PRIORS.get(stat, (1.0, 1.0))
+            s = self._prior_strength
+            self._data[k] = {"alpha": 1.0 + s*(a0-1.0), "beta": 1.0 + s*(b0-1.0)}
         return self._data[k]
+
+    # ──── Temporal decay (non-stationarity handling) ────
+    def decay_all(self, retention: float = 0.95):
+        """Exponentially rescale all posteriors towards their priors.
+        Effect: old observations fade out with half-life ~log(0.5)/log(retention) episodes.
+        With retention=0.95, half-life ≈ 14 episodes.
+        """
+        self._decay_events += 1
+        for k in list(self._data.keys()):
+            stat = k.rsplit("|", 1)[-1]  # "use", "base", or "harm"
+            a0, b0 = self.PRIORS.get(stat, (1.0, 1.0))
+            s = self._prior_strength
+            ta = 1.0 + s*(a0-1.0); tb = 1.0 + s*(b0-1.0)  # effective prior
+            d = self._data[k]
+            d["alpha"] = retention * d["alpha"] + (1 - retention) * ta
+            d["beta"]  = retention * d["beta"]  + (1 - retention) * tb
+        self._save()
 
     # ──── 记录 ────
 
@@ -130,6 +163,46 @@ class TrustStore:
         from scipy.stats import beta as beta_dist
         a, b = self.get_stats(kid, context, "harm")
         return float(beta_dist.cdf(h_max, a, b))
+
+    # ──── Interaction uplift (Layer 3 enhancement) ────
+
+    def record_joint(self, kid_i: str, kid_j: str, context: str,
+                     success: float, harmful: float = 0.0):
+        """Record outcome when both kid_i and kid_j were used together."""
+        pair_key = self._make_key(f"pair:{kid_i}:{kid_j}", context, "joint")
+        if pair_key not in self._data:
+            a0, b0 = self.PRIORS["joint"]
+            s = self._prior_strength
+            self._data[pair_key] = {"alpha": 1.0 + s*(a0-1.0), "beta": 1.0 + s*(b0-1.0)}
+        d = self._data[pair_key]
+        d["alpha"] += success
+        d["beta"] += (1.0 - success)
+        self._save()
+
+    def interaction_uplift(self, kid_i: str, kid_j: str, context: str,
+                           delta: float = 0.1) -> tuple:
+        """
+        Compute interaction effect: Δ = uplift(k_i ∧ k_j) - uplift(k_i) - uplift(k_j)
+        Returns (Δ_mean, Δ_LCB, is_synergistic, is_conflicting)
+        """
+        a_j, b_j = self.get_stats(f"pair:{kid_i}:{kid_j}", context, "joint")
+        n_joint = a_j + b_j - 2.0
+        up_i = self.uplift(kid_i, context, delta=delta)
+        up_j = self.uplift(kid_j, context, delta=delta)
+        up_ij = None
+        if n_joint >= 2:
+            # Base uplift for joint: compare joint outcome vs individual base
+            lcb_joint = float(beta_dist.ppf(delta, a_j, b_j))
+            ucb_base_i = self.ucb(kid_i, context, "base", delta=delta)
+            up_ij = lcb_joint - ucb_base_i
+        if up_ij is not None:
+            delta_mean = up_ij - up_i - up_j
+            # Conservatively use LCB of the joint uplift
+            lcb_j = float(beta_dist.ppf(delta/2, a_j, b_j))
+            delta_lcb = (lcb_j - ucb_base_i) - up_i - up_j
+            return (round(delta_mean, 4), round(delta_lcb, 4),
+                    delta_lcb > 0, delta_lcb < -0.05)
+        return (0.0, 0.0, False, False)
 
     def thompson_sample(self, kid: str, context: str) -> tuple:
         """Thompson sample: draw from posterior, return (p_use, p_base, p_harm)."""
