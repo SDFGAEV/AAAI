@@ -27,6 +27,10 @@ class TrustGate:
 
     S(u,c) = LCB[p_use] - UCB[p_base] - λ·UCB[p_harm]
     t_ε = argmax Coverage(t) s.t. Risk⁺(t) ≤ ε
+
+    Alternative gates:
+      bayes_factor:   P(p_use > p_base | data) > 1-δ  AND  UCB[h] ≤ h_max
+      decoupled:      same as bayes_factor but with Thompson exploration for cold start
     """
 
     def __init__(self, epsilon: float = 0.1, λ_harm: float = 0.2):
@@ -110,6 +114,61 @@ class TrustGate:
         self.t_epsilon = float(best_t)
         return {"t_epsilon": self.t_epsilon, "coverage": best_coverage,
                 "n_calib": N, "epsilon": self.epsilon}
+
+    # ──── Bayes Factor + Decoupled Safety Gate ────
+
+    @staticmethod
+    def bayes_gate(store, kid: str, ctx: str,
+                   delta_uplift: float = 0.1,
+                   h_max: float = 0.10,
+                   explore: bool = True) -> tuple:
+        """
+        Bayes Factor gate with decoupled safety check.
+
+        Returns (reuse: bool, info: dict)
+
+        Logic:
+          Uplift:  P(p_use > p_base | data) ≥ 1-δ_uplift
+          Safety:  UCB[harm] ≤ h_max
+          Explore: Thompson sample when data is thin (n_base + n_use < 5)
+
+        Statistical foundation:
+          - Exact posterior probability via Beta integral (Cook 2005)
+          - Decoupled uplift/safety eliminates λ hand-tuning
+          - Thompson exploration breaks the positive feedback loop
+            (never reuse → never get data → never reuse)
+        """
+        a_u, b_u = store.get_stats(kid, ctx, "use")
+        a_b, b_b = store.get_stats(kid, ctx, "base")
+        n_total = a_u + b_u + a_b + b_b - 4.0  # total observations
+
+        # Bayes Factor: P(p_use > p_base | data)
+        prob_uplift = store.prob_use_better(kid, ctx)
+        uplift_ok = prob_uplift >= (1.0 - delta_uplift)
+
+        # Safety: UCB[harm] ≤ h_max
+        harm_ucb = store.ucb(kid, ctx, "harm", delta=0.05)
+        safety_ok = harm_ucb <= h_max
+
+        # Exploration: when data is thin, occasionally explore via Thompson
+        explore_now = False
+        if explore and n_total < 5 and not (uplift_ok and safety_ok):
+            p_u, p_b, p_h = store.thompson_sample(kid, ctx)
+            explore_now = p_u > p_b and p_h < h_max
+
+        reuse = (uplift_ok and safety_ok) or explore_now
+
+        info = {
+            "prob_uplift": round(prob_uplift, 4),
+            "uplift_ok": uplift_ok,
+            "safety_ok": safety_ok,
+            "harm_ucb": round(harm_ucb, 4),
+            "h_max": h_max,
+            "n_total": int(n_total),
+            "explore": explore_now,
+            "gate": "bayes_factor",
+        }
+        return reuse, info
 
     @staticmethod
     def _binom_ucb(successes: int, total: int, delta: float = 0.05) -> float:

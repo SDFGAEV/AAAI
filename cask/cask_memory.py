@@ -124,12 +124,15 @@ class CaskMemory:
                                            is_harmful=0.0 if cf_base_result else 1.0)
 
         # Knowledge reuse log (§17.3)
-        self.klogs.append({"waypoint": waypoint, "kid": kid, "ctx": ctx,
+        log_entry = {"waypoint": waypoint, "kid": kid, "ctx": ctx,
             "method": self.method, "frozen": self.frozen, "success": is_success,
             "use_lcb": round(lcb, 4), "base_ucb": round(bu, 4), "uplift": round(up, 4),
             "harm_ucb": round(hu, 4), "trust_score": round(ts, 4),
             "n_use": int(n), "t_eps": self.t_eps, "decision": "reuse",
-            "is_harmful": 0 if is_success else 1, "outcome_success": int(is_success)})
+            "is_harmful": 0 if is_success else 1, "outcome_success": int(is_success)}
+        if hasattr(self, '_bf_info') and self._bf_info:
+            log_entry.update(self._bf_info)
+        self.klogs.append(log_entry)
 
         # Episode log (§17.1) — one per subgoal
         self.elogs.append({"waypoint": waypoint, "method": self.method, "frozen": self.frozen,
@@ -205,6 +208,12 @@ class CaskMemory:
         if self.method == "CounterfactualTrust":
             if s.total_count(kid, ctx, "use") < 1: return True
             return s.uplift(kid, ctx) >= self.t_eps
+        if self.method == "CounterfactualTrust-BF":
+            if s.total_count(kid, ctx, "use") < 1: return True
+            from cask.trust_gate import TrustGate
+            reuse, bf_info = TrustGate.bayes_gate(s, kid, ctx)
+            self._bf_info = bf_info  # stash for logging
+            return reuse
         if self.method == "Full-Frozen":
             if s.total_count(kid, ctx, "use") < 1: return True
             return s.uplift(kid, ctx) - 0.2 * s.harm_ucb(kid, ctx) >= self.t_eps

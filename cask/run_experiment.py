@@ -13,7 +13,7 @@ IS_WIN = platform.system() == "Windows"
 _MINERL = os.environ.get("XENON_MINERL", os.path.join(PROJ, "minerl"))
 _JAVA   = os.environ.get("XENON_JAVA_HOME", os.environ.get("JAVA_HOME", "D:/mc java/JAVA8" if IS_WIN else ""))
 _HF_CACHE = os.environ.get("HF_HOME", os.environ.get("HF_HUB_CACHE", "D:/huggingface_cache" if IS_WIN else ""))
-METHODS = ["NoKnowledge","NoTrust","RawSuccess","MeanUplift","CounterfactualTrust","Full-Frozen"]
+METHODS = ["NoKnowledge","NoTrust","RawSuccess","MeanUplift","CounterfactualTrust","CounterfactualTrust-BF","Full-Frozen"]
 TRAIN = range(2001, 2009); CALIB = range(3001, 3009); TEST = range(4001, 4009)
 
 # --- Minecraft launcher (Windows only; Linux auto-launches via MineRL) ---

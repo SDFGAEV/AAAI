@@ -7,7 +7,7 @@ TrustStore: 反事实证书存储（升级版）
   harm — P(H=1 | do(u), c)      : 有害复用概率
 """
 
-import json, os
+import json, os, math
 from typing import Dict, Tuple
 from scipy.stats import beta as beta_dist
 
@@ -107,6 +107,38 @@ class TrustStore:
     def total_count(self, kid: str, context: str, stat: str = "use") -> float:
         a, b = self.get_stats(kid, context, stat)
         return a + b - 2.0
+
+    def prob_use_better(self, kid: str, context: str) -> float:
+        """P(θ_use > θ_base | data) — exact Bayes Factor via Beta integral.
+        Uses the A/B testing formula for Beta-Bernoulli comparison.
+        """
+        from scipy.special import betaln
+        a1, b1 = self.get_stats(kid, context, "use")
+        a2, b2 = self.get_stats(kid, context, "base")
+        # P(θ₁ > θ₂) = Σ_{i=0}^{a₂-1} exp(logB(a₁+i, b₁+b₂) - log(β₂+i) - logB(1+i, β₂) - logB(a₁, b₁))
+        total = 0.0
+        for i in range(int(a2)):
+            term = (betaln(a1 + i, b1 + b2)
+                    - math.log(b2 + i)
+                    - betaln(1 + i, b2)
+                    - betaln(a1, b1))
+            total += math.exp(term)
+        return min(total, 1.0 - 1e-8)
+
+    def prob_harm_safe(self, kid: str, context: str, h_max: float = 0.10) -> float:
+        """P(θ_harm ≤ h_max | data) — safety confidence."""
+        from scipy.stats import beta as beta_dist
+        a, b = self.get_stats(kid, context, "harm")
+        return float(beta_dist.cdf(h_max, a, b))
+
+    def thompson_sample(self, kid: str, context: str) -> tuple:
+        """Thompson sample: draw from posterior, return (p_use, p_base, p_harm)."""
+        import numpy as np
+        a1, b1 = self.get_stats(kid, context, "use")
+        a2, b2 = self.get_stats(kid, context, "base")
+        a3, b3 = self.get_stats(kid, context, "harm")
+        rng = np.random.default_rng()
+        return (float(rng.beta(a1, b1)), float(rng.beta(a2, b2)), float(rng.beta(a3, b3)))
 
     def uplift(self, kid: str, context: str, base_kid: str = None,
                delta: float = 0.1) -> float:
