@@ -1,7 +1,6 @@
 # @package _global_
-# CASK E3: Strict Frozen Main Evaluation — 36 tasks × 8 seeds × 6 methods = 1728 episodes
-# Task groups: crafting(8) mining(7) exploration(6) tech-tree(7) failure-recovery(4) interaction-stress(4)
-# Source: MCU benchmark, mapped to our format
+# ACT-RL E3: Strict Frozen Main Evaluation — 36 tasks x 8 seeds x 7 methods = 2016 episodes
+# Groups: crafting(8) mining(7) exploration(6) tech_tree(7) failure_recovery(4) interaction_stress(4)
 env:
   name: CASKTaskEnv-v0
   max_minutes: 3
@@ -10,160 +9,196 @@ env:
   initial_inventory: []
 
 all_task:
-# ════════ Crafting / Tool Use (8) ════════
+# ═══ Crafting / Tool Use (8) ═══
 - id: 0
   type: craft
   instruction: Craft oak planks from oak logs.
   goal: craft_oak_planks
+  group: crafting
 - id: 1
   type: craft
   instruction: Craft a crafting table.
-  goal: craft_crafting_table
+  goal: craft_the_crafting_table
+  group: crafting
 - id: 2
-  type: craft
-  instruction: Craft sticks from oak planks.
-  goal: craft_sticks
-- id: 3
-  type: craft
-  instruction: Craft a wooden pickaxe.
-  goal: craft_wooden_pickaxe
-- id: 4
-  type: craft
-  instruction: Craft a stone pickaxe using cobblestone and sticks.
-  goal: craft_stone_pickaxe
-- id: 5
-  type: craft
-  instruction: Craft an iron pickaxe using iron ingots and sticks.
-  goal: craft_iron_pickaxe
-- id: 6
-  type: craft
-  instruction: Craft a shield using iron ingot and wood planks.
-  goal: craft_shield
-- id: 7
-  type: craft
-  instruction: Craft a furnace using 8 cobblestone.
-  goal: craft_furnace
-
-# ════════ Mining / Collecting (7) ════════
-- id: 8
-  type: collect
-  instruction: Collect 8 wood logs by chopping trees.
-  goal: collect_wood
-- id: 9
-  type: mine
-  instruction: Mine 3 cobblestone using a wooden pickaxe or better.
-  goal: mine_cobblestone
-- id: 10
-  type: mine
-  instruction: Mine 3 iron ore using a stone pickaxe or better.
-  goal: mine_iron_ore
-- id: 11
-  type: mine
-  instruction: Mine diamond ore using an iron pickaxe or better.
-  goal: mine_diamond_ore
-- id: 12
-  type: collect
-  instruction: Collect 3 wool by shearing or killing sheep.
-  goal: collect_wool
-- id: 13
-  type: collect
-  instruction: Collect 8 blocks of dirt.
-  goal: collect_dirt
-- id: 14
-  type: mine
-  instruction: Mine obsidian using a diamond pickaxe.
-  goal: mine_obsidian
-
-# ════════ Exploration / Finding (6) ════════
-- id: 15
-  type: explore
-  instruction: Explore the world by traveling across various biomes.
-  goal: explore_run
-- id: 16
-  type: find
-  instruction: Find a village somewhere in the world.
-  goal: find_village
-- id: 17
-  type: find
-  instruction: Find a forest biome.
-  goal: find_forest
-- id: 18
-  type: find
-  instruction: Find lava somewhere underground or on the surface.
-  goal: find_lava
-- id: 19
-  type: explore
-  instruction: Explore a buried treasure using a treasure map.
-  goal: explore_the_treasure
-- id: 20
-  type: find
-  instruction: Find a blue bed in a village.
-  goal: find_blue_bed
-
-# ════════ Long-Horizon / Tech Tree (7) ════════
-- id: 21
-  type: craft
-  instruction: Craft a stonecutter using iron ingot and stone.
-  goal: craft_stonecut
-- id: 22
-  type: craft
-  instruction: Craft a cake using wheat, sugar, egg, and milk.
-  goal: craft_to_cake
-- id: 23
-  type: craft
-  instruction: Brew a potion of fire resistance using nether wart and magma cream.
-  goal: brew_potion_of_fire_resistance
-- id: 24
-  type: build
-  instruction: Build a nether portal using obsidian blocks and activate it with flint and steel.
-  goal: build_nether_portal
-- id: 25
-  type: craft
-  instruction: Craft an enchanting table and place it down.
-  goal: craft_enchanting_table
-- id: 26
-  type: smelt
-  instruction: Smelt raw beef in a furnace to get cooked beef.
-  goal: smelt_beef
-- id: 27
   type: craft
   instruction: Craft a ladder using sticks.
   goal: craft_ladder
+  group: crafting
+- id: 3
+  type: craft
+  instruction: Craft a furnace using 8 cobblestone.
+  goal: craft_smelting
+  group: crafting
+- id: 4
+  type: smelt
+  instruction: Smelt raw beef in a furnace to get cooked beef.
+  goal: smelt_beef
+  group: crafting
+- id: 5
+  type: use
+  instruction: Use a shield to block an attack.
+  goal: use_shield
+  group: crafting
+- id: 6
+  type: use
+  instruction: Use a bow to shoot a target.
+  goal: use_bow
+  group: crafting
+- id: 7
+  type: craft
+  instruction: Craft a stonecutter using iron ingot and stone.
+  goal: craft_stonecutter
+  group: crafting
 
-# ════════ Failure Recovery (4) ════════
-- id: 28
-  type: craft
-  instruction: Attempt to mine diamond ore with a stone pickaxe. Learn that you need an iron pickaxe. Craft an iron pickaxe and mine the diamond.
-  goal: failure_wrong_tool_diamond
-- id: 29
-  type: craft
-  instruction: Attempt to craft a cake without enough ingredients. Gather the missing items and complete the cake.
-  goal: failure_missing_ingredient_cake
-- id: 30
+# ═══ Mining / Collecting (7) ═══
+- id: 8
+  type: collect
+  instruction: Collect 8 wood logs by chopping trees.
+  goal: mine_wood
+  group: mining
+- id: 9
   type: mine
-  instruction: Attempt to mine obsidian without a diamond pickaxe. Craft a diamond pickaxe and mine the obsidian.
-  goal: failure_wrong_tool_obsidian
-- id: 31
-  type: build
-  instruction: Attempt to build a nether portal without flint and steel. Craft flint and steel and activate the portal.
-  goal: failure_missing_tool_portal
+  instruction: Mine 3 iron ore using a stone pickaxe or better.
+  goal: mine_iron_ore
+  group: mining
+- id: 10
+  type: mine
+  instruction: Mine diamond ore using an iron pickaxe or better.
+  goal: mine_diamond_ore
+  group: mining
+- id: 11
+  type: mine
+  instruction: Mine obsidian using a diamond pickaxe.
+  goal: mine_obsidian
+  group: mining
+- id: 12
+  type: collect
+  instruction: Collect 8 blocks of dirt.
+  goal: mine_dirt
+  group: mining
+- id: 13
+  type: collect
+  instruction: Collect 8 blocks of grass.
+  goal: mine_grass
+  group: mining
+- id: 14
+  type: collect
+  instruction: Collect 3 wool by shearing or killing sheep.
+  goal: collect_wool
+  group: mining
 
-# ════════ Interaction Stress (4) ════════
+# ═══ Exploration / Finding (6) ═══
+- id: 15
+  type: find
+  instruction: Find diamond ore somewhere underground.
+  goal: find_diamond
+  group: exploration
+- id: 16
+  type: find
+  instruction: Find lava somewhere underground or on the surface.
+  goal: find_lava
+  group: exploration
+- id: 17
+  type: find
+  instruction: Find a village somewhere in the world.
+  goal: find_village
+  group: exploration
+- id: 18
+  type: find
+  instruction: Find a forest biome.
+  goal: find_forest
+  group: exploration
+- id: 19
+  type: explore
+  instruction: Explore the world by traveling across various biomes and finding interesting locations.
+  goal: explore_chest
+  group: exploration
+- id: 20
+  type: explore
+  instruction: Explore and climb a mountain or tall structure.
+  goal: explore_climb
+  group: exploration
+
+# ═══ Long-Horizon / Tech Tree (7) ═══
+- id: 21
+  type: build
+  instruction: Build a nether portal using obsidian blocks and activate it with flint and steel.
+  goal: build_nether_portal
+  group: tech_tree
+- id: 22
+  type: craft
+  instruction: Build a ladder from sticks and place it.
+  goal: build_a_ladder
+  group: tech_tree
+- id: 23
+  type: build
+  instruction: Build a tall tower using any blocks.
+  goal: build_a_tower
+  group: tech_tree
+- id: 24
+  type: craft
+  instruction: Tech tree: from barehand to wooden sword.
+  goal: techtree_barehand_to_wooden_sword
+  group: tech_tree
+- id: 25
+  type: craft
+  instruction: Tech tree: from barehand to diamond sword.
+  goal: techtree_barehand_to_diamond_sword
+  group: tech_tree
+- id: 26
+  type: craft
+  instruction: XENON diamond benchmark.
+  goal: xenon_diamond_benchmark
+  group: tech_tree
+- id: 27
+  type: mine
+  instruction: Obtain obsidian: craft diamond pickaxe, find lava, mine obsidian.
+  goal: obtain_obsidian_chain
+  group: tech_tree
+
+# ═══ Failure Recovery (4) ═══
+- id: 28
+  type: mine
+  instruction: Attempt to mine iron ore with a wooden pickaxe. Discover you need stone. Switch and mine.
+  goal: wrong_tool_mine_iron
+  group: failure_recovery
+- id: 29
+  type: mine
+  instruction: Attempt to mine diamond ore with a stone pickaxe. Discover you need iron. Switch and mine.
+  goal: wrong_tool_mine_diamond
+  group: failure_recovery
+- id: 30
+  type: smelt
+  instruction: Attempt to smelt iron without fuel. Gather coal or wood, then smelt.
+  goal: missing_fuel_before_smelting
+  group: failure_recovery
+- id: 31
+  type: craft
+  instruction: Attempt to craft a stone pickaxe without a crafting table. Learn you need one first.
+  goal: missing_table_for_crafting
+  group: failure_recovery
+
+# ═══ Interaction Stress (4) ═══
 - id: 32
   type: craft
-  instruction: Craft a furnace and a stone pickaxe. You only have 8 cobblestone total.
-  goal: interaction_cobblestone_conflict
+  instruction: You have only 8 cobblestone. Both a furnace and a stone pickaxe need cobblestone. Choose wisely.
+  goal: limited_cobblestone_pickaxe_vs_furnace
+  group: interaction_stress
 - id: 33
-  type: build
-  instruction: Craft sticks then build a ladder. You have limited oak planks and must choose between crafting more sticks for a pickaxe or using them for the ladder.
-  goal: interaction_plank_conflict
+  type: craft
+  instruction: You have limited coal. Use it either for torches or as furnace fuel.
+  goal: coal_torch_vs_fuel
+  group: interaction_stress
 - id: 34
   type: craft
-  instruction: Craft a shield and an iron pickaxe. You only have 1 iron ingot and must choose.
-  goal: interaction_iron_conflict
+  instruction: You have only 1 iron ingot. Craft either an iron pickaxe or an iron sword.
+  goal: limited_iron_pickaxe_vs_sword
+  group: interaction_stress
 - id: 35
-  type: build
-  instruction: Build a snow golem then throw a snowball. Carving the pumpkin needed for the golem uses one of the snow blocks needed for throwing.
-  goal: interaction_snow_conflict
+  type: craft
+  instruction: Diamond chain resource conflict: limited resources force choices between tools.
+  goal: diamond_chain_resource_conflict
+  group: interaction_stress
 
 evaluate: []

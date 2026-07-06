@@ -1,7 +1,6 @@
 # @package _global_
-# CASK E2: Risk Calibration + Counterfactual Branching — 12 tasks × 8 seeds
-# Mix of difficulty levels spanning low-risk to high-risk knowledge reuse
-# Source: MCU benchmark task configs, adapted
+# ACT-RL E2: Adaptive Calibration — 12 tasks x 8 seeds
+# Purpose: learn empirical priors, adaptive thresholds, interaction params
 env:
   name: CASKTaskEnv-v0
   max_minutes: 3
@@ -10,60 +9,65 @@ env:
   initial_inventory: []
 
 all_task:
-# Low-risk tasks (knowledge is well-established)
 - id: 0
   type: craft
-  instruction: Craft oak planks from oak logs.
-  goal: craft_oak_planks
+  instruction: Craft a ladder using sticks.
+  goal: craft_ladder
+  group: crafting
 - id: 1
   type: craft
-  instruction: Craft a crafting table.
-  goal: craft_crafting_table
+  instruction: Craft a furnace using 8 cobblestone.
+  goal: craft_smelting
+  group: crafting
 - id: 2
-  type: craft
-  instruction: Craft sticks from oak planks.
-  goal: craft_sticks
-
-# Medium-risk tasks (requires tool progression)
+  type: smelt
+  instruction: Smelt raw beef in a furnace to get cooked beef.
+  goal: smelt_beef
+  group: crafting
 - id: 3
   type: mine
-  instruction: Mine 3 iron ore using a stone pickaxe.
+  instruction: Mine 3 iron ore using a stone pickaxe or better.
   goal: mine_iron_ore
+  group: mining
 - id: 4
-  type: smelt
-  instruction: Smelt iron ore in a furnace to get iron ingots.
-  goal: smelt_iron
-- id: 5
-  type: craft
-  instruction: Craft an iron pickaxe using iron ingots and sticks.
-  goal: craft_iron_pickaxe
-
-# High-risk tasks (wrong tool / missing prerequisite common)
-- id: 6
   type: mine
-  instruction: Mine diamond ore using an iron pickaxe.
+  instruction: Mine diamond ore using an iron pickaxe or better.
   goal: mine_diamond_ore
+  group: mining
+- id: 5
+  type: collect
+  instruction: Collect 3 wool by shearing or killing sheep.
+  goal: collect_wool
+  group: mining
+- id: 6
+  type: find
+  instruction: Find diamond ore somewhere underground.
+  goal: find_diamond
+  group: exploration
 - id: 7
-  type: craft
-  instruction: Craft a stonecutter using iron ingot and stone.
-  goal: craft_stonecut
-- id: 8
-  type: build
-  instruction: Build a nether portal using obsidian and activate it with flint and steel.
-  goal: build_nether_portal
-
-# Interaction-prone tasks (resource conflicts likely)
-- id: 9
-  type: build
-  instruction: Build a snow golem using snow blocks and a pumpkin.
-  goal: build_snow_golem
-- id: 10
-  type: use
-  instruction: Throw a snowball.
-  goal: throw_a_snowball
-- id: 11
   type: explore
   instruction: Explore the world by traveling across various biomes.
-  goal: explore_run
+  goal: explore_chest
+  group: exploration
+- id: 8
+  type: craft
+  instruction: Tech tree: from barehand to wooden sword.
+  goal: techtree_from_barehand_to_wooden_sword
+  group: tech_tree
+- id: 9
+  type: mine
+  instruction: Attempt to mine iron ore with a wooden pickaxe. The wrong tool fails. Switch to a stone pickaxe.
+  goal: wrong_tool_mine_iron
+  group: failure_recovery
+- id: 10
+  type: craft
+  instruction: Attempt to craft a stone pickaxe without a crafting table. Place the table first.
+  goal: missing_table_for_crafting
+  group: failure_recovery
+- id: 11
+  type: craft
+  instruction: You have only 8 cobblestone. You need both a furnace and a stone pickaxe. Choose wisely.
+  goal: limited_cobble_pickaxe_vs_furnace
+  group: interaction_stress
 
 evaluate: []

@@ -1,7 +1,6 @@
 # @package _global_
-# CASK E1: Knowledge Accumulation — 24 tasks × 8 seeds
-# Task distribution: build(5) craft(5) mine(4) explore(3) use(3) smelt(1) combat(2) enchant(1)
-# Source: MCU benchmark task configs, adapted to our format
+# ACT-RL E1: Knowledge Accumulation — 24 tasks x 8 seeds
+# Sources: MCU (17) + MineDojo (4) + XENON (3) + custom (0)
 env:
   name: CASKTaskEnv-v0
   max_minutes: 3
@@ -10,116 +9,125 @@ env:
   initial_inventory: []
 
 all_task:
-# ── Build (5) ──
 - id: 0
-  type: build
-  instruction: Build a nether portal using obsidian blocks and activate it with flint and steel.
-  goal: build_nether_portal
-- id: 1
-  type: build
-  instruction: Build a snow golem using snow blocks and a pumpkin.
-  goal: build_snow_golem
-- id: 2
-  type: build
-  instruction: Build a gate to secure your area in Minecraft.
-  goal: build_gate
-- id: 3
-  type: build
-  instruction: Build a simple house with walls, a door, and a roof.
-  goal: build_a_house
-- id: 4
-  type: place
-  instruction: Place an item frame on a solid surface.
-  goal: place_a_item_frame
-
-# ── Craft (5) ──
-- id: 5
   type: craft
   instruction: Craft oak planks from oak logs.
   goal: craft_oak_planks
-- id: 6
+  group: crafting
+- id: 1
   type: craft
   instruction: Craft a crafting table.
-  goal: craft_crafting_table
-- id: 7
-  type: craft
-  instruction: Craft a stonecutter using iron ingot and stone.
-  goal: craft_stonecut
-- id: 8
+  goal: craft_the_crafting_table
+  group: crafting
+- id: 2
   type: craft
   instruction: Craft a ladder using sticks.
   goal: craft_ladder
-- id: 9
+  group: crafting
+- id: 3
   type: craft
-  instruction: Craft a cake using wheat, sugar, egg, and milk.
-  goal: craft_to_cake
-
-# ── Mine / Collect (4) ──
-- id: 10
-  type: mine
-  instruction: Mine 3 iron ore blocks using a stone pickaxe or better.
-  goal: mine_iron_ore
-- id: 11
-  type: mine
-  instruction: Mine diamond ore using an iron pickaxe or better.
-  goal: mine_diamond_ore
-- id: 12
-  type: collect
-  instruction: Collect 8 wood logs by chopping trees.
-  goal: collect_wood
-- id: 13
-  type: collect
-  instruction: Collect 3 wool by shearing or killing sheep.
-  goal: collect_wool
-
-# ── Explore / Find (3) ──
-- id: 14
-  type: explore
-  instruction: Explore the world by traveling across various biomes and finding interesting locations.
-  goal: explore_run
-- id: 15
-  type: find
-  instruction: Find a village somewhere in the world.
-  goal: find_village
-- id: 16
-  type: find
-  instruction: Find a forest biome.
-  goal: find_forest
-
-# ── Use / Tool (3) ──
-- id: 17
-  type: use
-  instruction: Throw a snowball.
-  goal: throw_a_snowball
-- id: 18
-  type: use
-  instruction: Drop an item from your inventory.
-  goal: drop_an_item
-- id: 19
-  type: use
-  instruction: Sleep in a bed to skip the night.
-  goal: sleep_in_bed
-
-# ── Smelt (1) ──
-- id: 20
+  instruction: Craft a furnace using 8 cobblestone.
+  goal: craft_smelting
+  group: crafting
+- id: 4
   type: smelt
   instruction: Smelt raw beef in a furnace to get cooked beef.
   goal: smelt_beef
-
-# ── Combat (2) ──
+  group: crafting
+- id: 5
+  type: use
+  instruction: Use a shield to block an attack.
+  goal: use_shield
+  group: crafting
+- id: 6
+  type: use
+  instruction: Use a bow to shoot a target.
+  goal: use_bow
+  group: crafting
+- id: 7
+  type: collect
+  instruction: Collect 8 wood logs by chopping trees.
+  goal: mine_wood
+  group: mining
+- id: 8
+  type: mine
+  instruction: Mine 3 iron ore using a stone pickaxe or better.
+  goal: mine_iron_ore
+  group: mining
+- id: 9
+  type: mine
+  instruction: Mine diamond ore using an iron pickaxe or better.
+  goal: mine_diamond_ore
+  group: mining
+- id: 10
+  type: mine
+  instruction: Mine obsidian using a diamond pickaxe.
+  goal: mine_obsidian
+  group: mining
+- id: 11
+  type: collect
+  instruction: Collect 3 wool by shearing or killing sheep.
+  goal: collect_wool
+  group: mining
+- id: 12
+  type: find
+  instruction: Find diamond ore somewhere underground.
+  goal: find_diamond
+  group: exploration
+- id: 13
+  type: find
+  instruction: Find lava somewhere underground or on the surface.
+  goal: find_lava
+  group: exploration
+- id: 14
+  type: find
+  instruction: Find a village somewhere in the world.
+  goal: find_village
+  group: exploration
+- id: 15
+  type: explore
+  instruction: Explore the world by traveling across various biomes.
+  goal: explore_chest
+  group: exploration
+- id: 16
+  type: craft
+  instruction: Tech tree: from barehand to wooden sword.
+  goal: techtree_from_barehand_to_wooden_sword
+  group: tech_tree
+- id: 17
+  type: craft
+  instruction: Tech tree: from barehand to diamond sword.
+  goal: techtree_from_barehand_to_diamond_sword
+  group: tech_tree
+- id: 18
+  type: collect
+  instruction: Harvest wool using shears.
+  goal: harvest_wool_with_shears
+  group: mining
+- id: 19
+  type: combat
+  instruction: Combat a husk in the desert with iron armor, iron sword and shield.
+  goal: combat_husk_desert
+  group: exploration
+- id: 20
+  type: craft
+  instruction: XENON wooden benchmark task.
+  goal: xenon_wooden_benchmark
+  group: crafting
 - id: 21
-  type: combat
-  instruction: Defeat 3 zombies using a sword or axe.
-  goal: combat_zombies
+  type: craft
+  instruction: XENON iron benchmark task.
+  goal: xenon_iron_benchmark
+  group: tech_tree
 - id: 22
-  type: combat
-  instruction: Defeat a skeleton using a bow or sword.
-  goal: combat_skeletons
-
-# ── Enchant (1) ──
+  type: craft
+  instruction: XENON diamond benchmark task.
+  goal: xenon_diamond_benchmark
+  group: tech_tree
 - id: 23
   type: craft
-  instruction: Craft an enchanting table and place it down.
-  goal: craft_enchanting_table
+  instruction: Recover from missing furnace: craft a furnace after losing one.
+  goal: recover_missing_furnace
+  group: failure_recovery
 
 evaluate: []

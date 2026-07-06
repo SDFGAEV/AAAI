@@ -1,198 +1,203 @@
 """
-TrustGate: 反事实校准的门控逻辑（升级版）
+TrustGate: Adaptive counterfactual calibration gate (ACT-RL v2)
 
-核心升级：
-  1. 统一证书：所有知识统一为 counterfactual uplift
-     Δ(u,c) = LCB[p_use] - UCB[p_base]
-  2. 风险校准：不手调阈值，在 calibration set 上自动选 t_ε
-  3. 有害复用风险跟踪
+Per-group adaptive thresholds selected from calibration data:
+  τ_g  — uplift probability threshold per task group
+  δ_g  — minimum uplift effect size per group
+  h_g  — harm upper bound per group
 
-用法:
-  gate = TrustGate()
-  # 校准
-  gate.calibrate(calib_data, epsilon=0.1)
-  # 部署
-  reuse = gate.should_reuse(uplift, harm_ucb, context)
+Conformal risk controller provides finite-sample safety calibration.
+
+4-state interaction classification: synergy / neutral / conflict / unknown
 """
 
 import numpy as np
 import bisect
-from typing import List, Dict, Tuple, Optional
+from typing import Dict, List, Tuple, Optional
 from scipy.stats import beta as beta_dist
+
+# Task groups for adaptive thresholds
+TASK_GROUPS = ["crafting", "mining", "exploration", "tech_tree",
+               "failure_recovery", "interaction_stress"]
+
+UPLIFT_CANDIDATES = [0.80, 0.85, 0.88, 0.90, 0.92, 0.95]
+DELTA_CANDIDATES = [0.02, 0.03, 0.05, 0.08, 0.10]
+HARM_CANDIDATES = [0.06, 0.08, 0.10, 0.12, 0.15]
+SYNERGY_THRESHOLDS = [0.70, 0.80, 0.90]
+CONFLICT_THRESHOLDS = [0.70, 0.80, 0.90]
 
 
 class TrustGate:
-    """
-    反事实校准门控。
+    def __init__(self):
+        # Per-group thresholds (populated by calibrate)
+        self.tau: Dict[str, float] = {}       # τ_g
+        self.delta: Dict[str, float] = {}     # δ_g
+        self.harm: Dict[str, float] = {}      # h_g
+        self.theta_syn: float = 0.70           # synergy threshold
+        self.theta_conf: float = 0.70          # conflict threshold
+        self._calibrated = False
 
-    S(u,c) = LCB[p_use] - UCB[p_base] - λ·UCB[p_harm]
-    t_ε = argmax Coverage(t) s.t. Risk⁺(t) ≤ ε
-
-    Alternative gates:
-      bayes_factor:   P(p_use > p_base | data) > 1-δ  AND  UCB[h] ≤ h_max
-      decoupled:      same as bayes_factor but with Thompson exploration for cold start
-    """
-
-    def __init__(self, epsilon: float = 0.1, λ_harm: float = 0.2):
-        self.epsilon = epsilon  # 目标有害复用风险
-        self.λ_harm = λ_harm    # 有害复用惩罚权重
-        self.t_epsilon: Optional[float] = None  # 校准后的阈值
-
-    # ──── 单条知识判断 ────
-
+    # ── Single knowledge check ──
     def uplift_certificate(self, use_alpha: float, use_beta: float,
                            base_alpha: float, base_beta: float,
-                           delta: float = 0.1) -> float:
-        """
-        保守反事实增益：
-          Δ̄ = LCB[Beta(use_α,use_β)] - UCB[Beta(base_α,base_β)]
-        """
+                           delta: float = 0.05) -> float:
         lcb_use = float(beta_dist.ppf(delta, use_alpha, use_beta))
         ucb_base = float(beta_dist.ppf(1 - delta, base_alpha, base_beta))
         return lcb_use - ucb_base
 
     def harm_ucb(self, harm_alpha: float, harm_beta: float,
-                 delta: float = 0.1) -> float:
-        """有害复用概率上界 UCB[Beta(harm_α,harm_β)]"""
+                 delta: float = 0.05) -> float:
         return float(beta_dist.ppf(1 - delta, harm_alpha, harm_beta))
 
-    def trust_score(self, uplift: float, harm_ucb_val: float) -> float:
-        """信任分数 S = uplift - λ·harm_UCB"""
-        return uplift - self.λ_harm * harm_ucb_val
+    def trust_score(self, uplift: float, harm_ucb_val: float,
+                    lambda_harm: float = 0.2, t_eps: float = 0.0) -> float:
+        return uplift - lambda_harm * harm_ucb_val
 
-    def should_reuse(self, uplift: float, harm_ucb_val: float) -> bool:
-        """基于校准阈值的复用决策"""
-        if self.t_epsilon is None:
-            raise RuntimeError("Gate not calibrated. Call calibrate() first.")
-        score = self.trust_score(uplift, harm_ucb_val)
-        return score >= self.t_epsilon
-
-    # ──── 校准 ────
-
-    def calibrate(self, calib_data: List[Dict]):
+    # ── Calibration (per-group adaptive) ──
+    def calibrate(self, calib_data: List[Dict], task_group: str = None):
         """
-        从校准数据自动选择阈值。
-
-        calib_data: [{score, uplift, harm_ucb, is_harmful}, ...]
+        Select adaptive τ_g, δ_g, h_g from calibration data.
+        If task_group is None, calibrate globally.
+        Returns selected config dict.
         """
         if not calib_data:
-            # No data → default threshold = 0 (allow everything)
-            self.t_epsilon = 0.0
-            return
+            return {"tau": 0.90, "delta": 0.05, "harm": 0.10}
 
-        # 按 score 排序，从高到低
-        sorted_data = sorted(calib_data, key=lambda d: d["score"], reverse=True)
-        scores = np.array([d["score"] for d in sorted_data])
-        harms = np.array([d["is_harmful"] for d in sorted_data])
+        best_config = None; best_coverage = -1.0
+        for tau in UPLIFT_CANDIDATES:
+            for delta in DELTA_CANDIDATES:
+                for harm in HARM_CANDIDATES:
+                    coverage, risk, risk_plus = self._evaluate(
+                        calib_data, tau, delta, harm)
+                    if risk_plus <= 0.10 and coverage > best_coverage:
+                        best_coverage = coverage
+                        best_config = {"tau": tau, "delta": delta, "harm": harm,
+                                       "coverage": coverage, "risk": risk,
+                                       "n_calib": len(calib_data)}
+
+        if best_config is None:
+            best_config = {"tau": 0.95, "delta": 0.10, "harm": 0.06,
+                           "coverage": 0.0, "risk": 0.0,
+                           "n_calib": len(calib_data)}
+
+        key = task_group or "_global"
+        self.tau[key] = best_config["tau"]
+        self.delta[key] = best_config["delta"]
+        self.harm[key] = best_config["harm"]
+        self._calibrated = True
+        return best_config
+
+    def calibrate_all_groups(self, data_by_group: Dict[str, List[Dict]]):
+        """Calibrate per-group thresholds from grouped calibration data."""
+        results = {}
+        for grp in TASK_GROUPS:
+            if grp in data_by_group and data_by_group[grp]:
+                results[grp] = self.calibrate(data_by_group[grp], grp)
+            else:
+                results[grp] = {"tau": 0.90, "delta": 0.05, "harm": 0.10}
+        # Calibrate interaction thresholds
+        self._calibrate_interaction(data_by_group.get("calib", []))
+        return results
+
+    def _evaluate(self, data, tau, delta, harm):
+        """Evaluate a candidate threshold config."""
+        scores = []
+        for d in data:
+            pu = d.get("prob_uplift", d.get("pi_uplift", 0.5))
+            hu = d.get("harm_ucb", d.get("harm", 0.05))
+            up = d.get("uplift", 0.0)
+            ok = pu >= tau and up >= delta and hu <= harm
+            scores.append((ok, d.get("is_harmful", 0)))
+        accepted = sum(1 for ok, _ in scores if ok)
         N = len(scores)
+        coverage = accepted / N if N else 0
+        risk = sum(h for ok, h in scores if ok) / max(accepted, 1)
+        risk_plus = self._binom_ucb(int(sum(h for ok, h in scores if ok)), int(accepted))
+        return coverage, risk, risk_plus
 
-        best_t, best_coverage = -float("inf"), 0
+    def _binom_ucb(self, k: int, n: int, delta: float = 0.1) -> float:
+        if n == 0: return 1.0
+        return float(beta_dist.ppf(1 - delta, k + 1, n - k + 1))
 
-        # 扫描所有可能的阈值（每个不同的 score 值）
-        for i in range(N):
-            t = scores[i]
-            # 通过阈值的条目
-            accepted = np.sum(scores >= t)
-            if accepted == 0:
-                continue
-            coverage = accepted / N
-            # 风险 = 有害复用 / 通过数
-            risk = np.sum(harms[scores >= t]) / accepted
-            # 上置信界（二项比例 UCB）
-            risk_plus = self._binom_ucb(
-                int(np.sum(harms[scores >= t])), int(accepted)
-            )
+    def _calibrate_interaction(self, calib_data: List[Dict]):
+        """Select optimal synergy/conflict thresholds from calibration."""
+        inter_data = [d for d in calib_data if d.get("interaction_state")]
+        if len(inter_data) < 10: return
+        best_f1 = -1
+        for syn_t in SYNERGY_THRESHOLDS:
+            for conf_t in CONFLICT_THRESHOLDS:
+                tp = fp = fn = 0
+                for d in inter_data:
+                    pred_syn = d.get("pi_syn", 0) >= syn_t
+                    pred_conf = d.get("pi_conf", 0) >= conf_t
+                    true_syn = d.get("interaction_synergy", False)
+                    true_conf = d.get("interaction_conflict", False)
+                    if pred_syn == true_syn and pred_conf == true_conf:
+                        tp += 1
+                    else:
+                        fp += 1
+                f1 = tp / max(tp + fp/2.0, 1)
+                if f1 > best_f1:
+                    best_f1 = f1
+                    self.theta_syn = syn_t
+                    self.theta_conf = conf_t
 
-            if risk_plus <= self.epsilon and coverage > best_coverage:
-                best_coverage = coverage
-                best_t = t
-
-        # 找不到满足约束的 → 设极高的门槛（几乎不通过）
-        if best_t == -float("inf"):
-            best_t = max(scores) + 0.01
-
-        self.t_epsilon = float(best_t)
-        return {"t_epsilon": self.t_epsilon, "coverage": best_coverage,
-                "n_calib": N, "epsilon": self.epsilon}
-
-    # ──── Bayes Factor + Decoupled Safety Gate ────
-
-    @staticmethod
-    def bayes_gate(store, kid: str, ctx: str,
-                   delta_uplift: float = 0.1,
-                   h_max: float = 0.10,
-                   explore: bool = True) -> tuple:
+    # ── Gate decision ──
+    def should_reuse(self, prob_uplift: float, uplift_val: float,
+                     harm_ucb_val: float, task_group: str = None,
+                     lifecycle: str = "candidate") -> Tuple[bool, Dict]:
         """
-        Bayes Factor gate with decoupled safety check.
+        ACT-RL gate decision.
 
-        Returns (reuse: bool, info: dict)
-
-        Logic:
-          Uplift:  P(p_use > p_base | data) ≥ 1-δ_uplift
-          Safety:  UCB[harm] ≤ h_max
-          Explore: Thompson sample when data is thin (n_base + n_use < 5)
-
-        Statistical foundation:
-          - Exact posterior probability via Beta integral (Cook 2005)
-          - Decoupled uplift/safety eliminates λ hand-tuning
-          - Thompson exploration breaks the positive feedback loop
-            (never reuse → never get data → never reuse)
+        Returns (reuse, info_dict)
         """
-        a_u, b_u = store.get_stats(kid, ctx, "use")
-        a_b, b_b = store.get_stats(kid, ctx, "base")
-        n_total = a_u + b_u + a_b + b_b - 4.0  # total observations
+        key = task_group or "_global"
+        tau = self.tau.get(key, 0.90)
+        delta = self.delta.get(key, 0.05)
+        harm = self.harm.get(key, 0.10)
 
-        # Bayes Factor: P(p_use > p_base | data)
-        prob_uplift = store.prob_use_better(kid, ctx)
-        uplift_ok = prob_uplift >= (1.0 - delta_uplift)
+        # Disabled knowledge is never reused
+        if lifecycle in ("disabled",):
+            return False, {"reason": "disabled", "tau": tau, "delta": delta, "harm": harm}
 
-        # Safety: UCB[harm] ≤ h_max
-        harm_ucb = store.ucb(kid, ctx, "harm", delta=0.05)
-        safety_ok = harm_ucb <= h_max
+        # Gate check
+        uplift_ok = prob_uplift >= tau and uplift_val >= delta
+        safety_ok = harm_ucb_val <= harm
 
-        # Exploration: when data is thin, occasionally explore via Thompson
-        explore_now = False
-        if explore and n_total < 5 and not (uplift_ok and safety_ok):
-            p_u, p_b, p_h = store.thompson_sample(kid, ctx)
-            explore_now = p_u > p_b and p_h < h_max
+        if uplift_ok and safety_ok:
+            return True, {"reason": "gate_pass", "tau": tau, "delta": delta, "harm": harm,
+                          "prob_uplift": prob_uplift, "uplift_val": uplift_val,
+                          "harm_ucb": harm_ucb_val}
+        elif not uplift_ok:
+            return False, {"reason": "uplift_fail", "tau": tau, "delta": delta, "harm": harm,
+                           "prob_uplift": prob_uplift, "uplift_val": uplift_val}
+        else:
+            return False, {"reason": "safety_fail", "tau": tau, "delta": delta, "harm": harm,
+                           "harm_ucb": harm_ucb_val}
 
-        reuse = (uplift_ok and safety_ok) or explore_now
+    # ── Adaptive exploration ──
+    def exploration_rate(self, ess: float, prob_uplift: float,
+                         risk_level: str = "medium",
+                         sample_imbalance: float = 0.0) -> float:
+        """
+        Adaptive active calibration base rate.
 
-        info = {
-            "prob_uplift": round(prob_uplift, 4),
-            "uplift_ok": uplift_ok,
-            "safety_ok": safety_ok,
-            "harm_ucb": round(harm_ucb, 4),
-            "h_max": h_max,
-            "n_total": int(n_total),
-            "explore": explore_now,
-            "gate": "bayes_factor",
-        }
-        return reuse, info
+        High uncertainty + low risk → more exploration
+        High risk → less exploration
+        """
+        risk_weights = {"low": 1.2, "medium": 1.0, "high": 0.2}
+        rw = risk_weights.get(risk_level, 0.5)
+        uncertainty = 4.0 * prob_uplift * (1.0 - prob_uplift) if prob_uplift is not None else 1.0
+        q = 0.05 + 0.20 * uncertainty * rw + 0.10 * sample_imbalance
+        return max(0.05, min(0.30, q))
 
-    @staticmethod
-    def _binom_ucb(successes: int, total: int, delta: float = 0.05) -> float:
-        """二项比例的 UCB"""
-        if total == 0:
-            return 1.0
-        return float(beta_dist.ppf(1 - delta, successes + 1, total - successes + 1))
-
-    # ──── Risk-Coverage 分析 ────
-
-    def risk_coverage_curve(self, calib_data: List[Dict]) -> Tuple[List, List]:
-        """生成 risk-coverage 曲线数据点"""
-        sorted_data = sorted(calib_data, key=lambda d: d["score"], reverse=True)
-        scores = np.array([d["score"] for d in sorted_data])
-        harms = np.array([d["is_harmful"] for d in sorted_data])
-        N = len(scores)
-
-        coverages, risks = [], []
-        unique_scores = sorted(set(scores), reverse=True)
-        for t in unique_scores:
-            accepted = np.sum(scores >= t)
-            coverage = accepted / N
-            risk = np.sum(harms[scores >= t]) / accepted if accepted > 0 else 0.0
-            coverages.append(coverage)
-            risks.append(risk)
-
-        return coverages, risks
+    def thompson_probe_rate(self, ess: float, prob_uplift: float,
+                            risk_level: str = "medium") -> float:
+        """Adaptive Thompson exploration rate."""
+        if risk_level == "high": return 0.0
+        risk_weights = {"low": 1.5, "medium": 0.8}
+        rw = risk_weights.get(risk_level, 0.3)
+        uncertainty = 4.0 * prob_uplift * (1.0 - prob_uplift) if prob_uplift is not None else 1.0
+        n_min = {"low": 5, "medium": 8, "high": 10}.get(risk_level, 8)
+        if ess >= n_min: return 0.0
+        return max(0.0, min(0.10, 0.15 * uncertainty * rw))

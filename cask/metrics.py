@@ -110,3 +110,13 @@ def compute_cfr(interaction_logs: List[Dict]) -> float:
     if not interaction_logs:
         return 0.0
     return sum(1 for x in interaction_logs if not x.get("chain_success", True)) / len(interaction_logs)
+
+
+def compute_kpr(version_logs: List[Dict]) -> float:
+    """Knowledge Pollution Rate — certified knowledge later deprecated for harm."""
+    cert_later_harm = 0; total_cert = 0
+    for v in version_logs:
+        lc = v.get("lifecycle", {})
+        total_cert += lc.get("certified", 0)
+        cert_later_harm += lc.get("deprecated", 0)  # deprecated = was certified, now harmful
+    return cert_later_harm / max(total_cert, 1)
