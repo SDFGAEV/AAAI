@@ -790,8 +790,10 @@ def main(cfg: DictConfig):
 
             t.join()
             logger.info(f"Done of trial: {run_t}, task: {task}, hydra_path: {hydra_path}, run_uuid: {run_uuid}")
-            # CASKe: dump structured logs after each trial
+            # CASKe: update stats and dump structured logs after each trial
             if hasattr(action_memory, 'dump_logs') and not cask_frozen:
+                if hasattr(action_memory, 'update_last_episode'):
+                    action_memory.update_last_episode(total_steps=steps)
                 action_memory.dump_logs()
 
             img_dir = os.path.join(hydra_path, run_uuid, "imgs")
