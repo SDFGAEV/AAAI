@@ -93,6 +93,14 @@ class PlanningModel(BasePlanningModel):
         )
         self.model.eval()
         self.processor = AutoProcessor.from_pretrained(model_path)
+        self._cum_input_tokens = 0
+        self._cum_output_tokens = 0
+        self._cum_calls = 0
+
+    @property
+    def token_stats(self):
+        return {"in": self._cum_input_tokens, "out": self._cum_output_tokens,
+                "calls": self._cum_calls}
 
     def decomposed_plan(
         self,
@@ -336,5 +344,9 @@ You can make <task planning> by selecting an option from below:
         response = self.processor.batch_decode(
             generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
         )
+        # Track exact token usage
+        self._cum_input_tokens += int(inputs.input_ids.shape[1])
+        self._cum_output_tokens += int(generated_ids_trimmed[0].shape[0]) if generated_ids_trimmed else 0
+        self._cum_calls += 1
 
         return response[0]

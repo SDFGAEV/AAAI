@@ -61,13 +61,15 @@ class CaskMemory:
         else: self._pairwise_harm[key][1] += 1.0
 
     # --- update episode stats before flush ---
-    def update_last_episode(self, total_steps=0, llm_calls=0, wall_time_sec=0.0):
+    def update_last_episode(self, total_steps=0, llm_calls=0, wall_time_sec=0.0,
+                            input_tokens=0, output_tokens=0):
         """Called by main_planning.py after task completion to add runtime stats."""
         if self.elogs:
             e = self.elogs[-1]
             e["total_steps"] = total_steps or e.get("total_steps", 0)
             e["llm_calls"] = llm_calls or e.get("llm_calls", 0)
             e["wall_time_sec"] = wall_time_sec or e.get("wall_time_sec", 0.0)
+            e["tokens"] = e.get("tokens", 0) + input_tokens + output_tokens
             if self.slogs:
                 self.slogs[-1]["total_steps"] = total_steps
 

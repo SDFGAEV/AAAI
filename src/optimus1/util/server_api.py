@@ -10,6 +10,19 @@ from .thread import MultiThreadServerAPI
 
 
 class ServerAPI:
+    _in_tok = 0; _out_tok = 0; _calls = 0
+
+    @classmethod
+    def reset_counters(cls): cls._in_tok = cls._out_tok = cls._calls = 0
+
+    @classmethod
+    def get_counters(cls): return cls._in_tok, cls._out_tok, cls._calls
+
+    @staticmethod
+    def _acc(rj):
+        t = rj.get("tokens")
+        if t: ServerAPI._in_tok += t.get("in",0); ServerAPI._out_tok += t.get("out",0); ServerAPI._calls += 1
+
     @staticmethod
     def _reset(server_cfg: DictConfig):
         res = requests.get(
@@ -64,6 +77,7 @@ class ServerAPI:
         if res.status_code != 200:
             raise RuntimeError(f"Failed to get plan: {res.text}")
         plan = res.json()["response"]
+        ServerAPI._acc(res.json())
         return plan
     
     @staticmethod
@@ -202,6 +216,7 @@ class ServerAPI:
         if res.status_code != 200:
             raise RuntimeError(f"Failed to get plan: {res.text}")
         plan = res.json()["response"]
+        ServerAPI._acc(res.json())
         return plan
 
     @staticmethod

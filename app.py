@@ -228,6 +228,9 @@ def chat(req: MCRequest) -> MCResponse:
                     print(f"connection error while replan {e}, retry: {retry}")
         case _:
             response = MCResponse(message=f"{req.type} not support...", status_code=400)
+    # Attach cumulative token stats from the plan model
+    if hasattr(agent.plan_model, 'token_stats'):
+        response.tokens = agent.plan_model.token_stats
     return response
 
 

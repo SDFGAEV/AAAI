@@ -691,12 +691,16 @@ def main(cfg: DictConfig):
                 except FutureTimeoutError:
                     logger.error(f"Task timeout ({TASK_TIMEOUT}s): {goal}")
                     status, steps, completed_subgoals, failed_subgoals, failed_waypoints = "timeout", 0, [], [], []
+                    _wall_time, _llm_calls, _in_tok, _out_tok = 0.0, 0, 0, 0
+                    ServerAPI.reset_counters()
                 except Exception as e:
                     logger.error(f"Task exception: {e}")
                     status, steps, completed_subgoals, failed_subgoals, failed_waypoints = "exception", 0, [], [], []
+                    _wall_time, _llm_calls, _in_tok, _out_tok = 0.0, 0, 0, 0
+                    ServerAPI.reset_counters()
             _wall_time = time.time() - _t_start
-            _llm_calls = (len(completed_subgoals) + len(failed_subgoals) + len(failed_waypoints)) * 2
-            _tokens_est = _llm_calls * 600
+            _in_tok, _out_tok, _llm_calls = ServerAPI.get_counters()
+            ServerAPI.reset_counters()
 
             if status == "env_malmo_logger_error":
                 logger.error("env_malmo_logger_error")
@@ -797,8 +801,10 @@ def main(cfg: DictConfig):
             # CASKe: update stats and dump structured logs after each trial
             if hasattr(action_memory, 'dump_logs') and not cask_frozen:
                 if hasattr(action_memory, 'update_last_episode'):
-                    action_memory.update_last_episode(total_steps=steps,
-                        llm_calls=_llm_calls, wall_time_sec=round(_wall_time, 1))
+                    action_memory.update_last_episode(
+                        total_steps=steps, llm_calls=_llm_calls,
+                        wall_time_sec=round(_wall_time, 1),
+                        input_tokens=_in_tok, output_tokens=_out_tok)
                 action_memory.dump_logs()
 
             img_dir = os.path.join(hydra_path, run_uuid, "imgs")

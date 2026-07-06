@@ -42,3 +42,4 @@ class MCResponse(BaseModel):
     message: str = ""
 
     appendix: Any | None = None
+    tokens: dict | None = None  # {"in": int, "out": int}
