@@ -130,10 +130,10 @@ def main():
     print("=" * 60 + "\nCASK Full Experiment — E0-E6\n" + "=" * 60)
     ar = {}
 
-    # ═══ E0 ═══
-    print(f"\nE0: Sanity — 2 seeds × 2 methods")
+    # ═══ E0: Sanity (6 tasks equivalent, reusing calib set) ═══
+    print(f"\nE0: Sanity Check — 2 seeds x 2 methods")
     for m in ["NoKnowledge", "NoTrust"]:
-        ar[f"e0_{m}"] = run_seeds("E0", [1, 2], method=m, bench="cask_p3")
+        ar[f"e0_{m}"] = run_seeds("E0", [1, 2], method=m, bench="cask_calib")
 
     # ═══ E1 ═══
     print(f"\nE1: Accumulation — NoTrust, {len(TRAIN)} seeds")
