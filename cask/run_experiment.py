@@ -10,11 +10,42 @@ os.makedirs(OUT, exist_ok=True); EPS = 0.10
 IS_WIN = platform.system() == "Windows"
 
 # --- platform-aware defaults ---
-_MINERL = os.environ.get("XENON_MINERL", os.path.join(PROJ, "..", "XENON_original", "minerl"))
+_MINERL = os.environ.get("XENON_MINERL", os.path.join(PROJ, "minerl"))
 _JAVA   = os.environ.get("XENON_JAVA_HOME", os.environ.get("JAVA_HOME", "D:/mc java/JAVA8" if IS_WIN else ""))
 _HF_CACHE = os.environ.get("HF_HOME", os.environ.get("HF_HUB_CACHE", "D:/huggingface_cache" if IS_WIN else ""))
 METHODS = ["NoKnowledge","NoTrust","RawSuccess","MeanUplift","CounterfactualTrust","Full-Frozen"]
 TRAIN = range(2001, 2009); CALIB = range(3001, 3009); TEST = range(4001, 4009)
+
+# --- Minecraft launcher (Windows only; Linux auto-launches via MineRL) ---
+_MC_DIR = os.path.join(_MINERL, "minerl", "MCP-Reborn")
+_MC_JAR = os.path.join(_MC_DIR, "build", "libs", "mcprec-6.13.jar")
+_mc_proc = None  # global handle for cleanup
+
+def _ensure_minecraft():
+    """On Windows, launch Minecraft+Malmo if not already running on :9000."""
+    global _mc_proc
+    if IS_WIN:
+        import socket
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        running = s.connect_ex(('127.0.0.1', 9000)) == 0
+        s.close()
+        if not running:
+            java = os.path.join(_JAVA, "bin", "java") if _JAVA else "java"
+            print(f"  [launching Minecraft on :9000 ...]")
+            _mc_proc = subprocess.Popen(
+                [java, "-Xmx4G", "-jar", _MC_JAR, "--envPort=9000"],
+                cwd=_MC_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+            import socket as _sock
+            for _ in range(60):  # wait up to 60s
+                time.sleep(1)
+                s2 = _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM)
+                if s2.connect_ex(('127.0.0.1', 9000)) == 0:
+                    s2.close()
+                    print(f"  [Minecraft ready]")
+                    return
+                s2.close()
+            print(f"  [WARN: Minecraft not responding after 60s]")
 
 # ═══════════════════ Run ═══════════════════
 def run_seeds(phase, seeds, method="NoTrust", t_eps=0.0, extra="", bench="cask_train"):

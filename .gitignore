@@ -28,3 +28,7 @@ Thumbs.db
 *.tmp.*
 *.swp
 *~
+# Large binaries / build artifacts (need to be set up manually)
+minerl/minerl/MCP-Reborn/
+checkpoints/
+*.jar
