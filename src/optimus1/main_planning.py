@@ -806,12 +806,14 @@ def main(cfg: DictConfig):
             logger.info(f"Done of trial: {run_t}, task: {task}, hydra_path: {hydra_path}, run_uuid: {run_uuid}")
             # CASKe: update stats and dump structured logs after each trial
             if hasattr(action_memory, 'dump_logs') and not cask_frozen:
+                logger.info(f"[CASKe] dumping logs: has_log_dir={hasattr(action_memory, 'log_dir')} log_dir={getattr(action_memory, 'log_dir', 'N/A')}")
                 if hasattr(action_memory, 'update_last_episode'):
                     action_memory.update_last_episode(
                         total_steps=steps, llm_calls=_llm_calls,
                         wall_time_sec=round(_wall_time, 1),
                         input_tokens=_in_tok, output_tokens=_out_tok)
                 action_memory.dump_logs()
+                logger.info(f"[CASKe] dump_logs done")
 
             img_dir = os.path.join(hydra_path, run_uuid, "imgs")
             shutil.rmtree(img_dir)
