@@ -1,153 +1,169 @@
 # @package _global_
+# CASK E3: Strict Frozen Main Evaluation — 36 tasks × 8 seeds × 6 methods = 1728 episodes
+# Task groups: crafting(8) mining(7) exploration(6) tech-tree(7) failure-recovery(4) interaction-stress(4)
+# Source: MCU benchmark, mapped to our format
 env:
   name: CASKTaskEnv-v0
   max_minutes: 3
   times: 1
   prefer_biome: forest
   initial_inventory: []
+
 all_task:
+# ════════ Crafting / Tool Use (8) ════════
 - id: 0
   type: craft
-  instruction: Craft oak planks from oak logs
-  goal: oak_planks
+  instruction: Craft oak planks from oak logs.
+  goal: craft_oak_planks
 - id: 1
   type: craft
-  instruction: Craft a crafting table
-  goal: crafting_table
+  instruction: Craft a crafting table.
+  goal: craft_crafting_table
 - id: 2
   type: craft
-  instruction: Craft a ladder using sticks
-  goal: ladder
+  instruction: Craft sticks from oak planks.
+  goal: craft_sticks
 - id: 3
   type: craft
-  instruction: Craft a furnace for smelting
-  goal: furnace
+  instruction: Craft a wooden pickaxe.
+  goal: craft_wooden_pickaxe
 - id: 4
-  type: smelt
-  instruction: Smelt raw beef into steak
-  goal: cooked_beef
+  type: craft
+  instruction: Craft a stone pickaxe using cobblestone and sticks.
+  goal: craft_stone_pickaxe
 - id: 5
   type: craft
-  instruction: Craft a stonecutter
-  goal: stonecutter
+  instruction: Craft an iron pickaxe using iron ingots and sticks.
+  goal: craft_iron_pickaxe
 - id: 6
-  type: equip
-  instruction: Equip and use a shield
-  goal: shield
+  type: craft
+  instruction: Craft a shield using iron ingot and wood planks.
+  goal: craft_shield
 - id: 7
-  type: equip
-  instruction: Use a bow as your weapon
-  goal: bow
+  type: craft
+  instruction: Craft a furnace using 8 cobblestone.
+  goal: craft_furnace
+
+# ════════ Mining / Collecting (7) ════════
 - id: 8
-  type: mine
-  instruction: Collect wood from trees
-  goal: oak_log
+  type: collect
+  instruction: Collect 8 wood logs by chopping trees.
+  goal: collect_wood
 - id: 9
   type: mine
-  instruction: Mine stone blocks with a pickaxe
-  goal: cobblestone
+  instruction: Mine 3 cobblestone using a wooden pickaxe or better.
+  goal: mine_cobblestone
 - id: 10
   type: mine
-  instruction: Collect dirt blocks
-  goal: dirt
+  instruction: Mine 3 iron ore using a stone pickaxe or better.
+  goal: mine_iron_ore
 - id: 11
   type: mine
-  instruction: Mine iron ore with a stone pickaxe
-  goal: raw_iron
+  instruction: Mine diamond ore using an iron pickaxe or better.
+  goal: mine_diamond_ore
 - id: 12
-  type: mine
-  instruction: Collect grass blocks
-  goal: dirt
+  type: collect
+  instruction: Collect 3 wool by shearing or killing sheep.
+  goal: collect_wool
 - id: 13
-  type: mine
-  instruction: Shear sheep to collect wool
-  goal: wool
+  type: collect
+  instruction: Collect 8 blocks of dirt.
+  goal: collect_dirt
 - id: 14
   type: mine
-  instruction: Mine diamond ore with an iron pickaxe
-  goal: diamond
+  instruction: Mine obsidian using a diamond pickaxe.
+  goal: mine_obsidian
+
+# ════════ Exploration / Finding (6) ════════
 - id: 15
-  type: mine
-  instruction: Find and collect sand
-  goal: sand
+  type: explore
+  instruction: Explore the world by traveling across various biomes.
+  goal: explore_run
 - id: 16
-  type: mine
-  instruction: Find a forest biome
-  goal: oak_log
+  type: find
+  instruction: Find a village somewhere in the world.
+  goal: find_village
 - id: 17
-  type: mine
-  instruction: Find a lava pool
-  goal: cobblestone
+  type: find
+  instruction: Find a forest biome.
+  goal: find_forest
 - id: 18
-  type: mine
-  instruction: Explore and climb a mountain
-  goal: stone
+  type: find
+  instruction: Find lava somewhere underground or on the surface.
+  goal: find_lava
 - id: 19
-  type: mine
-  instruction: Find and mine diamond ore
-  goal: diamond
+  type: explore
+  instruction: Explore a buried treasure using a treasure map.
+  goal: explore_the_treasure
 - id: 20
-  type: mine
-  instruction: Find a village
-  goal: oak_log
+  type: find
+  instruction: Find a blue bed in a village.
+  goal: find_blue_bed
+
+# ════════ Long-Horizon / Tech Tree (7) ════════
 - id: 21
   type: craft
-  instruction: 'Tech tree: barehand to wooden sword'
-  goal: wooden_sword
+  instruction: Craft a stonecutter using iron ingot and stone.
+  goal: craft_stonecut
 - id: 22
   type: craft
-  instruction: 'Tech tree: barehand to stone pickaxe'
-  goal: stone_pickaxe
+  instruction: Craft a cake using wheat, sugar, egg, and milk.
+  goal: craft_to_cake
 - id: 23
   type: craft
-  instruction: 'Tech tree: barehand to wooden pickaxe'
-  goal: wooden_pickaxe
+  instruction: Brew a potion of fire resistance using nether wart and magma cream.
+  goal: brew_potion_of_fire_resistance
 - id: 24
-  type: craft
-  instruction: 'Tech tree: barehand to furnace'
-  goal: furnace
+  type: build
+  instruction: Build a nether portal using obsidian blocks and activate it with flint and steel.
+  goal: build_nether_portal
 - id: 25
   type: craft
-  instruction: 'Tech tree: barehand to stone axe'
-  goal: stone_axe
+  instruction: Craft an enchanting table and place it down.
+  goal: craft_enchanting_table
 - id: 26
-  type: craft
-  instruction: 'Tech tree: barehand to wooden axe'
-  goal: wooden_axe
+  type: smelt
+  instruction: Smelt raw beef in a furnace to get cooked beef.
+  goal: smelt_beef
 - id: 27
   type: craft
-  instruction: 'Tech tree: barehand to torch'
-  goal: torch
+  instruction: Craft a ladder using sticks.
+  goal: craft_ladder
+
+# ════════ Failure Recovery (4) ════════
 - id: 28
-  type: mine
-  instruction: Mine diamond with wrong tool (stone pickaxe)
-  goal: diamond
+  type: craft
+  instruction: Attempt to mine diamond ore with a stone pickaxe. Learn that you need an iron pickaxe. Craft an iron pickaxe and mine the diamond.
+  goal: failure_wrong_tool_diamond
 - id: 29
   type: craft
-  instruction: Craft table without enough planks
-  goal: crafting_table
+  instruction: Attempt to craft a cake without enough ingredients. Gather the missing items and complete the cake.
+  goal: failure_missing_ingredient_cake
 - id: 30
-  type: smelt
-  instruction: Smelt iron without fuel
-  goal: iron_ingot
+  type: mine
+  instruction: Attempt to mine obsidian without a diamond pickaxe. Craft a diamond pickaxe and mine the obsidian.
+  goal: failure_wrong_tool_obsidian
 - id: 31
-  type: place
-  instruction: Place a block not in inventory
-  goal: crafting_table
+  type: build
+  instruction: Attempt to build a nether portal without flint and steel. Craft flint and steel and activate the portal.
+  goal: failure_missing_tool_portal
+
+# ════════ Interaction Stress (4) ════════
 - id: 32
   type: craft
-  instruction: Craft furnace then stone pickaxe (share cobblestone)
-  goal: stone_pickaxe
+  instruction: Craft a furnace and a stone pickaxe. You only have 8 cobblestone total.
+  goal: interaction_cobblestone_conflict
 - id: 33
-  type: craft
-  instruction: Craft torch without coal
-  goal: torch
+  type: build
+  instruction: Craft sticks then build a ladder. You have limited oak planks and must choose between crafting more sticks for a pickaxe or using them for the ladder.
+  goal: interaction_plank_conflict
 - id: 34
   type: craft
-  instruction: Craft sticks then ladder (compete for planks)
-  goal: ladder
+  instruction: Craft a shield and an iron pickaxe. You only have 1 iron ingot and must choose.
+  goal: interaction_iron_conflict
 - id: 35
-  type: craft
-  instruction: Craft chest then door (compete for planks)
-  goal: door
+  type: build
+  instruction: Build a snow golem then throw a snowball. Carving the pumpkin needed for the golem uses one of the snow blocks needed for throwing.
+  goal: interaction_snow_conflict
+
 evaluate: []

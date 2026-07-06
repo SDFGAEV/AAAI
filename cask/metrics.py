@@ -85,3 +85,28 @@ def compute_cov_risk(data: List[Dict], eps: float = 0.10
         if risk_ub <= eps and cov > best_cov:
             best_cov = cov
     return round(best_cov, 3), covs, risks
+
+
+# ── Experiment-level metrics (task granularity) ──
+
+def compute_hardsr(task_results: List[Dict]) -> float:
+    """Success rate on hard tasks (tech-tree, long-horizon, failure-recovery)."""
+    hard = [t for t in task_results if t.get("difficulty") == "hard" or t.get("group") in (
+        "tech_tree", "failure_recovery", "interaction_stress")]
+    if not hard:
+        return 0.0
+    return sum(1 for t in hard if t.get("success")) / len(hard)
+
+
+def compute_rcr(interaction_logs: List[Dict]) -> float:
+    """Resource Conflict Rate — fraction of episodes with resource conflict."""
+    if not interaction_logs:
+        return 0.0
+    return sum(1 for x in interaction_logs if x.get("resource_conflict")) / len(interaction_logs)
+
+
+def compute_cfr(interaction_logs: List[Dict]) -> float:
+    """Chain Failure Rate — fraction of knowledge chains that fail."""
+    if not interaction_logs:
+        return 0.0
+    return sum(1 for x in interaction_logs if not x.get("chain_success", True)) / len(interaction_logs)

@@ -108,7 +108,8 @@ def collect_logs():
 
 # ═══════════════════ Metrics ═══════════════════
 from cask.metrics import (compute_kus as KUS, compute_hrr as HRR, compute_irr as IRR,
-                           compute_coverage as Cov, compute_ece as ECE, compute_cov_risk as CovR)
+                           compute_coverage as Cov, compute_ece as ECE, compute_cov_risk as CovR,
+                           compute_hardsr, compute_rcr, compute_cfr)
 def wilson_ci(s, t, z=1.96):
     if t == 0: return (0, 0)
     p = s / t; d = 1 + z * z / t; c = (p + z * z / (2 * t)) / d
@@ -208,19 +209,47 @@ def main():
             pairs[mn] = f"{d:+.3f} [{lo:.3f}, {hi:.3f}]"
     if pairs: print(f"\nPaired vs Full-Frozen: {pairs}")
 
-    # ═══ E5 ═══
-    print(f"\nE5: Online Evolution — 3 rounds × 2 methods")
+    # ═══ E4: Ablation ═══
+    # 5 variants on 12 hard tasks x 5 seeds = 300 episodes
+    print(f"\nE4: Ablation Studies - 5 variants x 5 seeds")
+    ABL_SEEDS = range(4001, 4006)
+    e4r = {}
+    abl_variants = [
+        ("Full-Frozen",     "Full-Frozen", "CounterfactualTrust"),
+        ("NoCalibration",   "t_eps=0",     "CounterfactualTrust"),
+        ("NoCFCert",        "RawSuccess",  "RawSuccess"),
+        ("NoInteraction",   "no_L3",       "CounterfactualTrust"),
+        ("NoTrust",         "baseline",    "NoTrust"),
+    ]
+    for vname, vdesc, vmethod in abl_variants:
+        vt = te if vmethod in ("CounterfactualTrust", "Full-Frozen") and vname != "NoCalibration" else 0.0
+        r = run_seeds(f"E4_{vname}", ABL_SEEDS, method=vmethod, t_eps=vt,
+                      extra="+cask_frozen=true", bench="cask_p3")
+        ok = sum(1 for x in r if x["ok"]); tot = len(r)
+        e4r[vname] = {"SR": round(ok / tot, 3) if tot else 0}
+        print(f"  {vname}: SR={e4r[vname]['SR']:.3f}")
+        ar[f"e4_{vname}"] = r
+
+    logs4 = collect_logs(); kr4 = logs4.get("knowledge_reuse", [])
+    for vname, _, _ in abl_variants:
+        mk = [x for x in kr4 if x.get("method") == vname]
+        if mk and vname in e4r:
+            e4r[vname].update({"KUS": round(KUS(mk), 3), "HRR": round(HRR(mk), 3),
+                               "IRR": round(IRR(mk), 3)})
+
+    # ═══ E5: Online Safe Evolution ═══
+    print(f"\nE5: Online Safe Evolution - 5 rounds x 2 methods")
     for m in ["CounterfactualTrust", "Full-Frozen"]:
-        mt = te if m != "NoTrust" else 0.0
-        for rn in range(3):
+        mt = te
+        for rn in range(5):
             r = run_seeds(f"E5_{m}_r{rn}", range(4001, 4004), method=m, t_eps=mt, bench="cask_p3")
             ar[f"e5_{m}_r{rn}"] = r
 
-    # ═══ E6 ═══
-    print(f"\nE6: Cross-Base — 5 seeds × 2 methods")
+    # ═══ E6: Cross-Base Portability ═══
+    print(f"\nE6: Cross-Base - 8 seeds x 2 methods")
     for m in ["NoTrust", "CounterfactualTrust"]:
-        r = run_seeds("E6_cb", range(1, 6), method=m, t_eps=te, bench="cask_p3")
-        ar[f"e6_{m}"] = r
+        r = run_seeds(f"E6_{m}", TEST, method=m, t_eps=te,
+                      extra="+cask_frozen=true", bench="cask_p3")
 
     # ═══ Fig 2-5 ═══
     print("\nExporting figures...")
@@ -249,16 +278,17 @@ def main():
     with open(os.path.join(OUT, "fig5_evolution.json"), "w") as f: json.dump(evo_rounds, f)
 
     # ═══ Final Table ═══
-    print(f"\n{'='*60}\nE3 MAIN TABLE (per 实验设计2 §15)\n{'='*60}")
-    print(f"{'Method':25s} {'SR':>7} {'KUS':>7} {'HRR↓':>7} {'IRR↓':>7} {'Cov@R10':>8} {'ECE':>7} {'RCR':>7} {'CFR':>7}")
+    print(f"\n{'='*60}\nE3 MAIN TABLE (per 实验设计2)\n{'='*60}")
+    print(f"{'Method':25s} {'SR':>7} {'HardSR':>7} {'KUS':>7} {'HRR↓':>7} {'IRR↓':>7} {'Cov@R10':>8} {'ECE':>7} {'RCR':>7} {'CFR':>7}")
     print("-" * 90)
     for m in METHODS:
         r = e3r.get(m, {})
         if r:
-            print(f"{m:25s} {r['SR']:6.3f} {r['KUS']:6.3f} {r['HRR']:6.3f} {r['IRR']:6.3f} {r['Cov@Risk<=10%']:7.3f} {r['ECE']:6.3f} {r['RCR']:6.3f} {r['CFR']:6.3f}")
+            hardsr_val = e3r.get(m, {}).get("HardSR", e3r.get(m, {}).get("SR", 0))
+            print(f"{m:25s} {r['SR']:6.3f} {hardsr_val:6.3f} {r['KUS']:6.3f} {r['HRR']:6.3f} {r['IRR']:6.3f} {r['Cov@Risk<=10%']:7.3f} {r['ECE']:6.3f} {r['RCR']:6.3f} {r['CFR']:6.3f}")
 
     final = os.path.join(OUT, f"final_{int(time.time())}.json")
-    with open(final, "w") as f: json.dump({"config": {"t_eps": te, "n_calib": nc}, "e3": e3r, "pairs": pairs, "e1": ar.get("e1", []), "fig2": fig2[:10], "fig3": fig3, "fig4": fig4[:10], "fig5": evo_rounds}, f, indent=2)
+    with open(final, "w") as f: json.dump({"config": {"t_eps": te, "n_calib": nc}, "e3": e3r, "e4": e4r, "pairs": pairs, "e1": ar.get("e1", []), "fig2": fig2[:10], "fig3": fig3, "fig4": fig4[:10], "fig5": evo_rounds}, f, indent=2)
     print(f"\nSaved: {final} | t_eps={te:.4f}")
 
 

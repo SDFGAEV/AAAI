@@ -1,105 +1,125 @@
 # @package _global_
+# CASK E1: Knowledge Accumulation — 24 tasks × 8 seeds
+# Task distribution: build(5) craft(5) mine(4) explore(3) use(3) smelt(1) combat(2) enchant(1)
+# Source: MCU benchmark task configs, adapted to our format
 env:
   name: CASKTaskEnv-v0
   max_minutes: 3
   times: 1
   prefer_biome: forest
   initial_inventory: []
+
 all_task:
+# ── Build (5) ──
 - id: 0
-  type: place
-  instruction: create a decorative garden with various plants and flowers
-  goal: build_a_garden
+  type: build
+  instruction: Build a nether portal using obsidian blocks and activate it with flint and steel.
+  goal: build_nether_portal
 - id: 1
-  type: place
-  instruction: build a basic house with essential features
-  goal: build_a_house
+  type: build
+  instruction: Build a snow golem using snow blocks and a pumpkin.
+  goal: build_snow_golem
 - id: 2
-  type: craft
-  instruction: brew a potion of fire resistance
-  goal: brew_potion_of_fire_resistance
+  type: build
+  instruction: Build a gate to secure your area in Minecraft.
+  goal: build_gate
 - id: 3
-  type: place
-  instruction: build a library with bookshelves and decorative elements
-  goal: build_a_library
+  type: build
+  instruction: Build a simple house with walls, a door, and a roof.
+  goal: build_a_house
 - id: 4
-  type: craft
-  instruction: decorate a wall with various decorative items
-  goal: decorate_the_wall
+  type: place
+  instruction: Place an item frame on a solid surface.
+  goal: place_a_item_frame
+
+# ── Craft (5) ──
 - id: 5
   type: craft
-  instruction: decorate the ground with colorful items
-  goal: decorate_the_ground
+  instruction: Craft oak planks from oak logs.
+  goal: craft_oak_planks
 - id: 6
-  type: place
-  instruction: build a tower using various materials
-  goal: build_a_tower
+  type: craft
+  instruction: Craft a crafting table.
+  goal: craft_crafting_table
 - id: 7
   type: craft
-  instruction: Craft a cake using ingredients gathered from various sources.
-  goal: craft_to_cake
+  instruction: Craft a stonecutter using iron ingot and stone.
+  goal: craft_stonecut
 - id: 8
-  type: place
-  instruction: build a ladder using sticks
-  goal: build_a_ladder
+  type: craft
+  instruction: Craft a ladder using sticks.
+  goal: craft_ladder
 - id: 9
-  type: place
-  instruction: build a maze using stone bricks
-  goal: build_a_maze
+  type: craft
+  instruction: Craft a cake using wheat, sugar, egg, and milk.
+  goal: craft_to_cake
+
+# ── Mine / Collect (4) ──
 - id: 10
-  type: place
-  instruction: build a wall using stone bricks
-  goal: build_a_wall
+  type: mine
+  instruction: Mine 3 iron ore blocks using a stone pickaxe or better.
+  goal: mine_iron_ore
 - id: 11
-  type: craft
-  instruction: create a bee nest-like structure
-  goal: craft_bee_nest
+  type: mine
+  instruction: Mine diamond ore using an iron pickaxe or better.
+  goal: mine_diamond_ore
 - id: 12
-  type: craft
-  instruction: Craft an enchanting table to enchant your items.
-  goal: craft_enchanting_table
+  type: collect
+  instruction: Collect 8 wood logs by chopping trees.
+  goal: collect_wood
 - id: 13
-  type: craft
-  instruction: Enchant a diamond sword using an enchanting table.
-  goal: enchant_diamond_sword
+  type: collect
+  instruction: Collect 3 wool by shearing or killing sheep.
+  goal: collect_wool
+
+# ── Explore / Find (3) ──
 - id: 14
-  type: craft
-  instruction: Explore the world to find a forest biome.
-  goal: find_forest
+  type: explore
+  instruction: Explore the world by traveling across various biomes and finding interesting locations.
+  goal: explore_run
 - id: 15
-  type: craft
-  instruction: Explore the world to find a village.
+  type: find
+  instruction: Find a village somewhere in the world.
   goal: find_village
 - id: 16
-  type: craft
-  instruction: hunt a horse using a sword or bow
-  goal: hunt_horse
+  type: find
+  instruction: Find a forest biome.
+  goal: find_forest
+
+# ── Use / Tool (3) ──
 - id: 17
-  type: craft
-  instruction: lay a carpet using wool
-  goal: lay_carpet
+  type: use
+  instruction: Throw a snowball.
+  goal: throw_a_snowball
 - id: 18
-  type: craft
-  instruction: Use flint and steel to ignite a fire.
-  goal: make_fire_with_flint_and_steel
+  type: use
+  instruction: Drop an item from your inventory.
+  goal: drop_an_item
 - id: 19
-  type: equip
-  instruction: Equip and use a shield to block incoming attacks.
-  goal: use_shield
+  type: use
+  instruction: Sleep in a bed to skip the night.
+  goal: sleep_in_bed
+
+# ── Smelt (1) ──
 - id: 20
-  type: place
-  instruction: Build a waterfall in your Minecraft world.
-  goal: build_a_waterfall
+  type: smelt
+  instruction: Smelt raw beef in a furnace to get cooked beef.
+  goal: smelt_beef
+
+# ── Combat (2) ──
 - id: 21
-  type: craft
-  instruction: craft a bell
-  goal: craft_bell
+  type: combat
+  instruction: Defeat 3 zombies using a sword or axe.
+  goal: combat_zombies
 - id: 22
-  type: craft
-  instruction: craft diorite using cobblestone and nether quartz
-  goal: craft_diorite
+  type: combat
+  instruction: Defeat a skeleton using a bow or sword.
+  goal: combat_skeletons
+
+# ── Enchant (1) ──
 - id: 23
   type: craft
-  instruction: craft oak planks from oak logs
-  goal: craft_oak_planks
+  instruction: Craft an enchanting table and place it down.
+  goal: craft_enchanting_table
+
 evaluate: []
