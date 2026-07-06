@@ -161,9 +161,11 @@ def main():
     for m in ["NoKnowledge", "NoTrust"]:
         ar[f"e0_{m}"] = run_seeds("E0", [1, 2], method=m, bench="cask_calib")
 
-    # ═══ E1 ═══
-    print(f"\nE1: Accumulation — NoTrust, {len(TRAIN)} seeds")
-    ar["e1"] = run_seeds("E1", TRAIN, method="NoTrust", bench="cask_train")
+    # ═══ E1: Accumulation with base sampling ═══
+    # 10% random forced-base to get unbiased P(Y|do(∅)) estimates
+    print(f"\nE1: Accumulation — NoTrust + 10% base sampling, {len(TRAIN)} seeds")
+    ar["e1"] = run_seeds("E1", TRAIN, method="NoTrust", bench="cask_train",
+                         extra="+cask_cf_branching=true")
 
     # ═══ E2: Adaptive Calibration ═══
     # Runs NoTrust with active calibration, then learns per-group thresholds.
@@ -226,26 +228,29 @@ def main():
 
     for m in METHODS:
         mk = [x for x in kr_data if x.get("method") == m]
+        emk = [x for x in ep_data if x.get("method") == m]
         if not mk: mk = kr_data[-100:] if kr_data else []
         ku, hr, ir = KUS(mk), HRR(mk), IRR(mk)
         co, ec = Cov(mk), ECE(mk)
         cr, cs, rs = CovR(mk, EPS); cr5, _, _ = CovR(mk, 0.05)
         rcr = sum(1 for x in int_data if x.get("resource_conflict")) / max(len(int_data), 1)
         cfr = sum(1 for x in int_data if not x.get("chain_success")) / max(len(int_data), 1)
-        # Budget: aggregate tokens/calls from episode logs
-        emk = [x for x in ep_data if x.get("method") == m]
+        # HardSR: success rate on hard tasks (tech_tree + failure_recovery + interaction_stress)
+        hard_eps = [x for x in emk if x.get("task_group") in
+                    ("tech_tree", "failure_recovery", "interaction_stress")]
+        hardsr = sum(1 for x in hard_eps if x.get("success")) / max(len(hard_eps), 1)
+        # Budget
         tok_med = np.median([x.get("tokens", 0) for x in emk]) if emk else 0
         call_med = np.median([x.get("llm_calls", 0) for x in emk]) if emk else 0
         if m in e3r:
             sr_val = e3r[m]["SR"]
-            ras = round(sr_val * (1.0 - hr), 3)  # Risk-Adjusted Score = SR * (1-HRR)
+            ras = round(sr_val * (1.0 - hr), 3)
             e3r[m].update({"KUS": round(ku, 3), "HRR": round(hr, 3), "IRR": round(ir, 3),
                            "Coverage": round(co, 3), "ECE": round(ec, 3),
                            "Cov@Risk<=10%": cr, "Cov@Risk<=5%": cr5,
                            "RCR": round(rcr, 3), "CFR": round(cfr, 3),
-                           "RAS": ras,
-                           "Tokens_med": int(tok_med), "Calls_med": int(call_med),
-                           "KPR": round(KPR(e3r.get(m, {}).get("version_logs", [])), 3)})
+                           "RAS": ras, "HardSR": round(hardsr, 3),
+                           "Tokens_med": int(tok_med), "Calls_med": int(call_med)})
 
     # Paired comparisons
     pairs = {}
@@ -286,42 +291,42 @@ def main():
             e4r[vname].update({"KUS": round(KUS(mk), 3), "HRR": round(HRR(mk), 3),
                                "IRR": round(IRR(mk), 3)})
 
-    # ═══ E5: Online Safe Evolution ═══
-    # 10 rounds x 5 seeds x 2 methods = 100 evolution episodes
-    print(f"\nE5: Online Safe Evolution - 10 rounds x 5 seeds x 2 methods")
-    for m in ["Adaptive-Bayes", "ACT-RL-Full"]:
-        mt = te
-        for rn in range(10):
-            r = run_seeds(f"E5_{m}_r{rn}", range(4001, 4006), method=m, t_eps=mt, bench="cask_p3")
-            ar[f"e5_{m}_r{rn}"] = r
+    # ═══ E5: Online Safe Evolution (real) ═══
+    # Each round: accumulate knowledge (not frozen) → test (frozen)
+    # 5 rounds x 2 accumulate seeds + 3 test seeds x 2 methods
+    print(f"\nE5: Online Safe Evolution - 5 rounds x 2 methods")
+    EVO_ACCUM_SEEDS = range(6001, 6003)  # 2 seeds per round for fast accumulation
+    EVO_TEST_SEEDS  = range(4001, 4004)  # 3 test seeds per round
+    e5_tracker = {m: [] for m in ["Adaptive-Bayes", "ACT-RL-Full"]}
+    for rn in range(5):
+        print(f"\n  Round {rn+1}/5:")
+        for m in ["Adaptive-Bayes", "ACT-RL-Full"]:
+            # Phase A: accumulate new knowledge (not frozen)
+            mt = te
+            r_acc = run_seeds(f"E5_{m}_acc_r{rn}", EVO_ACCUM_SEEDS,
+                              method=m, t_eps=mt, bench="cask_train")
+            # Phase B: evaluate on test set (frozen)
+            r_test = run_seeds(f"E5_{m}_test_r{rn}", EVO_TEST_SEEDS,
+                               method=m, t_eps=mt, extra="+cask_frozen=true",
+                               bench="cask_p3")
+            ok_test = sum(1 for x in r_test if x["ok"])
+            tot = len(r_test)
+            sr_test = ok_test / max(tot, 1)
+            # Collect round metrics
+            rlogs = collect_logs(); rkr = rlogs.get("knowledge_reuse", [])
+            mk = [x for x in rkr if x.get("method") == m]
+            hr = HRR(mk) if mk else 0.0
+            vl = rlogs.get("version", [])
+            kpr_val = round(KPR(vl), 3)
+            e5_tracker[m].append({"round": rn+1, "SR": round(sr_test, 3),
+                "HRR": round(hr, 3), "KPR": kpr_val, "n_test": tot})
+            print(f"    {m}: SR={sr_test:.3f} HRR={hr:.3f} KPR={kpr_val:.3f}")
+            ar[f"e5_{m}_r{rn}"] = r_test
+    # Export E5 evolution curve data
+    with open(os.path.join(OUT, "fig5_evolution.json"), "w") as f:
+        json.dump(e5_tracker, f, indent=2)
 
-    # ═══ E6: Cross-Base Portability ═══
-    print(f"\nE6: Cross-Base - 8 seeds x 2 methods")
-    for m in ["NoTrust", "ACT-RL-Full"]:
-        r = run_seeds(f"E6_{m}", TEST, method=m, t_eps=te,
-                      extra="+cask_frozen=true", bench="cask_p3")
-        ar[f"e6_{m}"] = r
-
-    # ═══ E7: Drift / OOD Stress ═══
-    print(f"\nE7: Drift Stress - 18 tasks x 5 seeds x 3 methods")
-    DRIFT_METHODS = ["Fixed-Bayes", "Adaptive-Bayes", "ACT-RL-Full"]
-    DRIFT_SEEDS = range(5001, 5006)
-    for method in DRIFT_METHODS:
-        mt = te
-        r = run_seeds(f"E7_{method}", DRIFT_SEEDS, method=method, t_eps=mt,
-                      extra="+cask_frozen=true", bench="cask_p3")
-        ar[f"e7_{method}"] = r
-    # Compute drift metrics
-    drift_metrics = {}
-    e7_logs = collect_logs(); kr_e7 = e7_logs.get("knowledge_reuse", [])
-    for method in DRIFT_METHODS:
-        mk = [x for x in kr_e7 if x.get("method") == method]
-        if mk:
-            drift_metrics[method] = {"post_drift_hrr": round(HRR(mk), 3),
-                "post_drift_sr": round(sum(1 for x in mk if x.get("outcome_success")) / max(len(mk), 1), 3)}
-    with open(os.path.join(OUT, "fig7_drift_stress.json"), "w") as f: json.dump(drift_metrics, f)
-
-    # ═══ Fig 2-7 ═══
+    # (E6/E7 removed: E6 duplicated E3, E7 had no real distribution shift)
     print("\nExporting figures...")
     # Fig 2: Raw Success vs Uplift
     fig2 = [{"raw": x.get("use_lcb", 0.5), "uplift": x.get("uplift", 0.0),
@@ -339,14 +344,6 @@ def main():
     fig4 = [{"chain_length": len(l.get("conflict_pairs", [])) + 1, "rcr": 1 if l.get("resource_conflict") else 0} for l in int_data]
     with open(os.path.join(OUT, "fig4_interaction.json"), "w") as f: json.dump(fig4, f)
 
-    # Fig 5: Evolution
-    evo_rounds = []
-    for k, v in ar.items():
-        if k.startswith("e5_"):
-            ok = sum(1 for r in v if r["ok"]); tot = len(v)
-            evo_rounds.append({"round": k, "SR": ok / tot if tot else 0, "total": tot})
-    with open(os.path.join(OUT, "fig5_evolution.json"), "w") as f: json.dump(evo_rounds, f)
-
     # Fig 6: SR-HRR tradeoff scatter (all methods)
     fig6 = []
     for m in METHODS:
@@ -357,14 +354,14 @@ def main():
     with open(os.path.join(OUT, "fig6_sr_hrr_tradeoff.json"), "w") as f: json.dump(fig6, f)
 
     # ═══ Final Table ═══
-    print(f"\n{'='*80}\nE3 MAIN TABLE\n{'='*80}")
-    hdr = f"{'Method':25s} {'SR':>6} {'RAS':>6} {'HRR':>6} {'KUS':>6} {'Cov@10%':>7} {'ECE':>6} {'Tok':>8} {'Call':>5}"
+    print(f"\n{'='*90}\nE3 MAIN TABLE\n{'='*90}")
+    hdr = f"{'Method':25s} {'SR':>6} {'HardSR':>6} {'RAS':>6} {'HRR':>6} {'Cov@10%':>7} {'ECE':>6} {'Tok':>8} {'Call':>5}"
     print(hdr)
-    print("-" * 80)
+    print("-" * 85)
     for m in METHODS:
         r = e3r.get(m, {})
         if r:
-            print(f"{m:25s} {r['SR']:5.3f} {r.get('RAS',0):5.3f} {r['HRR']:5.3f} {r['KUS']:5.3f} {r['Cov@Risk<=10%']:6.3f} {r['ECE']:5.3f} {r.get('Tokens_med',0):7d} {r.get('Calls_med',0):4d}")
+            print(f"{m:25s} {r['SR']:5.3f} {r.get('HardSR',0):5.3f} {r.get('RAS',0):5.3f} {r['HRR']:5.3f} {r['Cov@Risk<=10%']:6.3f} {r['ECE']:5.3f} {r.get('Tokens_med',0):7d} {r.get('Calls_med',0):4d}")
 
     # NoTrust vs ACT-RL-Full risk comparison
     nt = e3r.get("NoTrust", {}); arl = e3r.get("ACT-RL-Full", {})
@@ -386,7 +383,7 @@ def main():
             print(f"{vname:25s} {r['SR']:5.3f} {r.get('KUS',0):5.3f} {r.get('HRR',0):5.3f} {r.get('IRR',0):5.3f}")
 
     final = os.path.join(OUT, f"final_{int(time.time())}.json")
-    with open(final, "w") as f: json.dump({"config": {"t_eps": te, "n_calib": nc}, "e3": e3r, "e4": e4r, "pairs": pairs, "e1": ar.get("e1", []), "fig2": fig2[:10], "fig3": fig3, "fig4": fig4[:10], "fig5": evo_rounds, "fig6_sr_hrr": fig6}, f, indent=2)
+    with open(final, "w") as f: json.dump({"config": {"t_eps": te}, "e3": e3r, "e4": e4r, "pairs": pairs, "e5": e5_tracker, "fig2": fig2[:10], "fig3": fig3, "fig4": fig4[:10], "fig6_sr_hrr": fig6}, f, indent=2)
     print(f"\nSaved: {final} | t_eps={te:.4f}")
 
 
