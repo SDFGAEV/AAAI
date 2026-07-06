@@ -51,7 +51,8 @@ def _ensure_minecraft():
 
 # ═══════════════════ Run ═══════════════════
 def run_seeds(phase, seeds, method="NoTrust", t_eps=0.0, extra="", bench="cask_train"):
-    ckpt_path = os.path.join(OUT, f"ckpt_{phase}.json")
+    safe_phase = phase.replace("/", "_").replace("\\", "_")
+    ckpt_path = os.path.join(OUT, f"ckpt_{safe_phase}.json")
     # Resume: load completed seeds
     results = []
     done_seeds = set()
@@ -86,7 +87,8 @@ def run_seeds(phase, seeds, method="NoTrust", t_eps=0.0, extra="", bench="cask_t
     return results
 
 def save_ckpt(name, data):
-    with open(os.path.join(OUT, f"ckpt_{name}.json"), "w") as f: json.dump(data, f, indent=2)
+    safe_name = name.replace("/", "_").replace("\\", "_")
+    with open(os.path.join(OUT, f"ckpt_{safe_name}.json"), "w") as f: json.dump(data, f, indent=2)
 
 # ═══════════════════ Collect logs ═══════════════════
 def collect_logs():
@@ -199,7 +201,9 @@ def main():
         te = gate.tau.get("crafting", 0.90)  # use crafting as reference
         print(f"\n  Calibration complete. Groups calibrated: {len(calib_result)}")
         for grp, cfg in sorted(calib_result.items()):
-            print(f"    {grp}: τ={cfg['tau']:.2f} δ={cfg['delta']:.3f} h={cfg['harm']:.3f} cov={cfg.get('coverage','?'):.3f}")
+            tau_v = float(cfg['tau']); delta_v = float(cfg['delta']); harm_v = float(cfg['harm'])
+            cov_v = float(cfg.get('coverage', 0))
+            print(f"    {grp}: tau={tau_v:.2f} delta={delta_v:.3f} harm={harm_v:.3f} cov={cov_v:.3f}")
         # Estimate empirical priors
         type_data = {}
         for x in kr_data_e2:
