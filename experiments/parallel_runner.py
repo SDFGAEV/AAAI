@@ -58,15 +58,18 @@ class ParallelRunner:
     """Orchestrate parallel experiment execution."""
 
     def __init__(self, workers: int = 4, vlm_port: int = 12345,
-                 mc_base_port: int = 15000, checkpoint_dir: str = None):
+                 mc_base_port: int = 15000, checkpoint_dir: str = None,
+                 batch_proxy_port: int = 12346):
         self.workers = workers
         self.vlm_port = vlm_port
         self.mc_base_port = mc_base_port
+        self.batch_proxy_port = batch_proxy_port
         self.checkpoint_dir = checkpoint_dir or os.path.join(
             _PROJ, "exp_results", "ckpt")
         self._completed: set = set()
         self._results: List[Dict] = []
         self._server_procs: Dict[int, subprocess.Popen] = {}
+        self._proxy_thread = None
 
         os.makedirs(self.checkpoint_dir, exist_ok=True)
 
@@ -141,6 +144,18 @@ class ParallelRunner:
                 proc.kill()
             print(f"[VLM] Stopped planning server (PID {proc.pid})")
 
+    def _start_batch_proxy(self):
+        """Start the batch VLM proxy for 2-4x GPU throughput."""
+        from experiments.batch_proxy import start_proxy_in_thread
+        self._proxy_thread = start_proxy_in_thread(
+            self.batch_proxy_port,
+            f"http://127.0.0.1:{self.vlm_port}",
+        )
+        print(f"[BatchProxy] Started on port {self.batch_proxy_port}")
+
+    def _stop_batch_proxy(self):
+        """The proxy thread is daemon — stops automatically on exit."""
+
     # ── Single episode execution ──
     def _run_one(self, cfg: ExperimentConfig) -> Dict:
         """Run a single (task, seed, method) episode via subprocess."""
@@ -167,7 +182,8 @@ class ParallelRunner:
                 cmd, capture_output=True, text=True,
                 timeout=cfg.timeout * cfg.env_times + 120,
                 cwd=_PROJ,
-                env={**os.environ, "PYTHONUNBUFFERED": "1"},
+                env={**os.environ, "PYTHONUNBUFFERED": "1",
+                     "VLM_BATCH_PROXY": f"http://127.0.0.1:{self.batch_proxy_port}"},
             )
             elapsed = time.perf_counter() - t0
             success = result.returncode == 0
@@ -247,8 +263,9 @@ class ParallelRunner:
             print("[Done] All episodes already completed. Nothing to run.")
             return self._results
 
-        # Start VLM server
+        # Start VLM server + batch proxy
         self._start_vlm_server(plan_model)
+        self._start_batch_proxy()
 
         # Assign ports to workers
         for cfg in grid:

@@ -17,7 +17,7 @@ Usage:
   Time saved:      ~3-5 hours on E3 alone
 """
 
-import hashlib, json, time, threading
+import hashlib, json, os, time, threading
 from typing import Dict, Tuple, Optional
 from collections import OrderedDict
 
@@ -175,6 +175,24 @@ def install_vlm_cache():
 
     _real_post = requests.post
     _cache = VLMCache(max_size=5000)
+    _batch_proxy = os.environ.get("VLM_BATCH_PROXY", "")
+
+    class MockResponse:
+        def __init__(self, data):
+            self._data = data
+            self.status_code = 200
+            self.text = ""
+        def json(self):
+            return self._data
+        def raise_for_status(self):
+            pass
+
+    def _route_through_proxy(url, json_data, timeout):
+        """Send a VLM request to the batch proxy, which batches with others."""
+        resp = _real_post(f"{_batch_proxy}/proxy", json=json_data, timeout=timeout)
+        if resp.status_code == 200:
+            return MockResponse(resp.json())
+        return resp
 
     def _cached_post(url, json=None, timeout=None, **kwargs):
         if json and isinstance(url, str) and "/chat" in url:
@@ -182,20 +200,18 @@ def install_vlm_cache():
             rgb_images = json.get("rgb_images", [])
             plan_type = json.get("type", "plan")
 
+            # Cache hit — return immediately
             cached = _cache.get(task, rgb_images, plan_type)
             if cached is not None:
-                class MockResponse:
-                    def __init__(self, data):
-                        self._data = data
-                        self.status_code = 200
-                        self.text = ""
-                    def json(self):
-                        return self._data
-                    def raise_for_status(self):
-                        pass
                 return MockResponse(cached)
 
-            resp = _real_post(url, json=json, timeout=timeout, **kwargs)
+            # Cache miss — route through batch proxy if available
+            timeout_val = timeout if isinstance(timeout, (int, float)) else 120
+            if _batch_proxy:
+                resp = _route_through_proxy(url, json, timeout_val)
+            else:
+                resp = _real_post(url, json=json, timeout=timeout_val, **kwargs)
+
             if resp.status_code == 200:
                 try:
                     _cache.set(task, rgb_images, plan_type, resp.json())
