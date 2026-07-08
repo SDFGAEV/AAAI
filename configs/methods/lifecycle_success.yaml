@@ -1,0 +1,8 @@
+# LifecycleSuccessGate: Lifecycle + success rate gate
+# Uses knowledge lifecycle states but gate is success-mean only.
+
+method: "LifecycleSuccessGate"
+frozen: false
+active_calib_rate: 0.0
+cask_method: "LifecycleSuccessGate"
+description: "Lifecycle states + success-rate threshold gate"
