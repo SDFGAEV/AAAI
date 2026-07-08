@@ -227,19 +227,15 @@ class CactMemory:
             self._store.record_episode(kid, ctx, used=True, success=sv,
                                        is_harmful=0.0 if is_success else 0.5)
 
-        n = self._store.total_count(kid, ctx)
+        ess = self._store.ess(kid, ctx)
         pi = self._store.uplift_probability(kid, ctx)
         hu = self._store.harm_upper_bound(kid, ctx)
         ul = self._store.uplift_lcb(kid, ctx)
         lc = self._store.get_lifecycle_state(kid)
-        ess = self._store.ess(kid, ctx)
 
-        # Contract check (post-conditions)
+        # Contract violation: failure + high harm probability
         contract = self._store.get_contract(kid)
-        contract_violated = False
-        if contract and not is_success:
-            postconds = contract.get("postconditions", [])
-            contract_violated = len(postconds) > 0
+        contract_violated = (not is_success and hu >= 0.10) if contract else False
 
         # Use last decision result for contract and interaction info
         last = getattr(self, '_last_decision_result', None)
@@ -272,7 +268,7 @@ class CactMemory:
         })
 
         # Knowledge generation
-        if is_success and n >= 2:
+        if is_success and ess >= 2:
             self.episode_logs[-1]["knowledge_generated"] = f"s_{waypoint}_{int(n):02d}"
             self._knowledge_cnt += 1
 

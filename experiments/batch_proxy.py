@@ -33,8 +33,8 @@ class BatchProxy:
         with self._lock:
             self._queue.append((request_data, result_holder))
             self._request_count += 1
-            if len(self._queue) == 1:
-                # First request in a new batch window — start timer
+            if len(self._queue) == 1 and not getattr(self, '_timer_running', False):
+                self._timer_running = True
                 threading.Timer(self.batch_window, self._flush).start()
 
         # Wait for result (with timeout)
@@ -55,17 +55,22 @@ class BatchProxy:
         result_holders = [item[1] for item in batch]
 
         if len(requests_data) == 1:
-            # Only one request — use normal /chat
             resp = self._post_single(requests_data[0])
             result_holders[0]["response"] = resp
             result_holders[0]["ready"] = True
         else:
-            # Batch request
             self._batch_count += 1
             responses = self._post_batch(requests_data)
             for i, rh in enumerate(result_holders):
                 rh["response"] = responses[i] if i < len(responses) else {"error": "missing"}
                 rh["ready"] = True
+
+        # Restart timer if new requests arrived during flush
+        with self._lock:
+            if self._queue:
+                threading.Timer(self.batch_window, self._flush).start()
+            else:
+                self._timer_running = False
 
     def _post_single(self, data: dict) -> dict:
         """Forward a single request to /chat."""
