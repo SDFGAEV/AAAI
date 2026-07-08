@@ -128,8 +128,9 @@ class ParallelRunner:
             "--port", str(self.vlm_port),
             "--plan_model", plan_model,
         ]
-        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
-                               stderr=subprocess.DEVNULL)
+        os.makedirs(os.path.join(_PROJ, "exp_results"), exist_ok=True)
+        vlm_log = open(os.path.join(_PROJ, "exp_results", "vlm_server.log"), "a")
+        proc = subprocess.Popen(cmd, stdout=vlm_log, stderr=vlm_log)
         self._server_procs[self.vlm_port] = proc
         print(f"[VLM] Started planning server on port {self.vlm_port} (PID {proc.pid})")
         time.sleep(8)  # Wait for model to load into GPU

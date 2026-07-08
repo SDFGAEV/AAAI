@@ -202,13 +202,7 @@ class DecisionController:
         best = None
         for c in chain:
             if c["certified"] and c["contract_ok"]:
-                # Re-check with interaction safety
-                ctu_safe = result.interaction_safe
-                # For the first (best) candidate, interaction is trivial (single)
-                if c == chain[0]:
-                    ctu_safe = True
-
-                if ctu_safe:
+                if result.interaction_safe:
                     best = c
                     break
 

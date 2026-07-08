@@ -86,16 +86,19 @@ STAGE_START=$(date +%s)
 
 # E0: Sanity Check (~24 episodes, < 5 min)
 if $RUN_E0; then
-    run_stage "E0" \
+    echo "============================================================"
+    echo "  STAGE E0: Sanity Check (cact_calib, 2 methods x 2 seeds)"
+    echo "============================================================"
+    if $PYTHON experiments/parallel_runner.py \
         --benchmark cact_calib \
         --seeds 1001-1002 \
         --methods NoKnowledge XENON-Original \
-        --print_grid 2>/dev/null  # dry-run then real
-    $PYTHON experiments/parallel_runner.py \
-        --benchmark cact_calib \
-        --seeds 1001-1002 \
-        --methods NoKnowledge XENON-Original \
-        --workers 2 --vlm_port "$VLM_PORT" --plan_model "$PLAN_MODEL"
+        --workers 2 --vlm_port "$VLM_PORT" --plan_model "$PLAN_MODEL"; then
+        echo "[E0] PASSED"
+    else
+        echo "[E0] FAILED — pipeline stopped"
+        exit 1
+    fi
 fi
 
 # E1: Knowledge Accumulation (~192 episodes, ~1.5h @ 4 workers)
@@ -106,12 +109,52 @@ if $RUN_E1; then
         --methods XENON-Original
 fi
 
-# E2: Adaptive Calibration (~120 episodes, ~1h @ 4 workers)
+# E2: Adaptive Calibration — run ACT to collect trust data, then calibrate
 if $RUN_E2; then
-    run_stage "E2" \
+    echo "=== E2: Collecting calibration data ==="
+    $PYTHON experiments/parallel_runner.py \
         --benchmark cact_calib \
         --seeds 3001-3008 \
-        --methods ACT
+        --methods ACT \
+        --workers "$WORKERS" --vlm_port "$VLM_PORT" --plan_model "$PLAN_MODEL"
+
+    echo "=== E2: Running calibration optimization ==="
+    $PYTHON -c "
+from cact.trust_store import TrustStore
+from cact.trust_gate import TrustGate
+import json, os
+
+store = TrustStore(store_path='cact_ckpt/trust_store')
+gate = TrustGate()
+
+# Collect calibration data from trust store
+calib_data = []
+for k in store._data:
+    parts = k.rsplit('|', 2)
+    if len(parts) >= 2:
+        kid_ctx = parts[0] + '|' + parts[1] if len(parts) > 2 else k
+        d = store._data[k]
+        calib_data.append({
+            'pi_uplift': store.uplift_probability(
+                parts[0].split('|')[0],
+                '|'.join(parts[1:-1]) if len(parts) > 1 else ''),
+            'uplift': store.uplift_lcb(
+                parts[0].split('|')[0],
+                '|'.join(parts[1:-1]) if len(parts) > 1 else ''),
+            'harm_ucb': d.get('alpha', 0.1) / max(d.get('alpha', 0.1) + d.get('beta', 0.9), 0.01),
+            'is_harmful': 0,
+        })
+
+if calib_data:
+    results = gate.calibrate_all_groups({'crafting': calib_data, 'mining': calib_data,
+        'exploration': calib_data, 'tech_tree': calib_data,
+        'failure_recovery': calib_data, 'interaction_stress': calib_data})
+    gate.save_calibration('exp_results/calibration.json')
+    print(f'Calibration done: {json.dumps(results, indent=2)}')
+else:
+    print('WARNING: No calibration data collected')
+"
+    echo "[E2] PASSED"
 fi
 
 # E3: Main Evaluation (~2016 episodes, ~4-5h @ 4 workers)

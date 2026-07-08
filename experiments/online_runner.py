@@ -46,8 +46,9 @@ class OnlineRunner:
     def _start_vlm(self, plan_model: str):
         cmd = [sys.executable, os.path.join(_PROJ, "app.py"),
                "--port", str(self.vlm_port), "--plan_model", plan_model]
-        self._vlm_proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
-                                          stderr=subprocess.DEVNULL)
+        os.makedirs(os.path.join(_PROJ, "exp_results"), exist_ok=True)
+        vlm_log = open(os.path.join(_PROJ, "exp_results", "vlm_server.log"), "a")
+        self._vlm_proc = subprocess.Popen(cmd, stdout=vlm_log, stderr=vlm_log)
         print(f"[VLM] Server on port {self.vlm_port} (PID {self._vlm_proc.pid})")
         time.sleep(8)
 

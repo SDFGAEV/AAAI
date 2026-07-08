@@ -29,7 +29,7 @@ No RL rollback — only knowledge-level governance.
 import logging, numpy as np, json, os, copy, time
 from typing import Dict, List, Optional, Tuple
 
-from .trust_store import TrustStore, CANDIDATE, PROBATION, CERTIFIED, DEPRECATED, DISABLED
+from .trust_store import TrustStore, CANDIDATE, QUARANTINED, PROBATION, CERTIFIED, DEPRECATED, DISABLED
 from .trust_gate import TrustGate
 from .context_bucket import ContextBucket
 from .contract import ContractExtractor, ContractChecker
@@ -238,9 +238,15 @@ class CactMemory:
         contract = self._store.get_contract(kid)
         contract_violated = False
         if contract and not is_success:
-            # Quick post-condition check
             postconds = contract.get("postconditions", [])
             contract_violated = len(postconds) > 0
+
+        # Use last decision result for contract and interaction info
+        last = getattr(self, '_last_decision_result', None)
+        csr_before = last.contract_satisfied_before if last else True
+
+        # Harmful if harm_ucb exceeds threshold AND task failed
+        is_harmful = 1 if (not is_success and hu >= 0.10) else 0
 
         # Reuse decision log
         self.reuse_logs.append({
@@ -250,9 +256,9 @@ class CactMemory:
             "pi_uplift": round(pi, 4), "uplift_lcb": round(ul, 4),
             "harm_ucb": round(hu, 4), "ess": round(ess, 1),
             "lifecycle": lc, "decision": "reuse",
-            "contract_satisfied_before": True,
+            "contract_satisfied_before": csr_before,
             "contract_violation_after": contract_violated,
-            "is_harmful": 0 if is_success else (1 if not is_success and n > 1 else 0),
+            "is_harmful": is_harmful,
             "outcome_success": int(is_success),
         })
 
@@ -318,6 +324,7 @@ class CactMemory:
             result = self._legacy_decide(
                 kid, ctx, candidates, state, task, context)
 
+        self._last_decision_result = result
         trusted = result.decision in ("reuse", "probe")
         self._last_was_supervised = getattr(result, "supervised", False)
 
@@ -369,7 +376,7 @@ class CactMemory:
         elif self.method == "BankCuration" or self.method == "Online-BankCuration":
             result.decision = "reuse" if self._store.mean(kid, ctx, "use") >= 0.3 else "fallback"
         elif self.method == "LifecycleSuccessGate":
-            if lc in (DISABLED, DEPRECATED):
+            if lc in (QUARANTINED, DEPRECATED, DISABLED):
                 result.decision = "fallback"
             else:
                 result.decision = "reuse" if self._store.mean(kid, ctx, "use") >= 0.5 else "fallback"
