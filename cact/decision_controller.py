@@ -77,6 +77,15 @@ class DecisionController:
         self.tp = thompson_prober or SafeThompsonProber()
         self.cc = contract_checker or ContractChecker()
 
+        # Ablation flags
+        self.abl_contract = True
+        self.abl_adaptive_tau = True
+        self.abl_interaction = True
+        self.abl_active_calib = True
+        self.abl_level_prior = True
+        self.abl_lifecycle = True
+        self.abl_thompson = True
+
     def decide(self, candidate_knowledge: List[Dict],
                state: Dict, task: Dict, context: Dict,
                mode: str = "evaluation") -> DecisionResult:
@@ -95,7 +104,10 @@ class DecisionController:
         result = DecisionResult()
 
         # ── Step 1: Contract filtering ──
-        valid = self._contract_filter(candidate_knowledge, state, context)
+        if self.abl_contract:
+            valid = self._contract_filter(candidate_knowledge, state, context)
+        else:
+            valid = candidate_knowledge
         result.filtered_count = len(valid)
 
         if not valid:

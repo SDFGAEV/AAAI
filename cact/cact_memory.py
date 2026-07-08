@@ -47,6 +47,31 @@ class CactMemory:
                  active_calib_rate: float = 0.0, log_dir: str = None):
         self._mem = xenon_memory
 
+        # Component flags (for ablation)
+        self._use_contract = True
+        self._use_adaptive_tau = True
+        self._use_active_calib = True
+        self._use_interaction = True
+        self._use_level_prior = True
+        self._use_lifecycle = True
+        self._use_thompson = True
+
+        # Parse method name for ablation variants
+        if "NoContract" in method or "no_Contract" in method:
+            self._use_contract = False
+        if "NoAdaptiveTau" in method or "no_AdaptiveTau" in method:
+            self._use_adaptive_tau = False
+        if "NoActiveCalib" in method or "no_ActiveCalib" in method:
+            self._use_active_calib = False
+        if "NoInteraction" in method or "no_Interaction" in method:
+            self._use_interaction = False
+        if "NoLevelPrior" in method or "no_LevelPrior" in method:
+            self._use_level_prior = False
+        if "NoLifecycle" in method or "no_Lifecycle" in method:
+            self._use_lifecycle = False
+        if "NoThompson" in method or "no_Thompson" in method:
+            self._use_thompson = False
+
         # Core C-ACT components
         self._store = TrustStore(store_path or "cact_ckpt/trust_store")
         self._gate = TrustGate()
@@ -101,6 +126,17 @@ class CactMemory:
     def current_environment(self): return None
     @current_environment.setter
     def current_environment(self, v): pass
+
+    def _sync_ablation_flags(self):
+        """Pass ablation flags to the decision controller."""
+        c = self._controller
+        c.abl_contract = self._use_contract
+        c.abl_adaptive_tau = self._use_adaptive_tau
+        c.abl_active_calib = self._use_active_calib
+        c.abl_interaction = self._use_interaction
+        c.abl_level_prior = self._use_level_prior
+        c.abl_lifecycle = self._use_lifecycle
+        c.abl_thompson = self._use_thompson
 
     def set_task_info(self, difficulty: str = "medium", group: str = "crafting"):
         """Set current task metadata for episode logging."""
@@ -271,7 +307,8 @@ class CactMemory:
             "evaluation" if self.frozen else "accumulation")
 
         # C-ACT decision
-        if self.method in ("C-ACT-Full", "Online-C-ACT"):
+        if self.method in ("C-ACT-Full", "Online-C-ACT") or "C-ACT-" in self.method:
+            self._sync_ablation_flags()
             result = self._controller.decide(
                 candidates, state, task, context, mode)
         else:

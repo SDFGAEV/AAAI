@@ -123,18 +123,22 @@ if $RUN_E3; then
                   LifecycleSuccessGate FixedBayes ACT C-ACT-Full
 fi
 
-# E4: Ablation (~480 episodes, ~1h @ 4 workers)
+# E4: Ablation — non-evolutionary, same knowledge as E1
+# 6 variants: each removes one component from C-ACT-Full
+# 50 tasks x 5 seeds = 250 eps per variant, 1500 total (~1h @ 4 workers)
 if $RUN_E4; then
-    run_stage "E4" \
-        --benchmark cact_p3 \
-        --seeds 4001-4005 \
-        --methods C-ACT-Full
-    # Note: E4 requires variant configs — run with cact_method overrides:
-    # (simplified here; actual E4 needs per-variant cact_method changes)
+    for variant in w/o_Contract w/o_AdaptiveTau w/o_ActiveCalib w/o_Interaction w/o_LevelPrior w/o_LifecycleState; do
+        echo "--- E4: $variant ---"
+        $PYTHON experiments/parallel_runner.py \
+            --benchmark cact_p3 \
+            --seeds 4001-4005 \
+            --methods "C-ACT-$variant" \
+            --workers "$WORKERS" --vlm_port "$VLM_PORT"
+    done
 fi
 
-# E5: Online Evolution — 4 methods x 3 seeds x 10 rounds
-# Uses online_runner.py with persistent trust stores
+# E5: Online Evolution — 6 methods x 3 seeds x 10 rounds
+# 4 main + 2 evolutionary-only ablations (lifecycle, Thompson)
 if $RUN_E5; then
     echo "=== E5: Online Evolution (10 rounds) ==="
     $PYTHON experiments/online_runner.py \
@@ -143,6 +147,7 @@ if $RUN_E5; then
         --seeds 5001-5003 \
         --rounds 10 \
         --methods Online-NoGate Online-BankCuration Online-ACT Online-C-ACT \
+                 Online-C-ACT-NoLifecycle Online-C-ACT-NoThompson \
         --workers "$WORKERS" --vlm_port "$VLM_PORT"
 fi
 
