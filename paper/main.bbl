@@ -1,4 +1,4 @@
-\begin{thebibliography}{7}
+\begin{thebibliography}{13}
 \providecommand{\natexlab}[1]{#1}
 
 \bibitem[{Angelopoulos and Bates(2021)}]{angelopoulos2021}
@@ -28,6 +28,36 @@ Lin, H.; Wang, Z.; Ma, J.; and Liang, Y. 2024.
 \newblock \emph{arXiv preprint}.
 \newblock Verify exact title and authors before final submission.
 
+\bibitem[{{TO BE VERIFIED}(2026{\natexlab{a}})}]{ael2026}
+{TO BE VERIFIED}. 2026{\natexlab{a}}.
+\newblock AEL: Autonomous Evolution of Large Language Model Agents.
+\newblock \emph{arXiv preprint}.
+\newblock [VERIFY] Need exact arXiv ID, full author list, and title.
+
+\bibitem[{{TO BE VERIFIED}(2026{\natexlab{b}})}]{ccp2026}
+{TO BE VERIFIED}. 2026{\natexlab{b}}.
+\newblock Capability-Calibrated Planning for Long-Horizon Open-World Agents.
+\newblock \emph{arXiv preprint}.
+\newblock [VERIFY] Need exact arXiv ID, full author list, and title.
+
+\bibitem[{{TO BE VERIFIED}(2026{\natexlab{c}})}]{cmi2026}
+{TO BE VERIFIED}. 2026{\natexlab{c}}.
+\newblock Causal Memory Intervention for Long-Context Agents.
+\newblock \emph{arXiv preprint}.
+\newblock [VERIFY] Need exact arXiv ID, full author list, and title.
+
+\bibitem[{{TO BE VERIFIED}(2026{\natexlab{d}})}]{causalflow2026}
+{TO BE VERIFIED}. 2026{\natexlab{d}}.
+\newblock CausalFlow: Step-Level Failure Attribution for Agent Repair.
+\newblock \emph{arXiv preprint}.
+\newblock [VERIFY] Need exact arXiv ID, full author list, and title.
+
+\bibitem[{{TO BE VERIFIED}(2026{\natexlab{e}})}]{wise2026}
+{TO BE VERIFIED}. 2026{\natexlab{e}}.
+\newblock WISE: World-Informed Skill Engine with Causal Event Graphs.
+\newblock \emph{arXiv preprint}.
+\newblock [VERIFY] Need exact arXiv ID, full author list, and title.
+
 \bibitem[{Wang et~al.(2023{\natexlab{a}})Wang, Xie, Jiang, Mandlekar, Xiao,
   Zhu, Fan, and Anandkumar}]{voyager2023}
 Wang, G.; Xie, Y.; Jiang, Y.; Mandlekar, A.; Xiao, C.; Zhu, Y.; Fan, L.; and
@@ -55,5 +85,14 @@ Wang, Z.; Cai, S.; Liu, A.; Jin, Y.; Hou, J.; Zhang, B.; Lin, H.; He, Z.;
   Intelligence}, 47(3): 1894--1907.
 \newblock ArXiv:2311.05997. Verified via DBLP; published venue is IEEE TPAMI
   2025, not NeurIPS 2024.
+
+\bibitem[{Xie et~al.(2026)Xie, Chen, Weng, Li, Li, Xiao, Song, Jing, Zhang, and
+  Wang}]{mineevolve2026}
+Xie, Z.; Chen, Z.; Weng, Z.; Li, J.; Li, C.; Xiao, Z.; Song, J.; Jing, J.;
+  Zhang, V.; and Wang, K. 2026.
+\newblock MineEvolve: Self-Evolution with Accumulated Knowledge for
+  Long-Horizon Embodied Minecraft Agents.
+\newblock \emph{arXiv preprint arXiv:2603.13131}.
+\newblock Verified via arXiv download and full-text reading.
 
 \end{thebibliography}
