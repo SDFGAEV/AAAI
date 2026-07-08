@@ -81,7 +81,8 @@ class LifecycleManager:
             import os
             if os.path.exists(self._lifecycle_file):
                 try:
-                    data = json.load(open(self._lifecycle_file))
+                    with open(self._lifecycle_file) as f:
+                        data = json.load(f)
                     self._states = data.get("states", {})
                     self._history = data.get("history", {})
                 except Exception:
@@ -89,8 +90,9 @@ class LifecycleManager:
 
     def _save(self):
         if self._lifecycle_file:
-            json.dump({"states": self._states, "history": self._history},
-                      open(self._lifecycle_file, "w"), indent=2)
+            with open(self._lifecycle_file, "w") as f:
+                json.dump({"states": self._states, "history": self._history},
+                          f, indent=2)
 
     # ── State queries ──
     def get_state(self, kid: str) -> LifecycleState:
