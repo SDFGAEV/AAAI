@@ -71,13 +71,13 @@ all_task:
   difficulty: hard
 - id: 10
   type: craft
-  instruction: You have only 8 cobblestone. Choose: craft a furnace OR a stone pickaxe. Craft one.
+  instruction: "You have only 8 cobblestone. Choose: craft a furnace OR a stone pickaxe. Craft one."
   goal: furnace
   group: interaction_stress
   difficulty: hard
 - id: 11
   type: craft
-  instruction: You have only 1 iron ingot. Choose: craft an iron pickaxe OR an iron sword. Craft the pickaxe.
+  instruction: "You have only 1 iron ingot. Choose: craft an iron pickaxe OR an iron sword. Craft the pickaxe."
   goal: iron_pickaxe
   group: interaction_stress
   difficulty: hard
