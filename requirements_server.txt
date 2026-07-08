@@ -1,0 +1,40 @@
+# C-ACT Full Requirements (Ubuntu Server)
+# Install: pip install -r requirements_server.txt
+
+# ── Core ML ──
+torch>=2.0.0
+transformers>=4.40.0
+sentence-transformers
+scipy
+numpy
+
+# ── VLM / Vision ──
+accelerate
+qwen-vl-utils
+einops
+Pillow
+opencv-python
+av
+
+# ── FastAPI Server ──
+fastapi
+uvicorn
+pydantic
+
+# ── Config / Logging ──
+omegaconf
+hydra-core
+pyyaml
+jsonlines
+
+# ── Minecraft ──
+gym<0.20
+minerl
+
+# ── Utilities ──
+requests
+shortuuid
+tqdm
+matplotlib
+thefuzz
+dm-tree

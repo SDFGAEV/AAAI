@@ -25,7 +25,7 @@ Speed: ~4× with 4 workers. E3: 17h → 4-5h (single MC per worker).
 """
 
 import subprocess, sys, os, json, time, signal, shutil, argparse, socket
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Optional
 from pathlib import Path
@@ -183,6 +183,7 @@ class ParallelRunner:
                 timeout=cfg.timeout * cfg.env_times + 120,
                 cwd=_PROJ,
                 env={**os.environ, "PYTHONUNBUFFERED": "1",
+                     "PYTHONPATH": os.path.join(_PROJ, "src"),
                      "VLM_BATCH_PROXY": f"http://127.0.0.1:{self.batch_proxy_port}"},
             )
             elapsed = time.perf_counter() - t0
@@ -277,7 +278,7 @@ class ParallelRunner:
             completed = 0
             to_run = len(grid) - len(self._completed)
 
-            with ProcessPoolExecutor(max_workers=self.workers) as pool:
+            with ThreadPoolExecutor(max_workers=self.workers) as pool:
                 futures = {pool.submit(self._run_one, cfg): cfg for cfg in grid}
                 for future in as_completed(futures):
                     result = future.result()
