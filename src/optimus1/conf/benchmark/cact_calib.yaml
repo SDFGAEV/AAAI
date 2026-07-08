@@ -1,6 +1,6 @@
 # @package _global_
-# ACT-RL E2: Adaptive Calibration — 12 tasks x 8 seeds
-# Purpose: learn empirical priors, adaptive thresholds, interaction params
+# C-ACT E2: Adaptive Calibration — 12 tasks x 8 seeds = 96 episodes
+# 2 tasks per group, covering easy/medium/hard for threshold learning
 env:
   name: CACTTaskEnv-v0
   max_minutes: 3
@@ -11,22 +11,22 @@ env:
 all_task:
 - id: 0
   type: craft
-  instruction: Craft a ladder using sticks.
-  goal: ladder
+  instruction: Craft a crafting table from planks.
+  goal: crafting_table
   group: crafting
   difficulty: easy
 - id: 1
-  type: craft
-  instruction: Craft a furnace using 8 cobblestone.
-  goal: furnace
-  group: crafting
-  difficulty: medium
-- id: 2
   type: smelt
   instruction: Smelt raw beef in a furnace to get cooked beef.
   goal: cooked_beef
   group: crafting
   difficulty: medium
+- id: 2
+  type: collect
+  instruction: Collect 8 wood logs by chopping trees.
+  goal: log
+  group: mining
+  difficulty: easy
 - id: 3
   type: mine
   instruction: Mine 3 iron ore using a stone pickaxe or better.
@@ -35,50 +35,50 @@ all_task:
   difficulty: medium
 - id: 4
   type: mine
-  instruction: Mine diamond ore using an iron pickaxe or better.
-  goal: diamond
-  group: mining
-  difficulty: hard
-- id: 5
-  type: collect
-  instruction: Collect 3 wool by shearing or killing sheep.
-  goal: wool
-  group: mining
-  difficulty: easy
-- id: 6
-  type: mine
   instruction: Find and mine diamond ore underground.
   goal: diamond
   group: exploration
   difficulty: hard
-- id: 7
+- id: 5
   type: collect
-  instruction: Explore to find a dungeon chest and obtain an iron ingot.
-  goal: iron_ingot
+  instruction: Find a village and obtain an emerald.
+  goal: emerald
   group: exploration
   difficulty: hard
-- id: 8
+- id: 6
   type: craft
-  instruction: "Tech tree: craft a wooden sword from scratch."
-  goal: wooden_sword
+  instruction: "Tech tree: starting with bare hands, craft a wooden pickaxe through logs, planks, and sticks."
+  goal: wooden_pickaxe
   group: tech_tree
   difficulty: medium
-- id: 9
+- id: 7
+  type: craft
+  instruction: "Tech tree: starting with a stone pickaxe, mine iron ore, smelt it, and craft an iron pickaxe."
+  goal: iron_pickaxe
+  group: tech_tree
+  difficulty: hard
+- id: 8
   type: mine
-  instruction: Attempt to mine iron ore with a wooden pickaxe. The wrong tool fails. Switch to a stone pickaxe and obtain iron ore.
+  instruction: Attempt to mine iron ore with a wooden pickaxe. It fails. Switch to stone and obtain iron ore.
   goal: iron_ore
+  group: failure_recovery
+  difficulty: hard
+- id: 9
+  type: craft
+  instruction: Attempt to craft a stone pickaxe without a crafting table. Craft one first, then the pickaxe.
+  goal: stone_pickaxe
   group: failure_recovery
   difficulty: hard
 - id: 10
   type: craft
-  instruction: Attempt to craft a stone pickaxe without a crafting table. Place the table first, then craft the pickaxe.
-  goal: stone_pickaxe
-  group: failure_recovery
+  instruction: You have only 8 cobblestone. Choose: craft a furnace OR a stone pickaxe. Craft one.
+  goal: furnace
+  group: interaction_stress
   difficulty: hard
 - id: 11
   type: craft
-  instruction: You have only 8 cobblestone. You need both a furnace and a stone pickaxe. Choose wisely and craft one.
-  goal: furnace
+  instruction: You have only 1 iron ingot. Choose: craft an iron pickaxe OR an iron sword. Craft the pickaxe.
+  goal: iron_pickaxe
   group: interaction_stress
   difficulty: hard
 

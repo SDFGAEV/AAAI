@@ -1,6 +1,6 @@
 # @package _global_
-# ACT-RL E3: Strict Frozen Main Evaluation — 36 tasks x 8 seeds x 7 methods = 2016 episodes
-# Groups: crafting(8) mining(7) exploration(6) tech_tree(7) failure_recovery(4) interaction_stress(4)
+# C-ACT E3: Strict Frozen Main Evaluation — 50 tasks x 8 seeds x 7 methods = 2800 episodes
+# Groups: crafting(10) mining(9) exploration(6) tech_tree(10) failure_recovery(8) interaction_stress(7)
 env:
   name: CACTTaskEnv-v0
   max_minutes: 3
@@ -9,232 +9,66 @@ env:
   initial_inventory: []
 
 all_task:
-# ═══ Crafting / Tool Use (8) ═══
-- id: 0
-  type: craft
-  instruction: Craft oak planks from oak logs.
-  goal: oak_planks
-  group: crafting
-  difficulty: easy
-- id: 1
-  type: craft
-  instruction: Craft a crafting table.
-  goal: crafting_table
-  group: crafting
-  difficulty: easy
-- id: 2
-  type: craft
-  instruction: Craft a ladder using sticks.
-  goal: ladder
-  group: crafting
-  difficulty: easy
-- id: 3
-  type: craft
-  instruction: Craft a furnace using 8 cobblestone.
-  goal: furnace
-  group: crafting
-  difficulty: medium
-- id: 4
-  type: smelt
-  instruction: Smelt raw beef in a furnace to get cooked beef.
-  goal: cooked_beef
-  group: crafting
-  difficulty: medium
-- id: 5
-  type: craft
-  instruction: Craft a shield.
-  goal: shield
-  group: crafting
-  difficulty: medium
-- id: 6
-  type: craft
-  instruction: Craft a bow.
-  goal: bow
-  group: crafting
-  difficulty: medium
-- id: 7
-  type: craft
-  instruction: Craft a stonecutter using iron ingot and stone.
-  goal: stonecutter
-  group: crafting
-  difficulty: medium
+# ════════════════ Crafting (10) — routine skill reuse ════════════════
+- {id: 0,  type: craft,   instruction: "Craft oak planks from oak logs.",                                          goal: oak_planks,       group: crafting,    difficulty: easy}
+- {id: 1,  type: craft,   instruction: "Craft a crafting table from planks.",                                    goal: crafting_table,   group: crafting,    difficulty: easy}
+- {id: 2,  type: craft,   instruction: "Craft sticks from oak planks.",                                          goal: stick,            group: crafting,    difficulty: easy}
+- {id: 3,  type: craft,   instruction: "Craft a ladder using sticks.",                                           goal: ladder,           group: crafting,    difficulty: easy}
+- {id: 4,  type: craft,   instruction: "Craft a wooden pickaxe.",                                                goal: wooden_pickaxe,   group: crafting,    difficulty: easy}
+- {id: 5,  type: craft,   instruction: "Craft a wooden axe.",                                                    goal: wooden_axe,       group: crafting,    difficulty: easy}
+- {id: 6,  type: craft,   instruction: "Craft a furnace using 8 cobblestone.",                                   goal: furnace,          group: crafting,    difficulty: medium}
+- {id: 7,  type: smelt,   instruction: "Smelt raw beef in a furnace to get cooked beef.",                         goal: cooked_beef,      group: crafting,    difficulty: medium}
+- {id: 8,  type: craft,   instruction: "Craft a stonecutter using iron ingot and stone.",                         goal: stonecutter,      group: crafting,    difficulty: medium}
+- {id: 9,  type: craft,   instruction: "Craft an iron sword using iron ingots and sticks.",                       goal: iron_sword,       group: crafting,    difficulty: medium}
 
-# ═══ Mining / Collecting (7) ═══
-- id: 8
-  type: collect
-  instruction: Collect 8 wood logs by chopping trees.
-  goal: log
-  group: mining
-  difficulty: easy
-- id: 9
-  type: mine
-  instruction: Mine 3 iron ore using a stone pickaxe or better.
-  goal: iron_ore
-  group: mining
-  difficulty: medium
-- id: 10
-  type: mine
-  instruction: Mine diamond ore using an iron pickaxe or better.
-  goal: diamond
-  group: mining
-  difficulty: hard
-- id: 11
-  type: mine
-  instruction: Mine obsidian using a diamond pickaxe.
-  goal: obsidian
-  group: mining
-  difficulty: hard
-- id: 12
-  type: collect
-  instruction: Collect 8 blocks of dirt.
-  goal: dirt
-  group: mining
-  difficulty: easy
-- id: 13
-  type: collect
-  instruction: Collect 8 blocks of grass.
-  goal: grass
-  group: mining
-  difficulty: easy
-- id: 14
-  type: collect
-  instruction: Collect 3 wool by shearing or killing sheep.
-  goal: wool
-  group: mining
-  difficulty: easy
+# ════════════════ Mining / Collecting (9) — tool selection ════════════════
+- {id: 10, type: collect,  instruction: "Collect 8 wood logs by chopping trees.",                                 goal: log,              group: mining,       difficulty: easy}
+- {id: 11, type: collect,  instruction: "Collect 8 blocks of dirt.",                                             goal: dirt,             group: mining,       difficulty: easy}
+- {id: 12, type: collect,  instruction: "Collect 8 blocks of sand.",                                             goal: sand,             group: mining,       difficulty: easy}
+- {id: 13, type: collect,  instruction: "Collect 3 wool by shearing or killing sheep.",                           goal: wool,             group: mining,       difficulty: easy}
+- {id: 14, type: mine,     instruction: "Mine 8 cobblestone using a wooden pickaxe or better.",                   goal: cobblestone,      group: mining,       difficulty: easy}
+- {id: 15, type: mine,     instruction: "Mine 3 iron ore using a stone pickaxe or better.",                       goal: iron_ore,         group: mining,       difficulty: medium}
+- {id: 16, type: mine,     instruction: "Mine 3 coal ore using a wooden pickaxe or better.",                      goal: coal,             group: mining,       difficulty: medium}
+- {id: 17, type: mine,     instruction: "Mine diamond ore using an iron pickaxe or better.",                      goal: diamond,          group: mining,       difficulty: hard}
+- {id: 18, type: mine,     instruction: "Mine obsidian using a diamond pickaxe.",                                 goal: obsidian,         group: mining,       difficulty: hard}
 
-# ═══ Exploration / Finding (6) ═══
-- id: 15
-  type: mine
-  instruction: Find and mine diamond ore underground.
-  goal: diamond
-  group: exploration
-  difficulty: hard
-- id: 16
-  type: collect
-  instruction: Find lava and collect it in a bucket.
-  goal: lava_bucket
-  group: exploration
-  difficulty: hard
-- id: 17
-  type: collect
-  instruction: Find a village and obtain an emerald.
-  goal: emerald
-  group: exploration
-  difficulty: hard
-- id: 18
-  type: collect
-  instruction: Find a forest and collect an oak sapling.
-  goal: oak_sapling
-  group: exploration
-  difficulty: hard
-- id: 19
-  type: collect
-  instruction: Explore to find a dungeon chest and obtain an iron ingot.
-  goal: iron_ingot
-  group: exploration
-  difficulty: hard
-- id: 20
-  type: collect
-  instruction: Explore underground and mine a gold ore.
-  goal: gold_ore
-  group: exploration
-  difficulty: hard
+# ════════════════ Exploration (6) — all hard, positive control ════════════════
+- {id: 19, type: mine,     instruction: "Find and mine diamond ore underground.",                                 goal: diamond,          group: exploration,   difficulty: hard}
+- {id: 20, type: collect,  instruction: "Find lava and collect it in a bucket.",                                  goal: lava_bucket,      group: exploration,   difficulty: hard}
+- {id: 21, type: collect,  instruction: "Find a village and obtain an emerald.",                                  goal: emerald,          group: exploration,   difficulty: hard}
+- {id: 22, type: mine,     instruction: "Explore underground and mine a gold ore.",                               goal: gold_ore,         group: exploration,   difficulty: hard}
+- {id: 23, type: collect,  instruction: "Explore to find a dungeon chest and obtain an iron ingot.",              goal: iron_ingot,       group: exploration,   difficulty: hard}
+- {id: 24, type: collect,  instruction: "Find a forest and collect an oak sapling.",                              goal: oak_sapling,      group: exploration,   difficulty: hard}
 
-# ═══ Long-Horizon / Tech Tree (7) ═══
-- id: 21
-  type: mine
-  instruction: Mine obsidian for building a nether portal.
-  goal: obsidian
-  group: tech_tree
-  difficulty: hard
-- id: 22
-  type: craft
-  instruction: Craft a ladder from sticks.
-  goal: ladder
-  group: tech_tree
-  difficulty: easy
-- id: 23
-  type: collect
-  instruction: Collect 64 cobblestone for building a tower.
-  goal: cobblestone
-  group: tech_tree
-  difficulty: medium
-- id: 24
-  type: craft
-  instruction: "Tech tree: craft a wooden sword from scratch."
-  goal: wooden_sword
-  group: tech_tree
-  difficulty: medium
-- id: 25
-  type: craft
-  instruction: "Tech tree: craft a diamond sword from scratch."
-  goal: diamond_sword
-  group: tech_tree
-  difficulty: hard
-- id: 26
-  type: craft
-  instruction: Craft a diamond pickaxe.
-  goal: diamond_pickaxe
-  group: tech_tree
-  difficulty: hard
-- id: 27
-  type: mine
-  instruction: "Obtain obsidian: craft diamond pickaxe, find lava, mine obsidian."
-  goal: obsidian
-  group: tech_tree
-  difficulty: hard
+# ════════════════ Tech Tree (10) — hierarchical dependency chains ════════════════
+- {id: 25, type: craft,   instruction: "Tech tree: bare hands → chop trees → planks → sticks → wooden pickaxe.",  goal: wooden_pickaxe,   group: tech_tree,     difficulty: medium}
+- {id: 26, type: craft,   instruction: "Tech tree: wooden pickaxe → mine cobblestone → craft stone pickaxe.",     goal: stone_pickaxe,    group: tech_tree,     difficulty: medium}
+- {id: 27, type: craft,   instruction: "Tech tree: wooden pickaxe → cobblestone → craft stone axe.",              goal: stone_axe,        group: tech_tree,     difficulty: medium}
+- {id: 28, type: craft,   instruction: "Tech tree: bare hands → logs → planks → sticks → table → wooden sword.",  goal: wooden_sword,     group: tech_tree,     difficulty: medium}
+- {id: 29, type: craft,   instruction: "Tech tree: stone pickaxe → mine iron ore → furnace → smelt → iron pickaxe.", goal: iron_pickaxe,  group: tech_tree,     difficulty: hard}
+- {id: 30, type: craft,   instruction: "Tech tree: iron pickaxe → mine diamond → craft diamond pickaxe.",         goal: diamond_pickaxe,  group: tech_tree,     difficulty: hard}
+- {id: 31, type: craft,   instruction: "Tech tree: stone pickaxe → iron ore → smelt → iron ingot → iron sword.",  goal: iron_sword,       group: tech_tree,     difficulty: hard}
+- {id: 32, type: craft,   instruction: "Tech tree: craft a shield using planks and an iron ingot.",               goal: shield,           group: tech_tree,     difficulty: medium}
+- {id: 33, type: craft,   instruction: "Tech tree: craft a bow using sticks and string.",                         goal: bow,              group: tech_tree,     difficulty: medium}
+- {id: 34, type: mine,    instruction: "Tech tree: iron pickaxe → diamond → diamond pickaxe → obsidian.",         goal: obsidian,         group: tech_tree,     difficulty: hard}
 
-# ═══ Failure Recovery (4) ═══
-- id: 28
-  type: mine
-  instruction: Attempt to mine iron ore with a wooden pickaxe. Discover you need stone. Switch and obtain iron ore.
-  goal: iron_ore
-  group: failure_recovery
-  difficulty: hard
-- id: 29
-  type: mine
-  instruction: Attempt to mine diamond ore with a stone pickaxe. Discover you need iron. Switch and obtain diamond.
-  goal: diamond
-  group: failure_recovery
-  difficulty: hard
-- id: 30
-  type: smelt
-  instruction: Attempt to smelt iron without fuel. Gather coal, then smelt into iron ingot.
-  goal: iron_ingot
-  group: failure_recovery
-  difficulty: hard
-- id: 31
-  type: craft
-  instruction: Attempt to craft a stone pickaxe without a crafting table. Learn you need one first, then craft it.
-  goal: stone_pickaxe
-  group: failure_recovery
-  difficulty: hard
+# ════════════════ Failure Recovery (8) — all hard, remedy reuse ════════════════
+- {id: 35, type: mine,    instruction: "Mine iron ore with wooden pickaxe → fails → switch to stone → obtain ore.", goal: iron_ore,       group: failure_recovery, difficulty: hard}
+- {id: 36, type: mine,    instruction: "Mine diamond with stone pickaxe → fails → switch to iron → obtain diamond.", goal: diamond,     group: failure_recovery, difficulty: hard}
+- {id: 37, type: smelt,   instruction: "Smelt iron ore without fuel → fails → gather coal → smelt into ingot.",    goal: iron_ingot,      group: failure_recovery, difficulty: hard}
+- {id: 38, type: craft,   instruction: "Craft stone pickaxe without table → fails → craft table first → then pickaxe.", goal: stone_pickaxe, group: failure_recovery, difficulty: hard}
+- {id: 39, type: craft,   instruction: "Craft furnace without cobblestone → fails → mine cobblestone → craft furnace.", goal: furnace,  group: failure_recovery, difficulty: hard}
+- {id: 40, type: smelt,   instruction: "Smelt raw beef with no furnace → fails → craft furnace first → then smelt.", goal: cooked_beef,  group: failure_recovery, difficulty: hard}
+- {id: 41, type: craft,   instruction: "Craft iron pickaxe with no iron → fails → mine iron → smelt → craft pickaxe.", goal: iron_pickaxe, group: failure_recovery, difficulty: hard}
+- {id: 42, type: craft,   instruction: "Craft stone axe after accidentally breaking your first one.",               goal: stone_axe,        group: failure_recovery, difficulty: hard}
 
-# ═══ Interaction Stress (4) ═══
-- id: 32
-  type: craft
-  instruction: You have only 8 cobblestone. Both a furnace and a stone pickaxe need cobblestone. Choose one and craft it.
-  goal: furnace
-  group: interaction_stress
-  difficulty: hard
-- id: 33
-  type: craft
-  instruction: You have limited coal. Use it to craft torches for lighting.
-  goal: torch
-  group: interaction_stress
-  difficulty: hard
-- id: 34
-  type: craft
-  instruction: You have only 1 iron ingot. Choose: craft an iron pickaxe or an iron sword.
-  goal: iron_pickaxe
-  group: interaction_stress
-  difficulty: hard
-- id: 35
-  type: craft
-  instruction: You have limited diamonds. Choose: craft a diamond pickaxe or a diamond sword.
-  goal: diamond_pickaxe
-  group: interaction_stress
-  difficulty: hard
+# ════════════════ Interaction Stress (7) — all hard, conflict detection ════════════════
+- {id: 43, type: craft,   instruction: "8 cobblestone only. Choose: furnace OR stone pickaxe. Craft one.",          goal: furnace,          group: interaction_stress, difficulty: hard}
+- {id: 44, type: craft,   instruction: "8 cobblestone only. Choose: furnace OR stone pickaxe. Craft the other.",    goal: stone_pickaxe,    group: interaction_stress, difficulty: hard}
+- {id: 45, type: craft,   instruction: "Limited coal. Choose: torches for lighting OR save for furnace fuel. Craft torches.", goal: torch, group: interaction_stress, difficulty: hard}
+- {id: 46, type: craft,   instruction: "1 iron ingot only. Choose: iron pickaxe for mining OR iron sword. Craft the pickaxe.", goal: iron_pickaxe, group: interaction_stress, difficulty: hard}
+- {id: 47, type: craft,   instruction: "1 iron ingot only. Choose: iron pickaxe OR iron sword. Craft the sword.",   goal: iron_sword,       group: interaction_stress, difficulty: hard}
+- {id: 48, type: craft,   instruction: "2 diamonds only. Choose: diamond pickaxe OR diamond sword. Craft pickaxe.", goal: diamond_pickaxe,  group: interaction_stress, difficulty: hard}
+- {id: 49, type: craft,   instruction: "2 diamonds only. Choose: diamond pickaxe OR diamond sword. Craft sword.",   goal: diamond_sword,    group: interaction_stress, difficulty: hard}
 
 evaluate: []
