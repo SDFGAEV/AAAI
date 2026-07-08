@@ -53,19 +53,23 @@ class TrustStore:
     # ── I/O ──
     def _load(self):
         if os.path.exists(self._db_file):
-            try: self._data = json.load(open(self._db_file))
+            try:
+                with open(self._db_file) as f:
+                    self._data = json.load(f)
             except: self._data = {}
-        # Load contracts if stored alongside
         contract_file = os.path.join(self.store_path, "contracts.json")
         if os.path.exists(contract_file):
-            try: self._contracts = json.load(open(contract_file))
+            try:
+                with open(contract_file) as f:
+                    self._contracts = json.load(f)
             except: self._contracts = {}
 
     def _save(self):
-        json.dump(self._data, open(self._db_file, "w"), indent=2)
-        # Also save contracts
+        with open(self._db_file, "w") as f:
+            json.dump(self._data, f, indent=2)
         contract_file = os.path.join(self.store_path, "contracts.json")
-        json.dump(self._contracts, open(contract_file, "w"), indent=2)
+        with open(contract_file, "w") as f:
+            json.dump(self._contracts, f, indent=2)
 
     def _make_key(self, kid: str, context: str, stat: str) -> str:
         return f"{kid}|{context}|{stat}"
