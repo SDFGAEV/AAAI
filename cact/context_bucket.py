@@ -68,10 +68,18 @@ class ContextBucket:
         return best_field
 
     def _field_high(self, parts, idx, j, conf_list):
-        vals_at_idx = []
-        for p in parts:
-            try: vals_at_idx.append(float(p.split("_")[-1]) if p.split("_")[-1].isdigit() else 0.5)
-            except: vals_at_idx.append(0.5)
+        """Check if the j-th outcome belongs to the 'high' subgroup for field idx.
+        The field value is extracted from the bucket key parts list.
+        Falls back to confidence check if field value can't be parsed."""
+        if idx >= len(parts):
+            return j < len(conf_list) and conf_list[j] > 0.5
+        field_val = parts[idx]
+        try:
+            num = float(field_val.split("_")[-1]) if field_val.split("_")[-1].replace('.','',1).replace('-','',1).isdigit() else None
+            if num is not None:
+                return num > 0.5
+        except (ValueError, IndexError):
+            pass
         return j < len(conf_list) and conf_list[j] > 0.5
 
     def maybe_merge(self, buckets: List[str],

@@ -126,34 +126,15 @@ import json, os
 
 store = TrustStore(store_path='cact_ckpt/trust_store')
 gate = TrustGate()
-
-# Collect calibration data from trust store
-calib_data = []
-for k in store._data:
-    parts = k.rsplit('|', 2)
-    if len(parts) >= 2:
-        kid_ctx = parts[0] + '|' + parts[1] if len(parts) > 2 else k
-        d = store._data[k]
-        calib_data.append({
-            'pi_uplift': store.uplift_probability(
-                parts[0].split('|')[0],
-                '|'.join(parts[1:-1]) if len(parts) > 1 else ''),
-            'uplift': store.uplift_lcb(
-                parts[0].split('|')[0],
-                '|'.join(parts[1:-1]) if len(parts) > 1 else ''),
-            'harm_ucb': d.get('alpha', 0.1) / max(d.get('alpha', 0.1) + d.get('beta', 0.9), 0.01),
-            'is_harmful': 0,
-        })
-
-if calib_data:
-    results = gate.calibrate_all_groups({'crafting': calib_data, 'mining': calib_data,
-        'exploration': calib_data, 'tech_tree': calib_data,
-        'failure_recovery': calib_data, 'interaction_stress': calib_data})
+calib = store.get_calibration_data()
+if calib:
+    results = gate.calibrate_all_groups(calib)
     gate.save_calibration('exp_results/calibration.json')
-    print(f'Calibration done: {json.dumps(results, indent=2)}')
+    print(f'Calibration done. Groups: {list(calib.keys())}')
+    for g, r in results.items():
+        print(f'  {g}: tau={r.get(\"tau\",\"?\")} delta={r.get(\"delta\",\"?\")} harm={r.get(\"harm\",\"?\")} n={r.get(\"n_calib\",\"?\")}')
 else:
-    print('WARNING: No calibration data collected')
-"
+    print('WARNING: No calibration data collected — using fixed defaults')
     echo "[E2] PASSED"
 fi
 

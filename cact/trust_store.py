@@ -291,6 +291,29 @@ class TrustStore:
     def lifecycle_stats(self) -> Dict[str, int]:
         return self.lifecycle.stats()
 
+    def get_calibration_data(self) -> Dict[str, list]:
+        """Extract calibration data grouped by task group for TrustGate."""
+        by_group = {}
+        for k, d in self._data.items():
+            parts = k.split("|")
+            if len(parts) < 2: continue
+            kid = parts[0]
+            ctx = "|".join(parts[1:-1]) if len(parts) > 2 else ""
+            stat = parts[-1]
+            if stat != "use": continue
+            contract = self.get_contract(kid)
+            group = contract.get("group", "crafting") if contract else "crafting"
+            try:
+                pi = self.uplift_probability(kid, ctx)
+                ul = self.uplift_lcb(kid, ctx)
+                hu = self.harm_upper_bound(kid, ctx)
+            except Exception:
+                continue
+            entry = {"pi_uplift": round(pi, 4), "uplift": round(ul, 4),
+                     "harm_ucb": round(hu, 4), "is_harmful": 0}
+            by_group.setdefault(group, []).append(entry)
+        return by_group
+
     # ── Persistence helpers ──
     def export_for_calibration(self) -> Dict:
         """Export data needed for E2 calibration."""
