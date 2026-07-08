@@ -1,0 +1,861 @@
+
+=== PAGE 1 ===
+MinePlanner: A Benchmark for Long-Horizon
+Planning in Large Minecraft Worlds
+William Hill*1, Ireton Liu*1, Anita De Mello Koch2, Damion Harvey1,
+Nishanth Kumar3, George Konidaris2, Steven James1
+1School of Computer Science and Applied Mathematics, University of the Witwatersrand
+2Department of Computer Science, Brown University
+3MIT Computer Science and Artificial Intelligence Laboratory
+Abstract
+We propose a new benchmark for planning tasks based on
+the Minecraft game. Our benchmark contains 45 tasks over-
+all, but also provides support for creating both propositional
+and numeric instances of new Minecraft tasks automatically.
+We benchmark numeric and propositional planning systems
+on these tasks, with results demonstrating that state-of-the-art
+planners are currently incapable of dealing with many of the
+challenges advanced by our new benchmark, such as scaling
+to instances with thousands of objects. Based on these results,
+we identify areas of improvement for future planners. Our
+framework is made available at https://github.com/IretonLiu/
+mine-pddl/.
+Introduction
+A major challenge in AI is the construction of autonomous
+agents capable of solving extremely long-horizon tasks.
+While approaches such as reinforcement learning (RL)
+struggle with such tasks, especially with sparse feedback,
+task-level planners are well-suited to such problems. Ad-
+ditionally, these planners are typically domain-independent
+and so can be applied to a wide variety of problems, which
+is necessary if we desire generally intelligent agents.
+However, these approaches require an abstract represen-
+tation of a problem (typically using a structured language
+such as PDDL (McDermott et al. 1998)) as input. Further-
+more, these representations are carefully crafted by a human
+designer to contain only the necessary information required
+to solve the task (Fishman et al. 2020). If we hope to scale
+these approaches to real-world tasks and develop truly au-
+tonomous agents, then planners must be capable of operat-
+ing in domains that contain a large number of objects that
+may or may not be relevant to the task at hand.
+While the issue of scaling to large domains is currently
+an area of active research (Illanes and McIlraith 2019), cur-
+rent planning domains continue to focus on simplified world
+models by simply increasing the number of objects present
+in standard benchmarks (Silver et al. 2021). This, however,
+fails to accurately reflect the difficulty a planner would face
+in a noisy real-world task. Additionally, recent work has
+demonstrated how PDDL representations can be directly
+learned from data (Asai and Fukunaga 2018; James, Ros-
+man, and Konidaris 2020; Ahmetoglu et al. 2022; Silver
+*These authors contributed equally.
+Figure 1: A classical planning problem in our benchmark,
+requiring the agent to collect the necessary blocks and build
+a log cabin (outlined in green). This task contains over 5000
+objects that the agent must reason about, including many
+that make up the surrounding blocks and ground that are ir-
+relevant to the goal.
+et al. 2023). While these representations are often sound
+(Konidaris, Kaelbling, and Lozano-P´erez 2018), they typi-
+cally contain many irrelevant symbols and action operators
+(James, Rosman, and Konidaris 2022); planners that are ro-
+bust to this issue would further bridge the gap between learn-
+ing and planning.
+Concurrently, the game of Minecraft has recently emerged
+as a promising testbed for RL research (Johnson et al. 2016),
+with its open-ended nature serving as a valuable proxy for
+the real world. As a domain, Minecraft has several desirable
+characteristics for planning research: (a) it supports a wide
+variety of tasks in the form of structures that can be assem-
+bled, all of which require long-term planning (see Figure 1
+for an example); (b) the game is naturally populated by ob-
+jects in the form of blocks and items, removing the need
+for a human designer to inflate the number of objects in the
+domain artificially; and (c) there is an inherent hierarchy in
+building large Minecraft structures (Beukman et al. 2023),
+which may be of interest to hierarchical planners (H¨oller
+et al. 2020).
+In this paper, we present MinePlanner, a long-horizon
+planning benchmark in large Minecraft worlds. Our frame-
+work is capable of automatically generating tasks and ver-
+ifying solutions in Minecraft, and supports both proposi-
+arXiv:2312.12891v2  [cs.AI]  28 Apr 2024
+
+=== PAGE 2 ===
+tional and numeric planners. We additionally provide a col-
+lection of 45 tasks which we used to benchmark representa-
+tive propositional and numeric planners. These results show
+that there is significant work still left to be done for planning
+in large domains with many objects.
+Related Work
+Minecraft has proven to be a popular testbed for machine
+learning research (Johnson et al. 2016). One such plat-
+form is MineRL (Guss et al. 2019), which provides a set
+of Minecraft-related tasks for the agent to solve. More re-
+cently, Fan et al. (2022) incorporate background knowledge
+of the game in the form of online documentation, forums
+and videos of human gameplay to assist agents in learn-
+ing to play the game. In both cases, they typically require
+an agent to act in a high-dimensional environment with
+partially observable pixel input. These benchmarks require
+agents to grapple with multiple problems simultaneously—
+high-dimensional function approximation, continuous con-
+trol, partial observability and long-term planning. While a
+generally capable agent will ultimately be required to solve
+all of these problems, it also makes progress along any of
+these dimensions difficult to measure. Our proposed bench-
+mark abstracts away these low-level intricacies, allowing re-
+searchers to focus on what is perhaps the most interesting
+aspect of Minecraft—the ability to create impressive struc-
+tures, such as entire cities (Salge et al. 2020), through long-
+term planning.
+Aluru et al. (2015) provide a framework for converting
+small, constrained Minecraft problems into object-oriented
+MDPs where A* search could be applied. However, only rel-
+evant objects were specified, and blocks that constituted the
+boundary walls and ground were not explicitly represented.
+By contrast, we represent open-world settings as generically
+as possible. Wichlacz, Torralba, and Hoffmann (2019) rep-
+resent Minecraft construction tasks using PDDL and HTN
+formalisms; however, their representation abstracts much of
+the low-level complexity of Minecraft, most notably naviga-
+tion, effectively treating the problem as a Blocks World. Fi-
+nally, Roberts et al. (2017) automatically generate Minecraft
+representations using various extensions of PDDL to handle
+open worlds and partial observability, but constrain the ob-
+servable range to make planning feasible.
+One immediate challenge presented by Minecraft is the
+number of objects in the world. While previous work has
+identified the need to apply planners to domains with hun-
+dreds of objects, these domains are either scaled-up versions
+of classic problems such as Blocksworld (Silver et al. 2021)
+or are created by combining multiple existing planning prob-
+lems to introduce irrelevant objects (Fishman et al. 2020).
+While these testbeds may be useful for developing better
+planning algorithms, the domains are disjoint from those
+considered by the RL community, squandering the opportu-
+nity for collaboration between the fields. Furthermore, these
+approaches may not capture the true complexity of the real
+world, which often contains objects and actions that may or
+may not be relevant to a given task.
+Finally, while our benchmark hopes to spur research in
+planning, it can be combined with tools such as PDDLGym
+(Silver and Chitnis 2020) to act as a reinforcement learning
+environment. This would benefit RL researchers who wish to
+focus on the challenging long-term planning problem posed
+by Minecraft, while avoiding the complexity of continuous
+control in pixel space.
+A Framework for Generating Minecraft
+Planning Tasks
+We now present MinePlanner: a framework for generating
+Minecraft planning tasks that makes use of the APIs pro-
+vided by MineDojo (Fan et al. 2022). At the highest level,
+we define a specification schema for tasks that are used
+to generate Minecraft worlds. We next extract objects and
+states (such as the agent’s inventory) from the world and au-
+tomatically generate a PDDL representation that can be used
+by planners. To provide support for multiple approaches,
+the framework can generate both numeric and propositional
+PDDL. The difference between the two is primarily how lo-
+cations are represented, and we discuss this further in subse-
+quent sections.
+Our framework also supports the verification and visual-
+isation of a plan—given the output of a planner, MinePlan-
+ner executes the proposed action in the game and verifies
+that the necessary predicates are achieved to solve the task.
+The frames collected during this process are saved and ex-
+ported to video, which can then be used to promote research
+in a visually appealing manner. Finally, we provide a utility
+for extracting a list of objects, along with their coordinates,
+from saved Minecraft worlds1 allowing users to easily spec-
+ify new tasks without having to manually list the position of
+each object in the world.
+Minecraft World Specification
+We define a task as a set of blocks and items that are initially
+placed in the Minecraft world and the agent’s inventory. For
+simplicity, we restrict the items to only those that can be
+placed in the world (e.g. wood blocks, but not pickaxes). We
+specify the goal of the task as a set of blocks that are to be
+placed in the world at some location, a set of items the agent
+must have in its inventory, the agent’s location, or any com-
+bination of the three. An example of a task specification is
+shown in Listing 1, where an agent must place a log at loca-
+tion (0, 4, 2) and additionally have at least one log remaining
+in its inventory to solve the task.
+To produce a tractable representation of a Minecraft
+world, we make the following simplifications that vary
+slightly from the original game:
+• Each task is created using a flat world with a single layer
+of grass blocks serving as the ground.
+• There are no non-player characters, and items placed in
+the world do not despawn.2
+• The agent does not require the necessary tools to break
+certain blocks. For example, the agent can break a tree
+block without an axe.
+1Using the PyBlock library (github.com/alex4200/PyBlock).
+2Both of these would violate the frame assumption (Pasula,
+Zettlemoyer, and Kaelbling 2004).
+
+=== PAGE 3 ===
+Listing 1: Example task specification in YAML.
+1
+name: "Example Problem"
+2
+blocks:
+3
+- position:
+4
+x: ’0’
+5
+y: ’4’
+6
+z: ’1’
+7
+type: obsidian
+8
+items:
+9
+- position:
+10
+x: ’1’
+11
+y: ’5’
+12
+z: ’5’
+13
+quantity: 1
+14
+type: diamond
+15
+inventory:
+16
+- type: log
+17
+quantity: ’64’
+18
+- type: obsidian
+19
+quantity: ’64
+20
+goal:
+21
+agent:
+22
+- position:
+23
+x: ’6’
+24
+y: ’4’
+25
+z: ’-5’
+26
+blocks:
+27
+- position:
+28
+x: ’0’
+29
+y: ’4’
+30
+z: ’-2’
+31
+type: log
+32
+inventory:
+33
+- type: log
+34
+quantity: ’1’
+• Broken blocks are immediately added to the agent’s in-
+ventory without being dropped on the ground as items.
+• The agent is constrained by allowing it to move only one
+unit (block) in any cardinal direction at a given time.
+State Representations
+The types of each object, such as agent, grass-block
+or flower, are specified directly by Minecraft itself. To
+represent the state of the world, we must keep track of the
+location of all items and objects, as well as the agent’s in-
+ventory. Using PDDL 2.1 (Fox and Long 2003), this is rela-
+tively straightforward: the domain is defined by a predicate
+governing whether an object is present in the world (or in
+the agent’s inventory), or whether it has been destroyed, and
+several numeric fluents that keep track of each object’s x,
+y and z positions. Fluents are also used to track how many
+items are in the agent’s inventory, since the agent can col-
+lect multiple objects of the same type. There is one fluent
+for each type present in the world; for example, to track the
+number of flowers in the inventory, we would have the fol-
+lowing: (agent-num-flower ?ag - agent).
+For planners that do not support numeric fluents, we rep-
+resent positions and count using predicates only. This is
+achieved by defining “integer” objects (e.g., position36,
+count0) along with predicates that enforce relationships
+between these objects, such as sequentiality ((are-seq
+?x1 - int ?x2 - int)) and whether an object is at a
+particular location (e.g., (at-x ?l - locatable ?x
+- position)). The inventory is represented by determin-
+ing whether the count of a particular item matches some
+number.3 The predicate equivalent to its numeric counter-
+part is (agent-has-n-flower ?ag - agent ?n
+- count).
+Operator Representations
+We model two types of operators in our Minecraft worlds:
+movement and interaction actions. Movement involves the
+agent navigating one unit in a cardinal direction, and in-
+cludes the ability to jump in a particular direction. As in the
+game, an agent’s movement is restricted by objects around
+it, and the preconditions for movement operators reflect this.
+Another challenge in Minecraft is that there is no explicit
+action for picking up an item—an agent simply walks over
+an item to collect it. To avoid inconsistency between the
+PDDL representations and the game, we account for this
+by introducing two separate actions for every movement: a
+movement action that cannot be executed if the destination
+is occupied by an item and an action that combines a move-
+ment with a pickup. Additionally, the agent can only move
+to a destination above an existing block. The complete list
+of movement operators is as follows:
+• move [direction]: Moves the agent by one block in
+the specified direction. The agent cannot move to a loca-
+tion that is occupied by an item. An example of moving
+north without collecting an object is given by Listing 2.
+• move and pickup [item] [direction]: Moves
+the agent by one block in the specified direction and col-
+lects an item at the resulting position.
+• jumpup [direction]: Moves the agent by one
+block in the specified direction and one block along the
+positive vertical axis. The agent cannot move into a posi-
+tion that is occupied by an item.
+• jumpdown [direction]: Moves the agent by one
+block in the specified direction and one block along the
+negative vertical axis. The agent cannot move into a po-
+sition that is occupied by an item.
+• jumpup and pickup [item] [direction]:
+Moves the agent by one block in the specified direction
+and one block along the positive vertical axis and
+collects an item at the resulting position.
+• jumpdown and pickup [item] [direction]:
+Moves the agent by one block in the specified direction
+and one block along the negative vertical axis and
+collects an item at the resulting position.
+The agent is also capable of manipulating blocks, and we
+support two such interaction operators:
+• place [block] [direction]:
+Places
+a
+block
+from the agent’s inventory one block in front of the agent
+3Minecraft enforces a maximum inventory count of 64 per ob-
+ject, which can be enumerated.
+
+=== PAGE 4 ===
+Listing 2: Example of a movement action using fluents
+1
+(:action move-north
+2
+:parameters (?ag - agent)
+3
+:precondition (and (agent-alive ?ag)
+4
+(exists (?b - block) (and
+5
+(block-present ?b) (= (x ?b) (x ?ag))
+6
+(= (y ?b) (+ (y ?ag) -1)) (= (z ?b)
+7
+(+ (z ?ag) -1)))) (and
+8
+(not (exists (?b - block) (and
+9
+(block-present ?b) (= (x ?b) (x ?ag))
+10
+(or (= (y ?b) (+ (y ?ag) 1)) (= (y ?b)
+(y ?ag)))
+11
+(= (z ?b) (+ (z ?ag) -1)))))
+12
+(not (exists (?i - item) (and (
+item-present ?i) (= (x ?i) (x ?ag))
+(= (y ?i) (y ?ag)) (= (z ?i)
+13
+(+ (z ?ag) -1)))))))
+14
+:effect (and (decrease (z ?ag) 1))
+15
+)
+Listing 3: Example of an interaction action using predicates
+1
+(:action break-grass_block-north
+2
+:parameters (?ag - agent ?b -
+grass_block-block ?x - position ?y -
+position ?y_up - position ?z -
+position ?z_front -
+3
+position ?n_start - count ?n_end -
+count)
+4
+:precondition (and (agent-alive ?ag)
+(
+at-x ?ag ?x)
+(at-y ?ag ?y) (at-z ?
+ag ?z)
+(at-x ?b ?x) (at-y ?b ?y) (
+at-z ?b ?z_front) (are-seq ?z_front
+?z) (are-seq ?y ?y_up)
+5
+(block-present ?b) (not (exists (?i -
+item) (and (item-present ?i)
+6
+(at-x ?i ?x) (at-y ?i ?y_up) (at-z ?i
+?z_front)))) (are-seq ?n_start ?
+n_end) (agent-has-n-grass_block ?ag
+?n_start)
+7
+)
+8
+:effect (and (not (block-present ?b))
+9
+(not (at-x ?b ?x)) (not (at-y ?b ?y))
+(not (at-z ?b ?z_front))
+10
+(not (agent-has-n-grass_block ?ag ?
+n_start))
+11
+(agent-has-n-grass_block ?ag ?n_end))
+12
+)
+in the specified direction. The agent cannot place a block
+in a position that is occupied by another block or item
+and there must be a block below the target location.
+• break [block] [direction]: Breaks the block
+one unit in front of the agent in the specified direction.
+The block is collected and added to the agent’s inven-
+tory. The agent cannot break a block that has an item on
+top of it — in such a case, the agent will first have to
+pick the item up and then break the block. An example
+of breaking a grass block is given by Listing 3.
+Goal Representations
+Since Minecraft objects of the same type are interchange-
+able, we use existential preconditions when specifying a
+goal related to the location of a block. This allows us to
+specify that, for example, any wood block should be placed
+at a particular location, since all wood blocks are function-
+ally identical. However, not all planners provide support
+for the exist keyword in the goal specification. To make
+our representation as accessible as possible, we introduce
+a “virtual” operator called checkgoal whose precondi-
+tion is the actual condition for solving the task and whose
+effect sets a predicate goal-achieved to true. This is
+the only operator that can affect goal-achieved, which
+allows us to specify that the goal for all tasks is simply
+goal-achieved. For numeric planning, an example of
+a task whose goal is to place a planks-block at loca-
+tion (0, 4, 2) is given by Listing 4, while Listing 5 shows the
+corresponding propositional equivalent.
+Listing 4: Example of goal attainment using fluents
+1
+(:action checkgoal
+2
+:parameters (?ag - agent)
+3
+:precondition (and (agent-alive ?ag)
+4
+(exists (?b - planks-block)
+5
+(and (block-present ?b) (= (x ?b) 0)
+6
+(= (y ?b) 4)(= (z ?b) 2))))
+7
+:effect (and (goal-achieved ?ag))
+8
+)
+Listing 5: Example of goal attainment using predicates
+1
+(:action checkgoal
+2
+:parameters (?ag - agent)
+3
+:precondition (and (agent-alive ?ag)
+4
+(exists (?b - planks-block) (and
+5
+(block-present ?b) (at-x ?b position0)
+6
+(at-y ?b position4) (at-z ?b position2
+)))
+7
+)
+8
+:effect (and (goal-achieved ?ag))
+9
+)
+Generating Solutions
+Since we expect our tasks to be beyond the capabilities of
+current planners, we introduce a modification to Minecraft
+that allows human experts to play any of the defined tasks
+and generate a plan from their actions. The action trace of
+the player (consisting of player movements and interactions
+with blocks) is logged to a file that is then parsed into a for-
+mat suitable for verification in MinePlanner. This subsystem
+serves two purposes: (a) it allows us to easily produce at
+least one satisficing plan, even in extremely complex tasks,
+and (b) it serves as a human benchmark against which the
+solutions produced by planners can be compared.
+Benchmark Tasks in Minecraft
+We create an initial suite of tasks, listed in Table 1, to serve
+as challenging problems for current planners. To create a fi-
+
+=== PAGE 5 ===
+Task
+Variant
+Observation
+Range
+Inital
+Objects
+Initial
+Predicates
+Goal
+Pred.
+Human Sol.
+Length
+Description
+move
+Easy
+(13, 9, 13)
+0
+762/851
+1
+5
+Navigate to a specific
+location.
+Medium
+(21, 15, 21)
+12
+1908/2273
+1
+11
+Hard
+(71, 31, 71)
+1071
+23706/29432
+1
+25
+pickup
+diamond
+Easy
+(13, 9, 13)
+2
+767/856
+1
+6
+Navigate and pickup a
+single diamond in the world.
+Medium
+(21, 15, 21)
+8
+1893/2254
+1
+7
+Hard
+(71, 31, 71)
+1072
+43870/54642
+1
+23
+gather
+wood
+Easy
+(13, 9, 13)
+1
+767/857
+1
+3
+Navigate and pickup a
+single log in the world.
+Medium
+(21, 15, 21)
+6
+1881/2240
+1
+4
+Hard
+(71, 31, 71)
+1071
+43859/54637
+1
+5
+place
+wood
+Easy
+(13, 9, 13)
+1
+767/856
+2
+3
+Navigate to a specific
+location and place a log
+from inventory.
+Medium
+(21, 15, 21)
+13
+1917/2284
+2
+11
+Hard
+(71, 31, 71)
+1071
+43863/54626
+2
+25
+pickup
+and
+place
+Easy
+(13, 9, 13)
+1
+767/857
+1
+16
+First locate a plank in the
+world, then place it at a
+specific location.
+Medium
+(21, 15, 21)
+16
+1926/2296
+1
+18
+Hard
+(71, 31, 71)
+1071
+43889/29432
+1
+42
+gather
+multi
+wood
+Easy
+(13, 9, 13)
+3
+775/867
+1
+7
+Navigate and pickup a three
+logs in the world.
+Medium
+(21, 15, 21)
+18
+1934/2306
+1
+20
+Hard
+(71, 31, 71)
+1071
+43865/54627
+1
+8
+climb
+Easy
+(13, 9, 13)
+18
+825/928
+1
+7
+Place a block at an elevated
+y location by climbing a
+staircase.
+Medium
+(21, 15, 21)
+7
+1892/2253
+1
+39
+Hard
+(71, 31, 71)
+18
+20387/25308
+1
+105
+cut
+tree
+Easy
+(21, 31, 21)
+60
+2113/2518
+1
+77
+Cut down a tree by
+removing its wood.
+Medium
+(41, 31, 41)
+75
+7144/8793
+1
+295
+Hard
+(65, 31, 65)
+946
+37080/46137
+9
+392
+build
+bridge
+Easy
+(13, 9, 13)
+80
+773/862
+2
+7
+Build a wooden bridge over
+water.
+Medium
+(21, 15, 21)
+255
+1924/2294
+4
+56
+Hard
+(71, 31, 71)
+409
+20350/25263
+6
+65
+build
+cross
+Easy
+(13, 9, 13)
+5
+788/882
+5
+45
+Collect blocks to build a
+cross shape.
+Medium
+(21, 15, 21)
+10
+1900/2264
+5
+84
+Hard
+(71, 31, 71)
+1071
+43854/54627
+5
+103
+build
+wall
+Easy
+(13, 9, 13)
+9
+806/904
+9
+117
+Collect blocks to build a
+wall.
+Medium
+(21, 15, 21)
+16
+1927/2298
+9
+99
+Hard
+(71, 31, 71)
+1071
+43869/54627
+9
+102
+build
+well
+Easy
+(13, 9, 13)
+26
+876/990
+26
+226
+Collect blocks to build a
+well.
+Medium
+(21, 15, 21)
+36
+2010/2400
+26
+443
+Hard
+(71, 31, 71)
+1071
+43870/54633
+26
+420
+build
+shape
+Easy
+(13, 9, 13)
+1
+772/861
+5
+31
+Build a variety of shapes
+with items from inventory.
+Medium
+(21, 15, 21)
+12
+1923/2288
+9
+74
+Hard
+(71, 31, 71)
+1071
+43871/54663
+27
+138
+collect
+and build
+shape
+Easy
+(13, 9, 13)
+5
+788/882
+5
+40
+Collect blocks to build a
+variety of shapes.
+Medium
+(21, 15, 21)
+11
+1910/2275
+11
+127
+Hard
+(71, 31, 71)
+1071
+43864/54647
+27
+292
+build
+cabin
+Easy
+(21, 11, 21)
+0
+1892/2246
+116
+481
+Build a log cabin.
+Medium
+(41, 11, 41)
+116
+7318/9008
+116
+904
+Hard
+(65, 11, 65)
+5019
+18201/22583
+116
+1268
+Table 1: A list of tasks provided by MinePlanner and their relevant statistics. Initial Objects does not include the ground (i.e. only
+objects explicitly specified in the YAML configuration are included). Initial Predicates is the number of predicates specified in
+the initial state of the problem file and is formatted as proposition/numerical. Goal Predicates is the number of goal conditions
+specified in the YAML configuration. Human Solution Length refers to the length of a plan constructed from a human expert’s
+playthrough when solving the task.
