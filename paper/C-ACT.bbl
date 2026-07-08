@@ -1,4 +1,4 @@
-\begin{thebibliography}{17}
+\begin{thebibliography}{18}
 \providecommand{\natexlab}[1]{#1}
 
 \bibitem[{Angelopoulos and Bates(2021)}]{conformal}
@@ -23,9 +23,15 @@ Anonymous. 2024{\natexlab{c}}.
   Minecraft Agents.
 \newblock \emph{arXiv preprint}.
 
-\bibitem[{Anonymous(2025)}]{evolvingagent2025}
-Anonymous. 2025.
+\bibitem[{Anonymous(2025{\natexlab{a}})}]{evolvingagent2025}
+Anonymous. 2025{\natexlab{a}}.
 \newblock EvolvingAgent: Continual World Model Learning for Embodied Agents.
+\newblock \emph{arXiv preprint}.
+
+\bibitem[{Anonymous(2025{\natexlab{b}})}]{mineexplorer2025}
+Anonymous. 2025{\natexlab{b}}.
+\newblock MineExplorer: Benchmarking the Hidden Prerequisites of Minecraft
+  Tasks.
 \newblock \emph{arXiv preprint}.
 
 \bibitem[{Anonymous(2026{\natexlab{a}})}]{ael2026}

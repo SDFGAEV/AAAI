@@ -3,44 +3,44 @@ Capacity: max_strings=200000, hash_size=200000, hash_prime=170003
 The top-level auxiliary file: C-ACT.aux
 The style file: aaai25.bst
 Database file #1: references.bib
-You've used 17 entries,
+You've used 18 entries,
             2840 wiz_defined-function locations,
-            633 strings with 6414 characters,
-and the built_in function-call counts, 8514 in all, are:
-= -- 637
-> -- 450
+            635 strings with 6500 characters,
+and the built_in function-call counts, 8911 in all, are:
+= -- 669
+> -- 464
 < -- 0
-+ -- 177
-- -- 149
-* -- 533
-:= -- 1555
-add.period$ -- 68
-call.type$ -- 17
-change.case$ -- 118
-chr.to.int$ -- 18
-cite$ -- 17
-duplicate$ -- 603
-empty$ -- 580
-format.name$ -- 163
-if$ -- 1582
-int.to.chr$ -- 11
++ -- 183
+- -- 153
+* -- 555
+:= -- 1631
+add.period$ -- 72
+call.type$ -- 18
+change.case$ -- 123
+chr.to.int$ -- 19
+cite$ -- 18
+duplicate$ -- 633
+empty$ -- 610
+format.name$ -- 167
+if$ -- 1656
+int.to.chr$ -- 12
 int.to.str$ -- 1
-missing$ -- 131
-newline$ -- 89
-num.names$ -- 68
-pop$ -- 307
+missing$ -- 137
+newline$ -- 94
+num.names$ -- 72
+pop$ -- 320
 preamble$ -- 1
-purify$ -- 110
+purify$ -- 115
 quote$ -- 0
-skip$ -- 260
+skip$ -- 271
 stack$ -- 0
-substring$ -- 189
-swap$ -- 252
+substring$ -- 200
+swap$ -- 264
 text.length$ -- 0
 text.prefix$ -- 0
 top$ -- 0
-type$ -- 153
+type$ -- 162
 warning$ -- 0
-while$ -- 68
+while$ -- 72
 width$ -- 0
-write$ -- 207
+write$ -- 219
