@@ -63,6 +63,22 @@ class Agent:
 
         logger.info("Agent initialized.")
 
+    def batch_inference(self, instructions: list, images_list: list = None):
+        """Run N VLM inferences in one GPU forward pass.
+
+        Args:
+            instructions: List of prompt strings.
+            images_list: List of image paths (or None per instruction).
+
+        Returns:
+            List of response strings.
+        """
+        if images_list is None:
+            images_list = [None] * len(instructions)
+        return self.plan_model._inference_batch(
+            list(zip(instructions, images_list))
+        )
+
     def retrieve(
         self,
         task: str,

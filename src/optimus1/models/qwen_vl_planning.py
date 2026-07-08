@@ -307,31 +307,64 @@ You can make <task planning> by selecting an option from below:
 
 
     def _inference(self, instruction: str, images: str | List[str] = None) -> str:
-        messages = [
-            {
-                "role": "user",
-                "content": [
+        """Single inference call. For batch, use _inference_batch()."""
+        return self._inference_batch([(instruction, images)])[0]
+
+    def _inference_batch(self, requests: list) -> list:
+        """Batch VLM inference — N prompts in one GPU forward pass.
+
+        Args:
+            requests: List of (instruction, images) tuples.
+                      images can be None (text-only), a path string, or a list of paths.
+
+        Returns:
+            List of response strings, one per request.
+        """
+        if len(requests) == 0:
+            return []
+
+        # Build N messages, one per request
+        messages_list = []
+        all_have_images = True
+        for instruction, images in requests:
+            if images is None:
+                all_have_images = False
+                msg_content = [{"type": "text", "text": instruction}]
+            else:
+                msg_content = [
                     {"type": "text", "text": instruction},
                     {"type": "image", "image": images},
                 ]
-            },
+            messages_list.append([{"role": "user", "content": msg_content}])
+
+        # Apply chat template to each message independently
+        texts = [
+            self.processor.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)
+            for msgs in messages_list
         ]
 
-        text = self.processor.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
-        )
-        if images is None:
+        if not all_have_images:
+            # All text-only — simple batch
             inputs = self.processor(
-                text=[text],
+                text=texts,
                 padding=True,
                 return_tensors="pt",
             )
         else:
-            image_inputs, video_inputs = process_vision_info(messages)
+            # Mixed text+image — process vision info for all messages
+            all_image_inputs = []
+            all_video_inputs = []
+            for msgs in messages_list:
+                imgs, vids = process_vision_info(msgs)
+                all_image_inputs.append(imgs)
+                all_video_inputs.append(vids)
+            # Flatten image/video lists for the processor
+            flat_images = [img for imgs in all_image_inputs for img in (imgs or [])]
+            flat_videos = [vid for vids in all_video_inputs for vid in (vids or [])]
             inputs = self.processor(
-                text=[text],
-                images=image_inputs,
-                videos=video_inputs,
+                text=texts,
+                images=flat_images if flat_images else None,
+                videos=flat_videos if flat_videos else None,
                 padding=True,
                 return_tensors="pt",
             )
@@ -339,14 +372,17 @@ You can make <task planning> by selecting an option from below:
 
         generated_ids = self.model.generate(**inputs, max_new_tokens=512)
         generated_ids_trimmed = [
-            out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+            out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
         ]
-        response = self.processor.batch_decode(
+        responses = self.processor.batch_decode(
             generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
         )
-        # Track exact token usage
-        self._cum_input_tokens += int(inputs.input_ids.shape[1])
-        self._cum_output_tokens += int(generated_ids_trimmed[0].shape[0]) if generated_ids_trimmed else 0
-        self._cum_calls += 1
 
-        return response[0]
+        # Track token usage across batch
+        self._cum_input_tokens += int(inputs.input_ids.shape[1]) * len(requests)
+        self._cum_output_tokens += sum(
+            int(ids.shape[0]) for ids in generated_ids_trimmed
+        ) if generated_ids_trimmed else 0
+        self._cum_calls += 1  # Count batch as 1 GPU call
+
+        return responses
