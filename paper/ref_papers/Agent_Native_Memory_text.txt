@@ -1,0 +1,1714 @@
+
+=== PAGE 1 ===
+Are We Ready For An Agent-Native Memory System?
+Wei Zhou
+Shanghai Jiao Tong
+University
+weizhoudb@sjtu.edu.cn
+Xuanhe Zhou∗
+Shanghai Jiao Tong
+University
+zhouxuanhe@sjtu.edu.cn
+Shaokun Han
+Shanghai Jiao Tong
+University
+areedd0@sjtu.edu.cn
+Hongming Xu
+Shanghai Jiao Tong
+University
+muzhihai@sjtu.edu.cn
+Guoliang Li
+Tsinghua University
+liguoliang@tsinghua.edu.cn
+Zhiyu Li
+MemTensor (Shanghai)
+Technology Co., Ltd
+lizy@memtensor.cn
+Feiyu Xiong
+MemTensor (Shanghai)
+Technology Co., Ltd
+xiongfy@memtensor.cn
+Fan Wu
+Shanghai Jiao Tong
+University
+fwu@cs.sjtu.edu.cn
+Abstract
+Memory for large language model (LLM) agents has rapidly evolved
+from simple retrieval-augmented mechanisms into a data manage-
+ment system that supports persistent information storage, retrieval,
+update, consolidation, and dynamic lifecycle governance through-
+out agent execution. Despite this evolution, existing evaluations
+still benchmark agent memory mainly through end-to-end task suc-
+cess metrics (e.g., F1, BLEU), while treating the underlying system
+as a monolithic black box. As a result, critical system-level concerns,
+including operational costs, architectural trade-offs across mem-
+ory modules, and robustness under dynamic knowledge updates,
+remain insufficiently explored.
+In this paper, we present a systematic experimental study of
+agent memory from a data management perspective. We propose
+an analytical framework that decomposes agent memory into four
+core modules: memory representation and storage, extraction, re-
+trieval and routing, and maintenance. Under this framework, we
+evaluate 12 representative memory systems and two reference base-
+lines across five benchmark workloads spanning 11 datasets. Our
+extensive end-to-end evaluation shows that no single architecture
+dominates across all scenarios; instead, effectiveness depends heav-
+ily on how well the memory structure aligns with the workload
+bottleneck. Furthermore, through fine-grained ablation studies, we
+quantify their individual effects on representation fidelity, retrieval
+precision, update correctness, and long-horizon stability. Finally, we
+reveal cost-performance trade-offs under realistic workloads, show-
+ing localized maintenance is more cost-efficient than global reorga-
+nization. Based on these findings, we identify promising directions
+towards building truly agent-native memory systems. The code is
+publicly available at https://github.com/OpenDataBox/MemoryData.
+1
+Introduction
+The rapid evolution of Large Language Model (LLM) agents has
+sparked a large body of exciting research and industrial efforts
+in building agent memory, i.e., the data management system of
+the LLM agent that supports long-horizon stateful execution and
+personalized interaction [9, 13, 17, 19, 23, 24, 28].
+As shown in Figure 1, existing agent memory systems span
+a diverse set of architectural designs. (1) Stream-and-Reflection
+Memory System (e.g., MemoryBank [39]) maintains experiences as
+timestamped memory streams and periodically summarizes them
+into higher-level reflections that are written back into the stream;
+∗Xuanhe Zhou is the corresponding author.
+Message / 
+Trajectory
+Memory Encoder
+(Schema-Constrained
+Extraction)
+Storage
+Router
+Multi-Engine Storage
+Maintenance Controller
+(Consolidation, Forgetting)
+LLM Agent
+(Act)
+structured
+memory objects
+persist
+indexed
+data
+ranked
+results
+consolidate / forget
+trigger
+Context
+Assembler
+memory-augmented
+context
+User
+Response
+/ Action
+User
+Memory Stream
+(Timestamped Log)
+Retrieval Scorer
+recency × importance
+× relevance
+Planner
+(LLM)
+insight write-back
+Observation
+/ Experience
+query
+inform
+(a) Structural Topological
+(Streaming Logs)
+retrieved
+memory
+Reflection
+(LLM)
+(periodic)
+plan
+(b) Structural Topological
+(Hierarchical Tiers)
+User
+LLM
+Agent
+Message
+Function Call
+(self-directed)
+Core
+Memory
+Recall
+Storage
+Archival
+Storage
+core_memory_append
+core_memory_replace
+search
+archival_memory_insert
+archival_memory_search
+(d) Multi-Paradigm
+Hybrid Memory System
+Graph 
+DB
+SQL /
+BM25
+KV Cache
+Vector 
+DB
+Hybrid
+Retrieval
+(c) Structural Topological 
+(Knowledge Graph)
+Temporal 
+Knowledge
+Graph (Neo4j)
+User
+Message
+Entity
+Extractor
+Entity Disambiguation
+Conflict Resolution
+LLM Agent
+Graph
+Traversal
+Memory
+Represent. & Storage
+Memory
+Extraction
+Memory
+Retrieval / Routing
+Memory
+Maintenance
+LLM Agent
+(Act)
+Response
+/ Action
+evict
+migrate
+promote 
+Cross-Encoder
+Reranker
+Runtime State
+Long-Term Mem
+consolidate
+SQL (State)
+Figure 1: Typical Execution Workflows of Agent Memory.
+(2) Hierarchical Tiered Memory System (e.g., MemGPT [25]) or-
+ganizes memory into multiple levels with different capacities and
+access properties, separating core memory from archival storage
+with explicit movement (e.g., eviction and promotion) across tiers;
+(3) Knowledge Graph Memory System (e.g., Mem0𝑔[5], Zep [26])
+represents entities, relations, and their temporal evolution in struc-
+tured forms (e.g., temporal knowledge graphs), often incorporating
+entity disambiguation and conflict resolution; (4) Composite Hybrid
+Memory System (e.g., A-MEM [33]) routes schema-aware mem-
+ory objects across multiple storage substrates, explicitly separating
+runtime state (e.g., KV caches) from long-term storage (e.g., vec-
+tor, graph, keyword indexes), managed by dedicated maintenance
+modules. However, this rapid proliferation has also led to a highly
+fragmented landscape that lacks systematic evaluation from a data
+management perspective, raising a natural question: Are we ready
+for an agent-native memory system?
+In this paper, we revisit this question for agent memory. In par-
+ticular, we focus on system-level memory over textual, structured,
+and even parametric representations [5, 25, 26, 33], a fundamen-
+tal infrastructure component for modern autonomous agents. We
+focus on memory-centric systems, rather than task-specific agent
+frameworks where memory is an auxiliary module [1, 40]. It is the
+persistent data management system that maintains information
+arXiv:2606.24775v1  [cs.CL]  23 Jun 2026
+
+=== PAGE 2 ===
+beyond a single inference step (e.g., historical interactions, environ-
+mental observations, and intermediate tool executions) decoupled
+from the LLMs’ parametric weights and volatile context windows.
+Agent frameworks rely on these external memory systems (e.g.,
+Mem0 [5], Letta [25], Zep [26], and A-MEM [33]) to actively write,
+update, index, and route relevant context back into the reasoning
+loop. The capability of a long-horizon agent largely depends on the
+reliability and efficiency of this memory layer. An agent adopting
+a poorly designed memory architecture can suffer from factual
+contradictions, catastrophic forgetting, or unacceptable latencies
+during continuous execution [6, 38].
+Recent benchmarks [20, 22, 29, 31] have evaluated agent memory
+and shown that external memory can improve agent performance
+on tasks requiring factual recall and long-context understanding.
+However, these evaluations are largely rooted in natural language
+processing and have multiple limitations when treating agent mem-
+ory as a data management system (see Section 2). First, they fail
+to evaluate many representative memory architectures (e.g., sys-
+tems such as MemoChat, MemTree, and LightMem have not been
+included in prior evaluations) under unified workloads, making
+principled cross-system comparisons difficult. Efforts from the data-
+base community [32] limit their scope to a few chatbot-centric
+datasets (e.g., LoCoMo and LongMemEval only), neglecting com-
+plex agentic execution scenarios. Second, existing benchmarks pre-
+dominantly rely on single-sided, end-to-end task success metrics
+(e.g., F1 and BLEU scores) rather than a comprehensive evaluation
+suite. They fail to explicitly isolate and measure multi-dimensional
+performance indicators such as evidence-level retrieval fidelity,
+dynamic update robustness under conflicting knowledge, and long-
+horizon stability. Third, they rarely measure key operational costs
+from a systems perspective, such as index construction time and
+query latency, which are critical for production deployments. Last,
+they treat memory systems as monolithic black boxes rather than
+decomposing them into fundamental data management modules
+for isolated, fine-grained analysis.
+We overcome these limitations and conduct comprehensive ex-
+periments and analyses from a data management perspective. The
+contributions are as follows.
+(1) Technology Decomposition and Taxonomy (Section 3). We
+decompose existing agent memory systems into four core compo-
+nents: (i) memory representation and storage, (ii) memory extrac-
+tion, (iii) memory retrieval and routing, and (iv) memory main-
+tenance. For each component, we further establish a structured
+taxonomy1 by categorizing existing approaches according to their
+underlying design principles, enabling principled comparisons.
+(2) Overall End-to-End Performance Evaluation (Section 4).
+We conduct end-to-end evaluations under a unified and fair testbed
+(e.g., unified time-overhead traces)2 across five distinct benchmark
+workloads encompassing 11 datasets. Our study includes 12 repre-
+sentative memory systems, each embodying different combinations
+of representation, storage, routing, and maintenance strategies. We
+evaluate their performance from five perspectives: task effective-
+ness (RQ1), retrieval fidelity (RQ2), dynamic update robustness
+(RQ3), long-horizon stability (RQ4), and operational cost (RQ5).
+1https://github.com/OpenDataBox/awesome-agent-memory
+2https://github.com/OpenDataBox/MemoryData
+(3) Fine-Grained Technical Component Evaluation (Section 5).
+Leveraging our four-module framework, we conduct controlled
+and fine-grained experiments on representative strategies within
+each technique component. By systematically generating controlled
+variants that modify one module at a time, we quantify their per-
+formance trade-offs and assess their individual impacts on repre-
+sentation fidelity, routing precision, and update correctness.
+(4) Insightful Findings. Based on our experimental results and
+in-depth analysis, we distill a set of insightful findings regarding
+the cost–performance trade-offs of agent memory systems:
+❶Are Memory Systems Effective Across Different Agent
+Request Workloads? No single memory architecture dominates
+all scenarios. Composite hybrid systems lead on conversational
+QA, while graph-based methods excel in single-hop factual recall
+but struggle with temporal reasoning. Moreover, effective memory
+systems remain robust across LLM backbone variants because they
+externalize evidence localization before answer generation.
+❷How Accurately Do Memory Systems Retrieve Stored Evi-
+dence? Explicit query planning and balanced hybrid search maxi-
+mize contextual relevance. However, retrieval accuracy degrades
+significantly as the temporal distance between the evidence and the
+query increases, exposing limitations of similarity-based retrieval.
+❸Are Memory Systems Robust Under Dynamic Updates?
+Graph-based methods handle knowledge updates most reliably,
+whereas popular fact-extraction plugins and append-only stores
+struggle with targeted overwrites. Systems lacking lifecycle man-
+agement return stale facts, leading to “hallucinations of the past”.
+❹Do Memory Systems Remain Stable Over Long Horizons?
+Many append-only memory stores suffer from catastrophic degrada-
+tion as evidence becomes more distant. For time-dependent queries,
+raw long-context retrieval still outperforms most memory-backed
+approaches, indicating that standard semantic consolidation often
+destroys crucial chronological cues.
+❺What Are the Operational Costs of Agent Memory? Highly
+structured systems incur orders-of-magnitude higher index con-
+struction time and query latency than lightweight stores, yet do
+not consistently deliver proportional accuracy gains.
+❻When Do Individual Memory Components Go Wrong?
+Each layer of abstraction (e.g., compression, summarization, and
+fact extraction) progressively discards information. Furthermore,
+fine-grained LLM-based extraction can yield modest precision gains
+but substantially degrade multi-hop reasoning. Finally, conserva-
+tive memory consolidation serves as the best default maintenance
+strategy, whereas delayed flushing creates a deceptive trade-off
+between surface-level coverage and actual answerability.
+2
+Preliminaries
+To support the discussion in the rest of this paper, we first clarify
+the scope of agent memory from a data management perspective.
+Although recent studies have examined memory from viewpoints
+such as cognitive taxonomy, agent architecture, and graph-based
+organization [6, 10, 30, 32, 34, 36], the underlying concept is still
+often treated primarily as an algorithmic component of the LLM or
+agent pipeline [6, 10, 36]. In contrast, we study agent memory as
+a standalone data management object and system infrastructure,
+with explicit attention to how it is represented, stored, retrieved,
+2
+
+=== PAGE 3 ===
+updated, and maintained under real agent workloads. Under this
+view, we introduce a set of definitions below.
+Memory Types. For an LLM agent, a wide variety of informa-
+tion is produced and may need to be memorized, including dia-
+logue history, tool execution logs, distilled facts, and user prefer-
+ences [36]. Following established cognitive frameworks, memory
+can be broadly organized along two axes [10, 30]. (1) Along the
+temporal axis, short-term memory holds the volatile state of an
+ongoing session, while long-term memory persists across sessions.
+(2) Along the functional axis, long-term memory is further divided
+into information such as concrete past events (episodic memory),
+abstracted factual knowledge (semantic memory) [10, 32], reusable
+action strategies (procedural memory), and user preferences.
+Agent Memory. We define the agent memory M as the persistent
+data management object [25, 32] that maintains this cumulative
+state beyond a single inference step and makes it accessible to the
+agent during future reasoning and action [10, 36].
+Agent Memory System. To operationalize agent memory M, a
+robust infrastructure is required [10, 25]. As shown in Table 1, from
+a data systems perspective [14, 32], we formalize the agent memory
+system as a tuple of four modules: M𝑠𝑦𝑠= ⟨R, S, Q, U⟩, where
+each module governs a distinct phase of the memory lifecycle.
+• (1) Memory Representation and Storage R: A mapping that de-
+fines the logical and physical memory format with a data model
+of two facets: (a) logical representation, spanning simple primi-
+tives (discrete tokens, continuous vectors) to complex topologies
+(knowledge graphs, trees, and composites); and (b) physical storage,
+utilizing transient registers, specialized single-engine databases, or
+multi-engine backends for persistence and indexing.
+• (2) Memory Extraction S: A mechanism governing how hetero-
+geneous input streams (e.g., multi-turn dialogues, tool logs) are
+transformed into logical memory primitives via pipelines such as
+raw sequence concatenation, schema-free semantic extraction, or
+schema-constrained structured extraction.
+• (3) Memory Retrieval and Routing Q: A function that dynami-
+cally identifies relevant memory subsets based on a query context,
+utilizing specific routing algorithms to traverse indices. Mecha-
+nisms span native attention-based retrieval, semantic 𝐾-nearest
+neighbor search, topological subgraph traversal, autonomous agen-
+tic routing via LLM planning, and multi-stage hybrid execution.
+• (4) Memory Maintenance U: Policies governing the dynamic life-
+cycle of memory entries, decomposed into three sub-operations:
+(a) Conflict Resolution and Versioning handles contradictions via
+multi-versioning, invalidation, or precedence rules; (b) Capacity
+Management enforces bounded growth through constraint-based
+hard eviction (e.g., FIFO, token limits) or score-based priority evic-
+tion (e.g., temporal decay); and (c) Semantic Consolidation utilizes
+the LLM to merge redundant assertions into dense summaries or
+execute CRUD operations via tool-calling interfaces.
+Distinction from RAG and Context Engineering. Retrieval-
+Augmented Generation (RAG) [8, 13] typically operates as a state-
+less, read-only retrieval primitive: given a query, it fetches relevant
+passages from a static corpus to augment a single generation step.
+Context engineering [2] is the broader practice of curating the fi-
+nite LLM context window at each inference turn (e.g., dynamically
+h ∈ R ᵀˣᵈ
+Kim's Memory
+Preference
+Life
+Vegetarian
+Food
+Keeps
+Charlie
+Lives in
+Paris
+(b) Implicit Continuous Vector Token
+t1
+t2
+tT
+(a) Explicit Discrete Text Token
+...
+(a) Temporal Knowledge Graph
+(b) Hierarchical Tree Structures
+Node: Entity, Edge: Relation
+Root: Summary, Leaves: Raw Facts
+t1
+t2
+Embedding
+[ 0.21,... , 0.46 ]
+Graph
+Kim
+Paris
+...
+LIVES_IN
+...
+...
+1
+Token-Level Sequence
+t1: "Kim is vegetarian ..."
+t2: "Charlie is Kim's pet ..."
+t3: "Daily event log …"
+[0.21, …,
+…, 0.46]
+Human-Readable Text
+Latent State Vector
+PREFERS
+(t₁)
+KEEPS_PET
+(t₂)
+LIVES_IN
+(t₃)
+Charlie
+Charlie
+Paris
+Vegetarian
+Food
+Kim
+...
+...
+...
+(t₃)
+(t₂)
+(t₁)
+Memory Object
+Graph & Tree-Based Topology
+2
+3
+Metadata
+Type & Date
+"Kim is ..."
+Text
+(Kim, LIVES_IN, Paris)
+Heterogeneous
+Composite
+Representation
+Figure 2: Memory Representation Methods.
+selecting prompts, tool descriptions, and retrieved facts) to mitigate
+context rot [2]. In contrast, an agent memory system (1) is a per-
+sistent and updatable infrastructure for managing agent-specific
+state over time and (2) governs the full long-term memory lifecycle,
+including memory representation, storage, retrieval, and mainte-
+nance, rather than merely packing the current context window.
+Distinction from Traditional Database Workloads. Agent
+memory workloads differ substantially from conventional database
+OLTP / OLAP workloads [17, 25]. First, memory access is often
+semantic rather than purely predicate-based [4, 11]. Queries are
+commonly expressed through natural language, partial context, or
+latent intent, and therefore rely on approximate matching, query
+rewriting, or LLM-guided retrieval rather than only exact logical
+predicates over rigid schemas. Second, memory contents evolve
+under continuous and potentially conflicting observations. Unlike
+conventional transactional settings, where updates typically over-
+write tuples under a predefined schema and consistency model,
+agent memory must accommodate uncertain, partial, and some-
+times contradictory information collected across time, tools, and
+environments [10, 38]. Third, agent memory workloads are highly
+heterogeneous in both access pattern and granularity. A single work-
+load may combine long-context synthesis, episodic recall, struc-
+tured fact lookup, temporal reasoning, and streaming updates. As a
+result, practical systems often require hybrid execution strategies
+that combine semantic retrieval, structured filtering, and topology-
+aware traversal within one memory architecture [25, 32]. These
+properties distinguish agent memory from traditional databases,
+motivating dedicated abstractions and evaluation methodologies.
+3
+Method Overview
+In this section, we carefully analyze existing agent memory systems
+across the four components in Section 2 and establish a unified
+taxonomy that summarizes representative component methods.
+3.1
+Memory Representation and Storage
+This module consists of two components: (1) logical representation,
+which defines the structural encoding and organization exposed
+to the agent system, directly dictating capacity, accessibility, and
+trade-offs in expressiveness, retrieval granularity, and downstream
+reasoning compatibility; and (2) physical storage, which designates
+the persistence and indexing structures, such as volatile in-context
+registers, dense vector engines, or topological graph databases.
+3
+
+=== PAGE 4 ===
+Table 1: Taxonomy and Characteristics of Agent Memory Systems.
+Memory Representation & Storage
+Category
+Method
+Representation
+Storage
+Memory Extraction
+Memory Retrieval &
+Query Routing
+Memory Maintenance
+MemoChat [18]
+❶Token-Level Sequence
+(Structured JSON Memos)
+❶Transient In-Context Registers
+❸Schema-Constrained Extraction
+(LLM Topic Segmentation)
+❹Autonomous Agentic Routing
+(LLM Topic Selection)
+❸LLM-Driven Semantic Consolidation
+(Turn-Triggered)
+Mem0 [5]
+❶Token-Level Sequence
+(Discrete Facts)
+❷Specialized Single-Engine
+(Vector DB)
+❷Schema-Free Extraction
+❷Semantic-Based Retrieval
+❸LLM-Driven Semantic Consolidation
+(Tool-Calling)
+MEM1 [41]
+❶Token-Level Sequence
+❶Transient In-Context Registers
+❶Raw Sequence Concatenation
+❶Native Attention-Based Retrieval
+❷Capacity-Driven Physical Eviction
+Sequential
+Context
+MemAgent [35]
+❶Token-Level Sequence
+❶Transient In-Context Registers
+❶Raw Sequence Concatenation
+(Recursive Summaries)
+❶Native Attention-Based Retrieval
+❷Capacity-Driven Physical Eviction
+(RL Overwrite)
+MemTree [27]
+❷Graph & Tree-Based Topology
+(Hierarchical Tree)
+❷Specialized Single-Engine
+(Vector DB)
+❷Schema-Free Extraction
+(Top-Down Embedding)
+❷Semantic-Based Retrieval
+(Collapsed Tree)
+❸LLM-Driven Semantic Consolidation
+(Recursive Aggregation)
+Zep [26]
+❷Graph & Tree-Based Topology
+(Temporal KG)
+❷Specialized Single-Engine
+(Graph DB)
+❸Schema-Constrained Extraction
+(Triplets)
+❺Multi-Stage Hybrid Execution
+(Dense + BM25 + BFS)
+❶Timestamp-Based Multi-Versioning
+(Logical Invalidation)
+Mem0𝑔[5]
+❷Graph & Tree-Based Topology
+(Labeled Graph)
+❸Heterogeneous Multi-Engine
+(Vector + Graph DB)
+❸Schema-Constrained Extraction
+(Entity-Relation)
+❸Topological Subgraph Traversal
+❶Timestamp-Based Multi-Versioning
+Structural
+Topological
+Cognee [21]
+❷Graph & Tree-Based Topology
+(Entity-Relation Triplets)
+❸Heterogeneous Multi-Engine
+(Graph + Vector + Relational DB)
+❸Schema-Constrained Extraction
+(ECL Pipeline via Pydantic)
+❸Topological Subgraph Traversal
+(Dense-Seeded Triplet Extraction)
+❶Timestamp-Based Multi-Versioning
+(Hash-Based Deduplication)
+LightMem [7]
+❸Heterogeneous Composite
+(Tripartite Schema)
+❷Specialized Single-Engine
+(Relational DB)
+❷Schema-Free Extraction
+(Entropy-Gated)
+❷Semantic-Based Retrieval
+❶Timestamp-Based Multi-Versioning
+(Append-Only Logs)
+SimpleMem [16]
+❸Heterogeneous Composite
+❸Heterogeneous Multi-Engine
+(Vector DB + BM25 + SQL)
+❸Schema-Constrained Extraction
+❹Autonomous Agentic Routing
+(Query Expansion)
+❸LLM-Driven Semantic Consolidation
+(On-the-Fly Synthesis)
+MemOS [15]
+❸Heterogeneous Composite
+(MemCube)
+❸Heterogeneous Multi-Engine
+(Vector + Graph DB)
+❸Schema-Constrained Extraction
+(Semantic Parser)
+❺Multi-Stage Hybrid Execution
+(Boolean + Semantic)
+❶Timestamp-Based Multi-Versioning
+(Differential Writes)
+MemoryOS [12]
+❸Heterogeneous Composite
+(Segment-Page)
+❸Heterogeneous Multi-Engine
+(Keyword Index + Vector DB)
+❸Schema-Constrained Extraction
+❺Multi-Stage Hybrid Execution
+(Hierarchical Routing)
+❷Capacity-Driven Physical Eviction
+(Heat-Based Eviction)
+A-MEM [33]
+❸Heterogeneous Composite
+(Atomic Notes)
+❸Heterogeneous Multi-Engine
+(Vector + Graph DB)
+❸Schema-Constrained Extraction
+(JSON Attributes)
+❸Topological Subgraph Traversal
+❸LLM-Driven Semantic Consolidation
+(Mutation & Pruning)
+Multi-Paradigm
+Hybrid
+Letta [25]
+❸Heterogeneous Composite
+(Context Tiers)
+❷Specialized Single-Engine
+(Relational DB)
+❸Schema-Constrained Extraction
+❹Autonomous Agentic Routing
+(Function Calling)
+❷Capacity-Driven Physical Eviction
+(Queue Flush)
+3.1.1
+Logical Representation. As displayed in Figure 2, this
+component acts as a bridge between raw data and the execution
+environment by organizing memory into clear models, such as
+graphs, or vector spaces. It determines how efficiently a system can
+search, combine, and use historical context for complex tasks.
+❶Token-Level Sequence Representation. This category mod-
+els memory as flat, one-dimensional sequences lacking explicit
+structural abstractions (e.g., graphs or hierarchies). Memory is rep-
+resented either as discrete, human-readable natural language tokens
+or as implicit, continuous latent vector tokens (e.g., fact embeddings,
+hidden states, or KV-cache tensors).
+▶Explicit Discrete Text Token. This category models memory as
+human-readable strings or independent factual statements. For
+instance, Mem0 isolates memory into discrete natural language
+facts extracted directly from interaction history. Similarly, Mem-
+oChat structures multi-turn dialogues into discrete JSON blocks
+(topics, summaries, raw turns) to maintain topical coherence within
+a plain-text paradigm. While these systems externalize their plain-
+text memory, others retain it within the active processing window:
+MemAgent restricts its internal belief state to a strictly bounded text
+sequence (e.g., 1024 tokens), and MEM1 encapsulates internal-state
+summaries within specialized boundary tags (e.g., <IS>).
+▶Implicit Continuous Vector Token. Departing from readable text
+tokens, this sub-category encodes memory as continuous vectors,
+which may be materialized either as external embeddings attached
+to facts and summaries for semantic retrieval, or as model-side la-
+tent states such as compressed internal states and attention caches.
+For example, Mem0 represents extracted facts as dense semantic
+embeddings and MemoRAG utilizes specifically initialized weight
+matrices to compress raw inputs into high-dimensional Key-Value
+(KV) cache tensors. Although these vector-token representations
+reduce explicit tokenization burdens and integrate naturally with re-
+trieval or inference pipelines, they sacrifice structural interpretabil-
+ity and are difficult to manipulate via fine-grained operations, such
+as predicate-level filtering or targeted updates to encoded facts.
+❷Graph and Tree-Based Topological Representation. This
+category abstracts memory into structured graph and tree topolo-
+gies with interconnected nodes and edges, allowing conversational
+entities, high-level concepts, and their temporal or semantic rela-
+tionships to be explicitly modeled and computationally traversed.
+1 Transient In-Context Register
+2
+Specialized Single-Engine
+3
+Heterogeneous Multi-Engine
+No External Store
+Multi-Distributed Store
+Single-Specialized Store
+t1
+t2
+Embedding
+[ 0.21,... , 0.46 ]
+Graph
+Kim
+Paris
+...
+LIVES_IN
+"Kim is ..."
+Text
+t1
+t2
+tT
+...
+Buffer
+Relational
+DB
+Vector
+DB
+Graph
+DB
+File / Relational / Vector / Graph DB
+Memory Router
+File
+Object
+Figure 3: Memory Storage Methods.
+▶Temporal Knowledge Graphs.This sub-category models memory
+using graph topologies to map entities and their interconnections,
+natively supporting temporal reasoning and conflict detection. For
+example, Zep partitions memory into formally defined, temporally-
+aware knowledge graphs (e.g., episode, entity, and community sub-
+graphs). Similarly, Mem0𝑔formalizes memory as a directed labeled
+graph, where vertices represent entities and edges encapsulate re-
+lationship triplets (e.g., “LIVES_IN”). To aid temporal reasoning,
+entity nodes are enriched with structural metadata like semantic
+types, dense embeddings, and creation timestamps.
+▶Hierarchical Tree Structures. This sub-category organizes knowl-
+edge into recursive, hierarchical structures, preserving highly gran-
+ular observations at terminal leaves and broad semantic abstrac-
+tions at ancestor nodes. For example, MemTree models memory
+as a dynamic, directed tree schema. Each node is structured as a
+tuple containing textual content, a dense embedding, topological
+pointers, and a depth scalar. Within this topology, deep leaf nodes
+retain isolated facts (e.g., a player scoring), while ancestor nodes
+provide high-level conceptual summaries (e.g., the match result),
+with a specialized root node serving as the definitive entry point.
+❸Heterogeneous Composite Representation. This category
+moves past simple token sequences and standard graphs by packag-
+ing memory into complex, multi-part data containers. These archi-
+tectures directly combine unstructured text with highly structured
+metadata (e.g., timestamps, categorical labels, vector embeddings,
+and network links) to form a single functional unit. For example,
+4
+
+=== PAGE 5 ===
+★
+1
+Raw Sequence Concatenation
+v_T
+2 Schema-Free Semantic Extraction
+3
+Schema-Constrained Structured Extraction
+Bounded Context Buffer
+{
+  "event_type": "visit",
+  "actor": "Kim",
+  "summary": "Tried several
+vegetarian cafés in Paris",
+  "timestamp": "2024-06-15",
+  "sensitivity": "normal"
+}
+No Rigid Predefined Schema
+LLM
+t1
+t2
+t3
+“Kim is vegetarian ...”
+Fact
+Vector
+[0.21, …, 0.46]
+Embedding ★
+LLM
+Structural Predefined Schema
+PREFERS
+LIVES_IN
+Vegetarian
+Food
+Kim
+...
+...
+Paris
+(Kim, PREFERS,
+Vegetarian Food)
+(Kim, LIVES_IN, Paris)
+"I'm vegetarian."
+"Got it. I'll recommend
+vegetarian restaurants."
+- Kim: "I'm vegetarian."
+- Bot: "Got it. I'll recommend
+vegetarian restaurants."
+Kim
+Bot
+Buffer
+Structured Record
+Extracted Topology
+Figure 4: Memory Extraction Methods.
+MemOS proposes the MemCube, a unified data object that orga-
+nizes memory into three distinct payloads (plain-text, activation,
+and parametric memory) alongside structured details (e.g., ID tags).
+3.1.2
+Physical Storage and Indexing. As shown in Figure 3, this
+component manages how data is physically stored and accessed,
+relying on systems like in-memory caches, files, vector engines,
+or databases. It sets the actual capacity limits and determines the
+speed, throughput, and overall scalability of memory operations.
+❶Transient In-Context Register. To eliminate disk I/O and ex-
+ternal traversal latency, this category retains memory exclusively
+within the active hardware state (e.g., dynamic context windows
+or KV caches). MemoChat avoids dedicated external memory en-
+gines and keeps structured JSON-style memos within the LLM con-
+text input during its memorization-retrieval-response loop, while
+MemAgent directly stores summary tokens as Key-Value (KV) cache
+tensors via dense positional embeddings.
+❷Specialized Single-Engine Storage. This category physically
+warehouses formulated units within a standalone, homogeneous
+backend strictly tailored to the memory’s logical structure. De-
+pending on the ingestion paradigm, architectures deploy specific
+backend topologies: (1) Dense Vector Databases are utilized to project
+data into continuous high-dimensional spaces; Mem0 and MemTree
+use centralized vector stores, Letta leverages PostgreSQL with the
+pgvector extension; (2) Graph Databases are deployed to enforce
+topological constraints; both Zep and Mem0𝑔execute predefined
+Cypher queries to physically persist logical graph components into
+Neo4j; (3) Relational SQL Engines are used to serialize structural
+and temporal schemas. LightMem incrementally appends factual
+streams to preserve global relational states; (4) File or Object Stores
+preserve raw interaction artifacts (e.g., conversation histories or
+tool-execution logs) as files or object blobs.
+❸Heterogeneous Multi-Engine Storage. This category dynami-
+cally constructs multiple index typologies or distributes data across
+heterogeneous backends (e.g., pairing a dense vector store with
+a topological graph database). SimpleMem ingests memory into
+LanceDB with an IVF-PQ mechanism that concurrently maintains
+dense embeddings, sparse BM25 indices, and SQL predicates. Mem-
+oryOS relies on a hybrid index fusing dense cosine similarity with
+discrete Jaccard similarity. Conversely, MemOS delegates serialized
+1 Native Attention-Based Retrieval
+2
+Semantic-Based Dense Retrieval
+0.86
+0.83
+0.78
+3 Topological Subgraph Traversal
+1-hop subgraph
+4 Autonomous Agentic Routing
+5 Multi-Stage Hybrid Execution
+t1: "Kim is vegetarian ..."
+t2: "Charlie is Kim's pet ..."
+t3: "Daily event log …"
+[0.21, …, 0.46]
+c1
+c2
+c3
+PREFERS
+(t₁)
+KEEPS_PET
+(t₂)
+LIVES_IN
+(t₃)
+Charlie
+Charlie
+Paris
+Vegetarian
+Food
+Kim
+...
+...
+...
+Kim lives in Paris.
+(a) Function Call Invocation
+(b) Generative Query Expansion
+LLM
+{
+  "tool": "search_memory",
+  "query": "Charlie lives",
+  "top_k": 5
+}
+Memory Storage
+LLM
+(a) Sequential Hybrid Routing
+(b) Parallel Ensemble Retrieval
+Attention Weight
+1, 2, ...
+..., 2, 1
+Vector Index
+(HNSW / IVF)
+★
+★
+★
+Top-k
+★
+Q₁: Charlie residence ...
+Q₂: Charlie preferred ...
+Q₃: Is Charlie vegetarian?
+Retriever
+Expanded Search Queries
+Original Queries
+★
+Deterministic Filter
+(Stage 1)
+Semantic Ranking
+(Stage 2)
+Filter: 
+type = Preference 
+time > 2024-01-01
+BM25
+Full-Text
+0.86
+0.83
+0.78
+c1
+c2
+c3
+Top-k
+Vector
+Search
+Keyword Search
+Fusion
+& Rerank
+Semantic Search
+Topological Search
+Graph
+Traversal
+c2
+★
+Tool Call
+t1
+t2
+t3
+tT
+Relational DB
+Vector DB
+Graph DB
+★
+★
+★
+{
+  "tool": "search_memory",
+  "query": "Charlie lives",
+  "top_k": 5
+}
+File Object
+Figure 5: Memory Retrieval Methods.
+payloads to highly specialized independent backends, fusing Vector
+and Graph databases via a standardized memory adapter interface.
+3.2
+Memory Extraction
+Memory extraction concerns how raw interaction traces are com-
+putationally processed. It covers both the extraction pipeline, how
+language models extract, summarize, or parse unstructured text
+into logical structures. As shown in Figure 4, it defines how the
+agent memory system transforms heterogeneous input streams
+(e.g., multi-turn dialogues, and tool execution logs) into logical
+memory primitives prior to physical persistence.
+❶Raw Sequence Concatenation. To minimize computational
+overhead, this category bypasses explicit extraction prompts, for-
+mulating memory directly as raw token concatenations or transient
+state summaries (e.g., appending recent dialogue turns directly into
+a prompt buffer). Systems such as MEM1 and MemAgent retain
+their newly formulated structures exclusively within the active
+computational state without secondary parsing.
+❷Schema-Free Semantic Extraction. This category systemati-
+cally distills raw, unstructured inputs into independent, high-value
+informational units, representing them either as explicit free-form
+texts or as compressed, continuous latent vectors. By isolating core
+knowledge from broader conversational context, it ensures precise
+and granular retrieval. For example, Mem0 actively parses interac-
+tions to extract and store discrete, standalone factual statements
+(e.g., “User is vegetarian and dairy-free”).
+❸Schema-Constrained Structured Extraction. This category
+prompts the LLM to parse raw inputs and synchronously populate a
+rigidly predefined structural schema, producing strictly typed data
+rather than free-form text. The constrained output takes the form
+of either topological entity-relation triplets for graph insertion or
+multi-modal relational payloads for hybrid storage, depending on
+the target backend. Zep and Mem0𝑔extract typed directed relational
+edges (e.g., LIVES_IN, WORKS_AT) conforming to predefined graph
+5
+
+=== PAGE 6 ===
+schemas, with Zep additionally applying a reflection-inspired veri-
+fication step to suppress hallucinated triplets. MemoChat populates
+predefined structural fields to ensure data predictability by leverag-
+ing LLMs to segment conversations into strict JSON schemas.
+3.3
+Memory Retrieval and Query Routing
+Memory retrieval and query routing determine how the agent mem-
+ory system dynamically identifies and extracts relevant historical
+context to inform the overarching agent’s current reasoning state.
+As shown in Figure 5, this module encompasses the complete query
+execution spectrum, defining the operational algorithms, predicate
+evaluations, and agentic workflows utilized to traverse indices.
+❶Native Attention-Based Retrieval. To bypass external data-
+base I/O, this category uses the transformer’s native computational
+graph as the sole retrieval engine, relying entirely on self-attention
+mechanisms to implicitly weight and route information (e.g., scan-
+ning dialogue tokens directly within the KV cache). MEM1 per-
+forms implicit retrieval via self-attention over the current sequence,
+utilizing a two-dimensional attention mask to preserve causal con-
+sistency. MemAgent implements routing by concatenating blocks
+directly into the prompt template, enabling standard attention-
+based decoding without external cross-encoder reranking.
+❷Semantic-Based Dense Retrieval. Operating over continuous
+latent spaces, this category maps query tensors against uniform
+vector indices to extract localized spatial neighbors (e.g., executing a
+standard 𝐾-Nearest Neighbors (KNN) search). Mem0 calculates vec-
+tor embeddings for incoming queries to execute a dense similarity
+search, fetching a constrained subset of facts. LightMem utilizes effi-
+cient cosine-similarity distance calculations over dense embeddings,
+bypassing computationally expensive iterative reranking. MemTree
+implements a collapsed-tree architecture that mathematically flat-
+tens its hierarchy, broadcasting inbound vectors to compute global
+cosine-similarity distributions across all candidates.
+❸Topological Subgraph Traversal. Departing from continuous
+vector spaces, this category retrieves information by traversing
+explicit relationship edges to extract semantic clusters structurally
+grounded in knowledge graphs (e.g., hopping from a User node to a
+linked Preference node). Mem0𝑔deploys an entity-centric heuris-
+tic to recursively traverse local subgraphs synchronously with se-
+mantic triplet evaluations. A-MEM identifies candidate anchors via
+dense 𝐾-Nearest Neighbor selection, then executes localized graph
+traversal to access topologically adjacent memory nodes explicitly
+linked within the same conceptual cluster.
+❹Autonomous Agentic Routing. Rather than executing deter-
+ministic database scans, this category delegates retrieval to the LLM
+itself, thereby functioning as an active, autonomous query planner.
+It generates tool-call invocations or drafts implicit search criteria.
+▶Function Call Invocation. This sub-category bridges the LLM
+with external storage by generating explicit function call commands
+to directly execute predefined database operations (e.g., outputting
+a valid JSON payload to trigger an external database API). For
+example, Letta orchestrates self-directed memory retrieval where
+the LLM evaluates its active context to explicitly generate local-
+ized function calls (e.g., emitting an archival_storage.search()
+command to extract targeted historical logs).
+1 Timestamp-Based Multi-Versioning
+INVALID
+VALID
+2
+Capacity-Driven Physical Eviction
+FIFO (Capacity = 3)
+C1
+Memory Item
+Last Access
+Score
+Kim's favorite album
+1d ago
+0.82
+Kim's pizza toppings
+30d ago
+0.21
+Old meeting notes
+180d ago
+0.05
+✗Evict
+(Lowest)
+3 LLM-Driven Semantic Consolidation
+"Kim prefers Italian food"
+"Kim is vegetarian"
+Merge
+Prune
+Augment
+Updated Summary
+LLM / Tool Caller
+Create
+Delete
+4 Continuous Parametric Optimization
+Offline Training / Fine-tuning
+Optimize with RLGF / LoRA
+c1: Kim lives in Paris.
+valid_to: 2025-06-30
+c2: Kim lives in London.
+valid_from: 2025-07-01
+c3: Kim keeps a pet.
+valid_from: 2026-04-10
+VALID
+...
+...
+...
+(a) Constraint-Based Hard Eviction
+(b) Score-Based Priority Eviction
+C2
+C3
+C4
+✗Evicted (Oldest)
+(a) Inline Semantic Compaction
+(b) Tool-Driven CRUD Execution
+LLM
+Group facts De-duplicate
+Add details
+Kim is vegetarian and
+prefers, Italian cuisine
+(e.g., pasta, pizza).
+Append-Only Log
+(Chronological precedence)
+Update
+CREATE(scene_summary)
+Read
+READ(user_preferences)
+UPDATE(m_001, new_fact)
+DELETE(m_045, m066)
+Historical
+Context
+User
+Feedback
+Retrieval
+Result
+θₜ → θₜ₊₁
+Figure 6: Memory Maintenance Methods.
+▶Generative Query Expansion. Unlike rigid function calling,
+this approach uses natural language generation to synthesize in-
+termediate clues or decompose complex intents before mapping
+them to the index (e.g., rewriting vague prompts into descriptive
+search strings). SimpleMem uses an Intent-Aware Retrieval Plan-
+ning module where the LLM dissects queries, calculates adaptive
+search depths, and synthesizes optimized query variants.
+❺Multi-Stage Hybrid Execution. To overcome the recall limi-
+tations of single-paradigm searches, this category executes multi-
+engine query pipelines orchestrating multi-dimensional candidate
+generation followed by downstream reranking frameworks.
+▶Sequential Hybrid Routing. This sub-category chains retrieval
+paradigms into a strictly ordered pipeline, systematically pruning
+the search space with deterministic predicates before executing
+fine-grained semantic extraction (e.g., applying strict SQL date fil-
+ters before computationally expensive vector searches). MemoryOS
+executes a federated routing strategy featuring coarse-grained pred-
+icate evaluation followed by fine-grained semantic ranking strictly
+within isolated segments. It algebraically fuses rule-based structural
+Boolean filtering with dense semantic similarity routing.
+▶Parallel Ensemble Retrieval. In contrast to sequential filtering,
+this approach maximizes initial recall by simultaneously dispatch-
+ing queries to multiple distinct indexing algorithms, followed by a
+late-stage fusion and reranking phase to optimize the aggregated
+pool (e.g., concurrently fetching candidates via BM25 and dense
+vector search, then cross-encoding the results). Zep executes simul-
+taneous cosine semantic scans, Okapi BM25 full-text searches, and
+topological BFS, subsequently optimizing precision via RRF, MMR,
+and computationally intensive cross-encoder models.
+3.4
+Memory Maintenance
+Memory maintenance concerns how memory is updated, main-
+tained, compressed, forgotten, and eventually removed over time.
+6
+
+=== PAGE 7 ===
+As shown in Figure 6, it captures the dynamic behavior of memory
+after it has been created, including how new information is incor-
+porated, how outdated or conflicting content is revised, and how
+the system controls memory growth under limited resources.
+❶Timestamp-Based Multi-Versioning. Rather than executing
+physical row deletions, this category preserves historical continuity
+by utilizing timestamp metadata and append-only logs to logically
+deprecate expired facts. Operating via explicit metadata mutations,
+Zep and Mem0𝑔avoid physical deletion by marking obsolete or
+conflicting relationships as logically invalid using validity flags and
+timestamps. Taking an append-only approach, LightMem incre-
+mentally inserts timestamped factual streams, while SimpleMem re-
+solves contradictions through strict chronological precedence using
+ISO-8601 timestamps. Synthesizing these techniques, MemOS lever-
+ages a structured Update API to execute differential writes, seam-
+lessly updating provenance IDs to generate multi-version chains.
+❷Capacity-Driven Physical Eviction. In contrast to timestamp-
+based multi-versioning, this category manages unbounded memory
+growth by physically dropping or unconditionally overwriting data.
+It executes this physical pruning through either strict deterministic
+constraints or dynamically calculated eviction scores.
+▶Constraint-Based Hard Eviction. This sub-category enforces
+rigid execution bounds by utilizing deterministic rules—such as
+strict FIFO queues, fixed sequence boundaries, or hard token lim-
+its—to unconditionally evict older states. Executing structural over-
+writes, MemAgent implements a programmatic scheduling algo-
+rithm that unconditionally replaces older memory sequences with
+newly synthesized summary blocks at every fixed segment bound-
+ary. Enforcing hard capacity limits, MEM1 operates through a
+system-enforced truncation mechanism that executes an automated
+FIFO pruning protocol to evict older tags once active context thresh-
+olds are breached. Operating via threshold flushes, Letta strictly
+handles buffer capacities via an OS-inspired queue manager; when
+the token count breaches a terminal limit, it forces a flush sequence
+to evict older messages into secondary recall storage.
+▶Score-Based Priority Eviction. Rather than relying on static ca-
+pacity limits, this sub-category dynamically forces the physical
+obsolescence of data by continuously calculating temporal decay or
+access-frequency scores. Quantifying access frequency, MemoryOS
+measures segment vitality via a scalar Heat score that balances
+retrieval frequency against exponential temporal decay, executing
+priority evictions that physically target the lowest-heat segments.
+❸LLM-Driven Semantic Consolidation. Operating as a cog-
+nitive governor, this category leverages the LLM to dynamically
+resolve logical conflicts and abstract redundant observations into
+dense summaries prior to query or persistence phases.
+▶Inline Semantic Compaction. During the active write phase,
+this sub-category dynamically evaluates and consolidates newly
+ingested data against existing memory nodes, systematically merg-
+ing redundant assertions prior to database transaction commitment
+(e.g., compressing three similar dialogue turns into one dense sum-
+mary node). SimpleMem executes online semantic synthesis on-
+the-fly, systematically merging structurally similar assertions into
+singular dense abstractions prior to database transaction commit-
+ment. MemTree utilizes a core scheduling operation that recursively
+triggers a semantic summarization prompt across all parent nodes
+to dynamically fuse historical states with novel payloads.
+▶Tool-Driven CRUD Execution. In contrast to automated fusion,
+this sub-category operationalizes maintenance through discrete,
+programmed state-mutations guided explicitly by LLM-driven tool
+interfaces that issue explicit Create, Read, Update, or Delete (CRUD)
+commands. Mem0 operationalizes its dynamic maintenance strictly
+through structured LLM tool-calling interfaces encompassing dis-
+crete programmed state-mutations such as UPDATE, and DELETE.
+❹Continuous Parametric Optimization. Completely decou-
+pling state updates from online inference latency, this category
+executes heavy neural optimizations as asynchronous background
+processes, modifying the actual model parameters rather than the
+external database schema (e.g., running continuous fine-tuning on
+overnight batches). For example, MemoRAG leaves active inference
+tokens strictly static and read-only, optimizing extraction quality
+exclusively during an offline training phase via a Reinforcement
+Learning with Generation Feedback (RLGF) algorithmic framework.
+4
+End-to-End Assessment
+In this section, we conduct a systematic evaluation of agent memory
+systems across five research questions. Across five distinct bench-
+mark workloads and 11 datasets, we assess 12 representative mem-
+ory systems against baselines to characterize their performance.
+Specifically, the five research questions are as follows.
+4.1
+Overall Effectiveness (RQ1)
+Experimental Setting. For “Do different agent memory systems
+successfully improve end-to-end task performance across workloads?”,
+we evaluate 12 representative memory systems and two reference
+baselines (Long Context and Embedding RAG) on the three end-to-
+end workloads to assess whether memory improves task success
+beyond the underlying LLM. Specifically, we use: (1) LoCoMo [20]:
+a long-conversation QA benchmark that tests episodic, temporal,
+and open-domain memory over multi-turn interactions, and re-
+port the unweighted mean of category-level Exact Match (EM) and
+Answer F1 on the four-category queries; (2) LongMemEval [31]:
+a multi-session long-memory benchmark that evaluates whether
+systems can reconnect facts across sessions and reason over tem-
+porally distributed evidence, and report Substring EM, ROUGE-L F1,
+ROUGE-L Recall, and GPT-5.4-based LLM Judge Accuracy from Mem-
+oryAgentBench [22]; and (3) DB-Bench: evaluates whether memory
+supports procedural execution across database operations from
+LifelongAgentBench [37], and report Exact Match (EM) and Task
+Success Rate.
+O1-(Cross-Workload Effectiveness): No single memory sys-
+tem dominates all workloads, but methods that preserve task-
+critical evidence through structure-guided filtering remain
+the most competitive overall. As shown in Figure 7, the leading
+systems shift across workloads: (1) Structure-aware systems lead
+LongMemEval, where Zep reaches 48.0 LLM Judge Accuracy and
+Cognee attains 35.3 ROUGE-L F1; (2) Hybrid filtering is strongest
+on LoCoMo exactness, where MemOS reaches 11.5 Exact Match
+(EM); and (3) Trace-preserving memories remain strongest on DB-
+Bench, where Long Context achieves 48.20 EM and MemoChat
+reaches 55.40 Task Success Rate. However, among methods with full
+7
+
+=== PAGE 8 ===
+Reference Baselines
+Sequential Context
+Structural Topological
+Multi-Paradigm Hybrid
+0
+5
+10
+15
+20
+25
+30
+35
+Substring EM
+Long Context
+7.7
+Embed. RAG
+7.0
+MemAgent
+11.1
+Mem0
+8.7
+MemoChat
+7.7
+Cognee
+27.7
+Zep Local
+29.7
+MemTree
+20.7
+Letta
+14.7
+LightMem
+12.3
+SimpleMem
+7.3
+MemOS
+19.7
+MemoryOS
+28.3
+A-MEM
+20.7
+(a) LongMemEval: Substring EM
+0
+10
+20
+30
+40
+ROUGE-L F1
+Long Context
+14.5
+Embed. RAG
+13.7
+MemAgent
+6.2
+Mem0
+15.5
+MemoChat
+16.7
+Cognee
+35.3
+Zep Local
+35.0
+MemTree
+29.0
+Letta
+7.8
+LightMem
+21.9
+SimpleMem
+15.6
+MemOS
+28.6
+MemoryOS
+33.7
+A-MEM
+22.8
+(b) LongMemEval: ROUGE-L F1
+0
+10
+20
+30
+40
+50
+ROUGE-L Recall
+Long Context
+20.2
+Embed. RAG
+19.3
+MemAgent
+33.1
+Mem0
+18.8
+MemoChat
+20.1
+Cognee
+39.8
+Zep Local
+44.1
+MemTree
+33.5
+Letta
+27.1
+LightMem
+26.1
+SimpleMem
+17.6
+MemOS
+34.9
+MemoryOS
+40.8
+A-MEM
+35.9
+(c) LongMemEval: ROUGE-L Recall
+0
+10
+20
+30
+40
+50
+60
+LLM Judge Acc.
+Long Context
+19.0
+Embed. RAG
+16.0
+MemAgent
+3.7
+Mem0
+16.7
+MemoChat
+14.7
+Cognee
+40.7
+Zep Local
+48.0
+MemTree
+33.3
+Letta
+23.0
+LightMem
+18.7
+SimpleMem
+17.3
+MemOS
+33.0
+MemoryOS
+39.3
+A-MEM
+34.7
+(d) LongMemEval: LLM Judge Acc.
+0
+5
+10
+15
+EM
+Long Context
+9.7
+Embed. RAG
+3.0
+Mem0
+4.1
+MemoChat
+5.1
+Cognee
+9.8
+Zep Local
+9.4
+MemTree
+8.6
+Letta
+0.0
+LightMem
+9.3
+SimpleMem
+4.6
+MemOS
+11.5
+MemoryOS
+10.1
+A-MEM
+5.7
+(e) LoCoMo: EM
+0
+10
+20
+30
+40
+Answer F1
+Long Context
+32.8
+Embed. RAG
+13.0
+Mem0
+12.8
+MemoChat
+21.5
+Cognee
+32.8
+Zep Local
+26.2
+MemTree
+24.5
+Letta
+5.3
+LightMem
+28.1
+SimpleMem
+14.7
+MemOS
+32.2
+MemoryOS
+29.2
+A-MEM
+23.5
+(f) LoCoMo: Answer F1
+0
+10
+20
+30
+40
+50
+60
+70
+EM
+Long Context
+48.2
+Embed. RAG
+45.4
+Mem0
+22.8
+MemoChat
+36.8
+Cognee
+41.6
+Zep Local
+27.6
+MemTree
+34.4
+Letta
+61.6
+LightMem
+34.4
+SimpleMem
+28.0
+MemOS
+42.0
+MemoryOS
+44.0
+A-MEM
+43.8
+(g) DB-Bench: EM
+0
+10
+20
+30
+40
+50
+60
+70
+Task Success Rate
+Long Context
+48.2
+Embed. RAG
+45.4
+Mem0
+22.9
+MemoChat
+55.4
+Cognee
+41.6
+Zep Local
+27.6
+MemTree
+25.8
+Letta
+61.6
+LightMem
+25.8
+SimpleMem
+28.1
+MemOS
+42.0
+MemoryOS
+44.0
+A-MEM
+43.8
+(h) DB-Bench: Task Success Rate
+Figure 7: Effectiveness of Memory Systems over LoCoMo, MemoryAgentBench (LongMemEval), LifeLongAgentBench (DB-Bench).
+workload coverage, MemoryOS and MemOS remain closest to the
+frontier overall, suggesting that robustness comes not from a single
+universal memory form, but from preserving the right evidence
+at the right level of abstraction before final matching. In particu-
+lar, (1) Temporal or graph-organized memory is most useful for
+cross-session aggregation and event-order reasoning (e.g., scattered
+personal facts in LongMemEval); (2) Summary-first or coarse-to-
+fine routing is useful for exact grounding in long but semantically
+coherent dialogues (e.g., recovering a specific date or personal detail
+in LoCoMo); and (3) Trace-preserving memory is necessary when
+correctness depends on intermediate state changes and operation
+order (e.g., dependent UPDATE and INSERT operations in DB-Bench).
+O2-(Beyond Exact Match): EM remains informative for tasks
+with canonical, directly grounded outputs, but it becomes
+insufficient when correctness depends on paraphrastic syn-
+thesis or executable success. As shown in Figure 7, Exact Match
+(EM) is still a meaningful signal on LoCoMo, where many questions
+target short grounded facts, as reflected by MemOS achieving the
+best Exact Match (EM). On LongMemEval, however, the stronger
+systems are more clearly separated once semantic equivalence is
+considered through ROUGE-L and LLM Judge Accuracy, indicating
+that cross-session reasoning often yields correct answers that do
+not share a single canonical surface form. On DB-Bench, the limita-
+tion is even clearer: Long Context achieves the best Exact Match
+(EM), but MemoChat attains a substantially higher Task Success
+Rate, showing that exact output matching does not fully capture
+whether memory supports successful execution. These results sug-
+gest that Exact Match (EM) is most appropriate when answers are
+short, canonical, and locally verifiable (e.g., a venue name, or ob-
+ject attribute in LoCoMo), but should be complemented once tasks
+require cross-session synthesis, or end-task state validation (e.g.,
+composing a semantically correct answer from multiple sessions in
+LongMemEval or reaching the correct table state in DB-Bench).
+Finding 1. (Workload-Aligned Memory). RQ1 suggests that
+strong agent memory is not defined by a single universal repre-
+sentation, but by how well it supports the dominant workload
+Embedding RAG
+Mem0
+Zep
+MemTree
+LightMem
+SimpleMem
+MemOS
+MemoryOS
+A-MEM
+0
+25
+50
+75
+100
+Recall@1 (%)
+3.8
+15.2
+12.3
+24.8
+13.3
+39.0
+27.6
+23.6
+31.3
+Embedding RAG
+Mem0
+Zep
+MemTree
+LightMem
+SimpleMem
+MemOS
+MemoryOS
+A-MEM
+0
+25
+50
+75
+100
+Recall@5 (%)
+16.0
+28.3
+52.5
+59.7
+34.7
+64.6
+55.4
+46.9
+69.5
+Embedding RAG
+Mem0
+Zep
+MemTree
+LightMem
+SimpleMem
+MemOS
+MemoryOS
+A-MEM
+0
+25
+50
+75
+100
+Recall@10 (%)
+17.7
+40.2
+66.2
+80.5
+56.4
+75.1
+70.6
+61.3
+85.9
+1-5
+6-10
+11-15
+16-20
+21-25
+26-31
+Evidence Distance Gap (Session Bins)
+0
+20
+40
+60
+80
+100
+Recall@10 (%)
+Embedding RAG
+Mem0
+Zep Local
+MemTree
+LightMem
+SimpleMem
+MemOS
+MemoryOS
+A-MEM
+(a) Recall@k
+(b) Recall@k vs. Evidence Distance Gap
+Figure 8: Retrieval Results of Memory Systems over LoCoMo.
+bottleneck: (1) for dispersed cross-session reasoning, relation- and
+time-aware retrieval is most effective, as in Zep and Cognee; (2) for
+long but semantically coherent dialogue, coarse-to-fine filtering
+improves exact grounding, as in MemOS and MemoryOS; and (3)
+for stateful execution, preserving interaction traces is more critical
+than exact lexical matching alone, as in Long Context.
+4.2
+Memory Retrieval Fidelity (RQ2)
+Experimental Setting. For “How accurately can a memory sys-
+tem surface the stored evidence required by a query?”, we evaluate
+eight representative memory systems to assess evidence-level re-
+trieval fidelity independently of downstream answer generation.
+Specifically, we use LoCoMo [20], which provides source-level gold
+evidence for queries with diverse evidence distances. We report:
+(1) Recall@K, where a hit requires the top-𝑘retrieved source-id
+groups to contain the annotated gold evidence, and (2) Recall@10
+over six evidence distance gap bins (1–5 to 26–31), defined by the
+8
