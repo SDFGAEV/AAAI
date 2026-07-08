@@ -106,11 +106,9 @@ class InteractionGate:
             else:
                 recommendation = "pair_probe"
 
-        # Compute posterior probabilities
-        pi_syn = float(beta_dist.cdf(1.0, a_j, b_j)) if state == SYNERGY else \
-                 self._prob_positive(delta_lcb, DELTA_INT)
-        pi_conf = float(1.0 - beta_dist.cdf(0.0, a_j, b_j)) if state == CONFLICT else \
-                  self._prob_negative(delta_lcb, -DELTA_INT)
+        # Compute posterior probabilities via Monte Carlo from Beta posteriors
+        pi_syn, pi_conf = self._compute_interaction_probs(
+            stats_i, stats_j, a_j, b_j, ucb_base, up_i, up_j)
 
         return self._result(delta_mean, delta_lcb, state, recommendation, "")
 
@@ -188,14 +186,37 @@ class InteractionGate:
         return float(beta_dist.ppf(1 - delta, alpha, beta_param))
 
     @staticmethod
-    def _prob_positive(value: float, threshold: float) -> float:
-        """Approximate P(Δ > threshold) using normal approx."""
-        return min(0.99, max(0.01, 1.0 / (1.0 + np.exp(-5 * (value - threshold)))))
+    def _compute_interaction_probs(stats_i: Dict, stats_j: Dict,
+                                    a_joint: float, b_joint: float,
+                                    ucb_base: float, up_i: float, up_j: float,
+                                    n_samples: int = 5000) -> Tuple[float, float]:
+        """Compute P(synergy) and P(conflict) via Monte Carlo from Beta posteriors.
 
-    @staticmethod
-    def _prob_negative(value: float, threshold: float) -> float:
-        """Approximate P(Δ < threshold)."""
-        return min(0.99, max(0.01, 1.0 / (1.0 + np.exp(5 * (value - threshold)))))
+        Samples from the three independent Beta posteriors (use_i, use_j, joint)
+        and computes the empirical probability that Δ_int exceeds the synergy
+        threshold or falls below the conflict threshold.
+        """
+        p_use_i = np.random.beta(stats_i["use_alpha"], stats_i["use_beta"], size=n_samples)
+        p_use_j = np.random.beta(stats_j["use_alpha"], stats_j["use_beta"], size=n_samples)
+        p_joint = np.random.beta(a_joint, b_joint, size=n_samples)
+
+        # Conservative individual uplifts for each MC sample
+        # (use point estimates for base — base uncertainty is small relative to use)
+        base_i_mean = stats_i.get("base_alpha", 1.0) / max(
+            stats_i.get("base_alpha", 1.0) + stats_i.get("base_beta", 1.0), 1e-8)
+        base_j_mean = stats_j.get("base_alpha", 1.0) / max(
+            stats_j.get("base_alpha", 1.0) + stats_j.get("base_beta", 1.0), 1e-8)
+
+        # Δ_int = (p_joint - base_mean) - (p_use_i - base_mean) - (p_use_j - base_mean)
+        #        = p_joint - p_use_i - p_use_j + base_mean
+        delta_samples = p_joint - p_use_i - p_use_j + base_i_mean + base_j_mean
+        pi_syn = float(np.mean(delta_samples > DELTA_INT))
+        pi_conf = float(np.mean(delta_samples < -DELTA_INT))
+
+        # Clamp to avoid degenerate 0.0/1.0 from finite samples
+        pi_syn = max(0.001, min(0.999, pi_syn))
+        pi_conf = max(0.001, min(0.999, pi_conf))
+        return pi_syn, pi_conf
 
     @staticmethod
     def _result(delta_mean: float, delta_lcb: float, state: str,
