@@ -101,9 +101,8 @@ def compute_cov_risk(data: List[Dict], eps: float = 0.10) -> Tuple[float, List[f
 
 
 def compute_hardsr(task_results: List[Dict]) -> float:
-    """Success rate on hard tasks."""
-    hard = [t for t in task_results if t.get("difficulty") == "hard" or t.get("group") in (
-        "tech_tree", "failure_recovery", "interaction_stress")]
+    """Success rate on tasks labeled difficulty='hard'."""
+    hard = [t for t in task_results if t.get("difficulty") == "hard"]
     if not hard: return 0.0
     return sum(1 for t in hard if t.get("success")) / len(hard)
 
@@ -136,12 +135,17 @@ def compute_cfr(interaction_logs: List[Dict]) -> float:
 
 def compute_kpr(lifecycle_logs: List[Dict]) -> float:
     """Knowledge Pollution Rate — certified knowledge later deprecated for harm."""
-    cert_later_harm = 0; total_cert = 0
-    for v in lifecycle_logs:
-        lc = v.get("lifecycle", {})
-        total_cert += lc.get("certified", 0)
-        cert_later_harm += lc.get("deprecated", 0)
-    return cert_later_harm / max(total_cert, 1)
+    ever_certified = set()
+    deprecated_from_certified = 0
+    for event in lifecycle_logs:
+        kid = event.get("knowledge_id", "")
+        old_s = event.get("old_status", "")
+        new_s = event.get("new_status", "")
+        if new_s == "certified":
+            ever_certified.add(kid)
+        if old_s == "certified" and new_s in ("deprecated", "disabled"):
+            deprecated_from_certified += 1
+    return deprecated_from_certified / max(len(ever_certified), 1)
 
 
 def compute_csr(reuse_logs: List[Dict]) -> float:

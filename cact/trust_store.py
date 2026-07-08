@@ -201,9 +201,8 @@ class TrustStore:
         # Edge case: when a2 < 1 (weak prior), use Monte Carlo approximation
         if int(a2) < 1:
             n_samples = 2000
-            rng = np.random.default_rng()
-            samples_use = rng.beta(a1, b1, size=n_samples)
-            samples_base = rng.beta(max(0.1, a2), b2, size=n_samples)
+            samples_use = np.random.beta(a1, b1, size=n_samples)
+            samples_base = np.random.beta(max(0.1, a2), b2, size=n_samples)
             return float(np.mean(samples_use > samples_base))
         total = 0.0
         for i in range(int(a2)):
@@ -235,9 +234,8 @@ class TrustStore:
         a1, b1 = self.get_stats(kid, context, "use")
         a2, b2 = self.get_stats(kid, context, "base")
         a3, b3 = self.get_stats(kid, context, "harm")
-        rng = np.random.default_rng()
-        return (float(rng.beta(a1, b1)), float(rng.beta(a2, b2)),
-                float(rng.beta(a3, b3)))
+        return (float(np.random.beta(a1, b1)), float(np.random.beta(a2, b2)),
+                float(np.random.beta(a3, b3)))
 
     # ── Temporal decay (delegates to TemporalDecay) ──
     def decay_all(self):
