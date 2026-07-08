@@ -133,18 +133,17 @@ if $RUN_E4; then
     # (simplified here; actual E4 needs per-variant cact_method changes)
 fi
 
-# E5: Online Evolution — 4 methods x 3 seeds x 5 rounds
-# Each round: 16 accumulation + 8 calibration + 12 test = 36 eps per method/seed
-# Total: 4 x 3 x 5 x 36 = 2160 episodes (~1.5h @ 4 workers)
+# E5: Online Evolution — 4 methods x 3 seeds x 10 rounds
+# Uses online_runner.py with persistent trust stores
 if $RUN_E5; then
-    for round in 1 2 3 4 5; do
-        echo "=== E5 Round $round/5 ==="
-        run_stage "E5-R$round" \
-            --benchmark cact_train \
-            --seeds 5001-5003 \
-            --methods Online-NoGate Online-BankCuration Online-ACT Online-C-ACT \
-            --resume
-    done
+    echo "=== E5: Online Evolution (10 rounds) ==="
+    $PYTHON experiments/online_runner.py \
+        --benchmark_accum cact_train \
+        --benchmark_test cact_p3 \
+        --seeds 5001-5003 \
+        --rounds 10 \
+        --methods Online-NoGate Online-BankCuration Online-ACT Online-C-ACT \
+        --workers "$WORKERS" --vlm_port "$VLM_PORT"
 fi
 
 STAGE_END=$(date +%s)

@@ -271,7 +271,7 @@ class CactMemory:
             "evaluation" if self.frozen else "accumulation")
 
         # C-ACT decision
-        if self.method == "C-ACT-Full":
+        if self.method in ("C-ACT-Full", "Online-C-ACT"):
             result = self._controller.decide(
                 candidates, state, task, context, mode)
         else:
@@ -324,9 +324,9 @@ class CactMemory:
 
         if self.method == "NoKnowledge":
             result.decision = "reuse" if np.random.random() < 0.5 else "fallback"
-        elif self.method == "XENON-Original":
+        elif self.method == "XENON-Original" or self.method == "Online-NoGate":
             result.decision = "reuse"
-        elif self.method == "BankCuration":
+        elif self.method == "BankCuration" or self.method == "Online-BankCuration":
             result.decision = "reuse" if self._store.mean(kid, ctx, "use") >= 0.3 else "fallback"
         elif self.method == "LifecycleSuccessGate":
             if lc in (DISABLED, DEPRECATED):
@@ -338,17 +338,19 @@ class CactMemory:
                 result.decision = "reuse"
             else:
                 result.decision = "reuse" if (pi >= 0.90 and up >= 0.05 and hu <= 0.10) else "fallback"
-        elif self.method == "ACT":
+        elif self.method == "ACT" or self.method == "Online-ACT":
             if self._store.total_count(kid, ctx, "use") < 1:
                 result.decision = "reuse"
             else:
                 result.decision = "reuse" if (pi >= 0.90 and hu <= 0.10) else "fallback"
+        elif self.method == "C-ACT-Full" or self.method == "Online-C-ACT":
+            result.decision = "reuse"  # Full C-ACT handled by decision_controller
         elif self.method == "OracleGate":
-            result.decision = "reuse"  # Upper bound — always reuse with oracle knowledge
+            result.decision = "reuse"
         elif self.method == "ShuffledKnowledge":
             result.decision = "reuse" if np.random.random() < 0.5 else "fallback"
         else:
-            result.decision = "reuse"  # Default: permissive
+            result.decision = "reuse"
 
         result.pi_uplift = pi
         result.harm_ucb = hu
