@@ -1,0 +1,56 @@
+\begin{thebibliography}{7}
+\providecommand{\natexlab}[1]{#1}
+
+\bibitem[{Angelopoulos and Bates(2021)}]{angelopoulos2021}
+Angelopoulos, A.~N.; and Bates, S. 2021.
+\newblock A Gentle Introduction to Conformal Prediction and Distribution-Free
+  Uncertainty Quantification.
+\newblock \emph{arXiv preprint arXiv:2107.07511}.
+
+\bibitem[{Fan et~al.(2022)Fan, Wang, Jiang, Mandlekar, Yang, Zhu, Tang, Huang,
+  Zhu, and Anandkumar}]{minedojo2022}
+Fan, L.; Wang, G.; Jiang, Y.; Mandlekar, A.; Yang, Y.; Zhu, H.; Tang, A.;
+  Huang, D.-A.; Zhu, Y.; and Anandkumar, A. 2022.
+\newblock MineDojo: Building Open-Ended Embodied Agents with Internet-Scale
+  Knowledge.
+\newblock In \emph{Advances in Neural Information Processing Systems
+  (NeurIPS)}.
+
+\bibitem[{Lifshitz et~al.(2023)Lifshitz, Paster, Chan, Ba, and
+  McIlraith}]{lifshitz2023}
+Lifshitz, S.; Paster, K.; Chan, H.; Ba, J.; and McIlraith, S. 2023.
+\newblock STEVE-1: A Generative Model for Text-to-Behavior in Minecraft.
+\newblock \emph{arXiv preprint arXiv:2306.00937}.
+
+\bibitem[{Lin et~al.(2024)Lin, Wang, Ma, and Liang}]{mcu2024}
+Lin, H.; Wang, Z.; Ma, J.; and Liang, Y. 2024.
+\newblock MCU: A Comprehensive Benchmark for Minecraft Agents.
+\newblock \emph{arXiv preprint}.
+\newblock Verify exact title and authors before final submission.
+
+\bibitem[{Wang et~al.(2023{\natexlab{a}})Wang, Xie, Jiang, Mandlekar, Xiao,
+  Zhu, Fan, and Anandkumar}]{voyager2023}
+Wang, G.; Xie, Y.; Jiang, Y.; Mandlekar, A.; Xiao, C.; Zhu, Y.; Fan, L.; and
+  Anandkumar, A. 2023{\natexlab{a}}.
+\newblock Voyager: An Open-Ended Embodied Agent with Large Language Models.
+\newblock In \emph{Advances in Neural Information Processing Systems
+  (NeurIPS)}.
+
+\bibitem[{Wang et~al.(2023{\natexlab{b}})Wang, Cai, Chen, Liu, Ma, and
+  Liang}]{deps2023}
+Wang, Z.; Cai, S.; Chen, G.; Liu, A.; Ma, X.; and Liang, Y. 2023{\natexlab{b}}.
+\newblock Describe, Explain, Plan and Select: Interactive Planning with Large
+  Language Models Enables Open-World Multi-Task Agents.
+\newblock In \emph{Advances in Neural Information Processing Systems
+  (NeurIPS)}.
+
+\bibitem[{Wang et~al.(2024)Wang, Cai, Liu, Jin, Hou, Zhang, Lin, He, Zheng,
+  Yang, Ma, and Liang}]{jarvis2024}
+Wang, Z.; Cai, S.; Liu, A.; Jin, Y.; Hou, J.; Zhang, B.; Lin, H.; He, Z.;
+  Zheng, Z.; Yang, Y.; Ma, X.; and Liang, Y. 2024.
+\newblock JARVIS-1: Open-World Multi-Task Agents with Memory-Augmented
+  Multimodal Language Models.
+\newblock In \emph{Advances in Neural Information Processing Systems
+  (NeurIPS)}.
+
+\end{thebibliography}
