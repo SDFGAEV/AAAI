@@ -177,7 +177,7 @@ class DecisionController:
         result.interaction_state = "safe"
         result.synergy_pairs = []
 
-        if len(chain) >= 2:
+        if self.abl_interaction and len(chain) >= 2:
             pair_stats = self.store.get_all_pair_stats(
                 [c["knowledge_id"] for c in chain], ctx_key)
             chain_check = self.ig.check_chain(chain, pair_stats, context)
@@ -230,8 +230,8 @@ class DecisionController:
             result.decision = "fallback"
             result.chosen_knowledge_id = ""
 
-        # ── Step 7: Active logging / Thompson probing ──
-        if mode in ("accumulation", "calibration", "online"):
+        # ── Step 7: Active logging / Thompson probing (skip if ablated) ──
+        if (self.abl_active_calib or self.abl_thompson) and mode in ("accumulation", "calibration", "online"):
             result = self._apply_active_ops(result, scored, state, context, mode)
 
         return result
@@ -276,8 +276,8 @@ class DecisionController:
         if mode == "evaluation":
             return result
 
-        # Active base logging: possibly override reuse → force_base
-        if result.decision == "reuse" and result.chosen_knowledge_id:
+        # Active base logging: possibly override reuse → force_base (skip if ablated)
+        if self.abl_active_calib and result.decision == "reuse" and result.chosen_knowledge_id:
             kid = result.chosen_knowledge_id
             ctx_key = context.get("bucket", "default")
             uncertainty = ActiveBaseLogger.compute_uncertainty(result.pi_uplift)
@@ -295,8 +295,8 @@ class DecisionController:
                 result.decision = "force_base"
                 return result
 
-        # Thompson probing: possibly allow reuse for uncertain knowledge
-        if result.decision == "fallback" and scored:
+        # Thompson probing: possibly allow reuse for uncertain knowledge (skip if ablated)
+        if self.abl_thompson and result.decision == "fallback" and scored:
             for c in sorted(scored, key=lambda x: x["pi_uplift"], reverse=True):
                 kid = c["knowledge_id"]
                 ctx_key = context.get("bucket", "default")
