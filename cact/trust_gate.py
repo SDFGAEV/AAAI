@@ -199,12 +199,14 @@ class TrustGate:
         if lifecycle_state in ("disabled", "deprecated"):
             return False, {"reason": "lifecycle_blocked",
                            "lifecycle": lifecycle_state,
-                           "tau": tau, "delta": delta, "harm": harm}
+                           "tau": tau, "delta": delta, "harm": harm,
+                           "supervised": False}
 
         # Condition 1: Contract check
         if not contract_satisfied:
             return False, {"reason": "contract_violation",
-                           "tau": tau, "delta": delta, "harm": harm}
+                           "tau": tau, "delta": delta, "harm": harm,
+                           "supervised": False}
 
         # Condition 2: Uplift + safety check
         uplift_ok = pi_uplift >= tau and uplift_lcb >= delta
@@ -215,29 +217,37 @@ class TrustGate:
                            "delta": delta, "harm": harm,
                            "pi_uplift": pi_uplift,
                            "uplift_lcb": uplift_lcb,
-                           "harm_ucb": harm_ucb_val}
+                           "harm_ucb": harm_ucb_val,
+                           "supervised": False}
         elif not uplift_ok:
             return False, {"reason": "uplift_fail", "tau": tau,
                            "delta": delta, "harm": harm,
                            "pi_uplift": pi_uplift,
-                           "uplift_lcb": uplift_lcb}
+                           "uplift_lcb": uplift_lcb,
+                           "supervised": False}
         elif not safety_ok:
             return False, {"reason": "safety_fail", "tau": tau,
                            "delta": delta, "harm": harm,
-                           "harm_ucb": harm_ucb_val}
+                           "harm_ucb": harm_ucb_val,
+                           "supervised": False}
 
         # Condition 3: Interaction check
         if not interaction_safe:
             return False, {"reason": "interaction_conflict",
                            "tau": tau, "delta": delta, "harm": harm,
                            "pi_uplift": pi_uplift,
-                           "harm_ucb": harm_ucb_val}
+                           "harm_ucb": harm_ucb_val,
+                           "supervised": False}
+
+        # Condition 4: Probation knowledge requires supervised reuse
+        supervised = lifecycle_state == "probation"
 
         return True, {"reason": "gate_pass", "tau": tau,
                       "delta": delta, "harm": harm,
                       "pi_uplift": pi_uplift,
                       "uplift_lcb": uplift_lcb,
-                      "harm_ucb": harm_ucb_val}
+                      "harm_ucb": harm_ucb_val,
+                      "supervised": supervised}
 
     def should_reuse(self, pi_uplift: float, uplift_lcb: float,
                      harm_ucb_val: float, task_group: str = None,

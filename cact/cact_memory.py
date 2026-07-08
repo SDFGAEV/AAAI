@@ -75,6 +75,7 @@ class CactMemory:
 
         # State tracking
         self._prev_kid = None
+        self._last_was_supervised = False
         self._knowledge_cnt = 0
         self._pairwise_harm: Dict[Tuple[str, str], Tuple[int, int]] = {}
         self._drift_counter = 0
@@ -98,6 +99,14 @@ class CactMemory:
     def current_environment(self): return None
     @current_environment.setter
     def current_environment(self, v): pass
+
+    def needs_supervision_check(self) -> bool:
+        """Check if the last reuse decision was in supervised (Probation) mode.
+
+        When True, the caller should run an immediate reflection check after
+        each execution step. If the check fails, fall back to base policy.
+        """
+        return self._last_was_supervised
 
     # ── Log dumping ──
     def dump_logs(self):
@@ -262,6 +271,7 @@ class CactMemory:
                 kid, ctx, candidates, state, task, context)
 
         trusted = result.decision in ("reuse", "probe")
+        self._last_was_supervised = getattr(result, "supervised", False)
 
         if trusted:
             is_ok, sg = self._mem.is_succeeded_waypoint(waypoint)

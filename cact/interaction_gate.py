@@ -155,11 +155,24 @@ class InteractionGate:
                 elif result["state"] == SYNERGY:
                     synergy_pairs.append({"pair": (ki, kj), "result": result})
 
+        # Build recommended combos from synergy pairs
+        recommended_combos = []
+        for sp in synergy_pairs:
+            ki, kj = sp["pair"]
+            pi = sp["result"].get("pi_syn", 0.5)
+            if pi >= self.theta_syn:
+                recommended_combos.append({
+                    "pair": (ki, kj),
+                    "pi_synergy": pi,
+                    "recommendation": "prefer_joint",
+                })
+
         return {
             "safe": len(blocked_pairs) == 0,
             "blocked_pairs": blocked_pairs,
             "conflict_pairs": conflict_pairs,
             "synergy_pairs": synergy_pairs,
+            "recommended_combos": recommended_combos,
             "recommendation": "interaction_safe" if len(blocked_pairs) == 0
                               else ("single_best_only" if len(blocked_pairs) == 1
                                     else "force_fallback"),

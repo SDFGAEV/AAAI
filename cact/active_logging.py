@@ -67,13 +67,17 @@ class ActiveBaseLogger:
 
         q = self.q_min + u_term + b_term - d_term
 
-        # Self-correct towards target average
-        if self._total_decisions > 0:
+        # Aggressive self-correction towards target average
+        # Instead of slow drift (±5pp deadband, 0.7/1.3 multipliers),
+        # use direct ratio correction: q_new = q_old * target / current
+        # This converges to the target rate within ~50 decisions, not ~500.
+        if self._total_decisions > 10:
             current_rate = self._force_base_count / self._total_decisions
-            if current_rate > self.target_avg + 0.05:
-                q *= 0.7  # Reduce if over-sampling
-            elif current_rate < self.target_avg - 0.05:
-                q *= 1.3  # Increase if under-sampling
+            if current_rate > 0.001 and abs(current_rate - self.target_avg) > 0.02:
+                ratio = self.target_avg / current_rate
+                # Clamp correction factor to avoid overcorrection
+                ratio = max(0.3, min(3.0, ratio))
+                q *= ratio
 
         return max(self.q_min, min(self.q_max, q))
 

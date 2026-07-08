@@ -14,7 +14,7 @@ Implements the main C-ACT decision flow (Table 76 / Fig from C-ACT doc):
 Returns DecisionResult with full audit trail.
 """
 
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Any
 from dataclasses import dataclass, field
 
 from .trust_store import TrustStore
@@ -42,6 +42,7 @@ class DecisionResult:
     contract_violation_after: bool = False
     interaction_safe: bool = True
     interaction_state: str = "safe"
+    synergy_pairs: List = field(default_factory=list)  # Synergistic knowledge combos
 
     # Gate thresholds (for logging)
     tau_group_level: float = 0.90
@@ -54,6 +55,7 @@ class DecisionResult:
 
     # Audit
     lifecycle_state: str = ""
+    supervised: bool = False       # Probation knowledge requires double-verification
     filtered_count: int = 0
     scored_count: int = 0
     chain_length: int = 0
@@ -158,13 +160,31 @@ class DecisionController:
             c["base_alpha"] = a2; c["base_beta"] = b2
         result.chain_length = len(chain)
 
-        # ── Step 5: Interaction check ──
+        # ── Step 5: Interaction check (conflict + synergy) ──
+        result.interaction_safe = True
+        result.interaction_state = "safe"
+        result.synergy_pairs = []
+
         if len(chain) >= 2:
             pair_stats = self.store.get_all_pair_stats(
                 [c["knowledge_id"] for c in chain], ctx_key)
             chain_check = self.ig.check_chain(chain, pair_stats, context)
             result.interaction_safe = chain_check["safe"]
             result.interaction_state = chain_check["recommendation"]
+
+            # Promote synergy combos: if two candidates have synergistic interaction,
+            # prefer using both together rather than picking just the best one.
+            for combo in chain_check.get("recommended_combos", []):
+                ki, kj = combo["pair"]
+                result.synergy_pairs.append({
+                    "pair": (ki, kj),
+                    "pi_synergy": combo["pi_synergy"],
+                })
+                # Boost both candidates' effective score to encourage joint reuse
+                for c in chain:
+                    if c["knowledge_id"] in (ki, kj):
+                        c["pi_uplift"] = min(1.0, c["pi_uplift"] * 1.05)
+                        c["synergy_boosted"] = True
 
         # ── Step 6: Make decision ──
         best = None
@@ -193,6 +213,7 @@ class DecisionController:
             result.tau_group_level = gi.get("tau", 0.90)
             result.delta_group_level = gi.get("delta", 0.05)
             result.harm_threshold_group_level = gi.get("harm", 0.10)
+            result.supervised = gi.get("supervised", False)
         else:
             result.decision = "fallback"
             result.chosen_knowledge_id = ""

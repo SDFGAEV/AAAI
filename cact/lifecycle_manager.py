@@ -47,8 +47,14 @@ STATE_ORDER = {
     LifecycleState.DISABLED: 5,
 }
 
-# States that allow reuse
-REUSABLE_STATES = {LifecycleState.PROBATION, LifecycleState.CERTIFIED}
+# States that allow free reuse (no extra verification needed)
+REUSABLE_STATES = {LifecycleState.CERTIFIED}
+
+# States that allow supervised reuse (reuse + double-verification)
+# Probation knowledge has 3-5 observations — posterior is still wide.
+# It CAN be used, but every step must pass an immediate reflection check.
+# If the check fails, fallback to base policy immediately.
+SUPERVISED_STATES = {LifecycleState.PROBATION}
 
 # States treated as "active" (counted in knowledge growth)
 ACTIVE_STATES = {LifecycleState.QUARANTINED, LifecycleState.PROBATION,
@@ -95,15 +101,34 @@ class LifecycleManager:
             return LifecycleState.CANDIDATE
 
     def is_reusable(self, kid: str) -> bool:
+        """Knowledge can be freely reused (Certified)."""
         return self.get_state(kid) in REUSABLE_STATES
+
+    def is_supervised(self, kid: str) -> bool:
+        """Knowledge can be reused but needs double verification (Probation)."""
+        return self.get_state(kid) in SUPERVISED_STATES
+
+    def can_reuse(self, kid: str) -> bool:
+        """Knowledge can be reused in any mode (free or supervised)."""
+        return self.get_state(kid) in REUSABLE_STATES | SUPERVISED_STATES
 
     def is_active(self, kid: str) -> bool:
         return self.get_state(kid) in ACTIVE_STATES
 
     # ── State transitions ──
-    def transition(self, kid: str, new_state: LifecycleState,
-                   reason: str = "", metadata: Dict = None) -> Dict:
-        """Execute a lifecycle state transition and log it."""
+    def transition(self, kid: str, new_state, reason: str = "",
+                   metadata: Dict = None) -> Dict:
+        """Execute a lifecycle state transition and log it.
+
+        Accepts LifecycleState enum or string (e.g. "probation", "certified").
+        """
+        # Coerce string to LifecycleState
+        if isinstance(new_state, str):
+            try:
+                new_state = LifecycleState(new_state)
+            except ValueError:
+                return {"transitioned": False, "reason": "invalid_state",
+                        "state": new_state}
         old_state = self.get_state(kid)
 
         # Guard: can't go backwards (except to disable)
