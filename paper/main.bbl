@@ -39,18 +39,21 @@ Wang, G.; Xie, Y.; Jiang, Y.; Mandlekar, A.; Xiao, C.; Zhu, Y.; Fan, L.; and
 \bibitem[{Wang et~al.(2023{\natexlab{b}})Wang, Cai, Chen, Liu, Ma, and
   Liang}]{deps2023}
 Wang, Z.; Cai, S.; Chen, G.; Liu, A.; Ma, X.; and Liang, Y. 2023{\natexlab{b}}.
-\newblock Describe, Explain, Plan and Select: Interactive Planning with Large
-  Language Models Enables Open-World Multi-Task Agents.
+\newblock Describe, Explain, Plan and Select: Interactive Planning with LLMs
+  Enables Open-World Multi-Task Agents.
 \newblock In \emph{Advances in Neural Information Processing Systems
   (NeurIPS)}.
+\newblock Verified via DBLP.
 
-\bibitem[{Wang et~al.(2024)Wang, Cai, Liu, Jin, Hou, Zhang, Lin, He, Zheng,
+\bibitem[{Wang et~al.(2025)Wang, Cai, Liu, Jin, Hou, Zhang, Lin, He, Zheng,
   Yang, Ma, and Liang}]{jarvis2024}
 Wang, Z.; Cai, S.; Liu, A.; Jin, Y.; Hou, J.; Zhang, B.; Lin, H.; He, Z.;
-  Zheng, Z.; Yang, Y.; Ma, X.; and Liang, Y. 2024.
+  Zheng, Z.; Yang, Y.; Ma, X.; and Liang, Y. 2025.
 \newblock JARVIS-1: Open-World Multi-Task Agents with Memory-Augmented
   Multimodal Language Models.
-\newblock In \emph{Advances in Neural Information Processing Systems
-  (NeurIPS)}.
+\newblock \emph{IEEE Transactions on Pattern Analysis and Machine
+  Intelligence}, 47(3): 1894--1907.
+\newblock ArXiv:2311.05997. Verified via DBLP; published venue is IEEE TPAMI
+  2025, not NeurIPS 2024.
 
 \end{thebibliography}
