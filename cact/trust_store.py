@@ -193,11 +193,21 @@ class TrustStore:
         """π_u(c) = P(p_use > p_base | data) — exact posterior probability."""
         a1, b1 = self.get_stats(kid, context, "use")
         a2, b2 = self.get_stats(kid, context, "base")
+        # Edge case: when a2 < 1 (weak prior), use Monte Carlo approximation
+        if int(a2) < 1:
+            n_samples = 2000
+            rng = np.random.default_rng()
+            samples_use = rng.beta(a1, b1, size=n_samples)
+            samples_base = rng.beta(max(0.1, a2), b2, size=n_samples)
+            return float(np.mean(samples_use > samples_base))
         total = 0.0
         for i in range(int(a2)):
             term = (betaln(a1 + i, b1 + b2) - math.log(b2 + i)
                     - betaln(1 + i, b2) - betaln(a1, b1))
             total += math.exp(term)
+        # Additionally clamp extremely small values to avoid underflow
+        if total < 1e-15:
+            return 0.0
         return min(total, 1.0 - 1e-8)
 
     def uplift_lcb(self, kid: str, context: str, delta: float = 0.05) -> float:

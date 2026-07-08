@@ -28,7 +28,7 @@ from .contract import ContractChecker, ContractExtractor
 @dataclass
 class DecisionResult:
     """Complete C-ACT decision output with full audit trail."""
-    decision: str                    # "reuse" | "fallback" | "probe" | "force_base"
+    decision: str = "fallback"        # "reuse" | "fallback" | "probe" | "force_base"
     chosen_knowledge_id: str = ""
     chosen_contract: Dict = field(default_factory=dict)
 
@@ -147,8 +147,15 @@ class DecisionController:
             return result
 
         # ── Step 4: Build candidate chain ──
-        # Sort by pi_uplift descending, pick top certified
+        # Sort by pi_uplift descending, enrich with stats for interaction check
         chain = sorted(scored, key=lambda x: x["pi_uplift"], reverse=True)
+        ctx_key = context.get("bucket", context.get("subgoal_type", "craft"))
+        for c in chain:
+            kid = c["knowledge_id"]
+            a1, b1 = self.store.get_stats(kid, ctx_key, "use")
+            a2, b2 = self.store.get_stats(kid, ctx_key, "base")
+            c["use_alpha"] = a1; c["use_beta"] = b1
+            c["base_alpha"] = a2; c["base_beta"] = b2
         result.chain_length = len(chain)
 
         # ── Step 5: Interaction check ──
