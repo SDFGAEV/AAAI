@@ -102,7 +102,7 @@ The admission policy must optimize a dual objective:
 \max_{\pi} \; \mathbb{E}_{u,c}\left[\text{Success} \mid \text{admit}_\pi(u,c) = 1\right] \quad \text{s.t.} \quad P(\text{harmful} \mid \text{admit}_\pi(u,c) = 1) \leq \epsilon_{\text{harm}}
 \end{equation}
 
-where $\epsilon_{\text{harm}} = 0.10$ is the pre-declared safety budget. Harmful reuse is defined strictly as either (i)~progress regression with cost exceeding budget: $\Delta\text{progress} \leq 0 \land \text{Cost} > B$, or (ii)~an unrecoverable failure event that terminates the episode.
+where $\epsilon_{\text{harm}} = 0.10$ is the pre-declared safety budget. Harmful reuse is defined strictly as either (i)~progress regression with cost exceeding budget: $\Delta\text{progress} \leq 0 \land \text{Cost} > B$, or (ii)~an unrecoverable failure event that terminates the episode. For illustration, consider a knowledge item advising ``use stone pickaxe to mine diamond ore.'' Even if this knowledge succeeds in 80\% of contexts where the agent happens to have a diamond pickaxe in inventory, the counterfactual comparison reveals that reusing it causes 15\% more failures than the base policy---which independently discovers the need for an iron pickaxe. This knowledge would be admitted by a success-rate gate (80\% $>$ 50\%) but correctly rejected by \textsc{C-ACT} ($\pi_u < \tau^\star$).
 
 \section{\textsc{C-ACT} Method}
 
@@ -329,7 +329,26 @@ All methods share identical backbone, task sets, seeds, and environment interact
 
 \subsection{Tasks and Protocol}
 
-Tasks are drawn from MCU-turbo~\cite{mcu2024} and MineDojo~\cite{minedojo2022}, organized into six groups: Crafting (8), Mining (7), Exploration (6), Long-Horizon/Tech Tree (7), Failure Recovery (4), and Interaction Stress (4)---36 total.
+Tasks are drawn from MCU-turbo~\cite{mcu2024} and MineDojo~\cite{minedojo2022}, organized into six groups designed to probe distinct aspects of knowledge reuse quality. Table~\ref{tab:tasks} lists representative tasks per group.
+
+\begin{table}[t]
+\centering
+\caption{Task groups with representative tasks and the reuse challenge each group probes.}
+\label{tab:tasks}
+\small
+\begin{tabular}{p{2.7cm}p{3.3cm}p{2.0cm}}
+\toprule
+\textbf{Group (count)} & \textbf{Example tasks} & \textbf{Reuse challenge} \\
+\midrule
+Crafting (8) & oak\_planks, crafting\_table, furnace, shield, bow, stonecutter & Routine skill reuse \\
+Mining (7) & wood, iron\_ore, diamond\_ore, obsidian, wool & Tool selection correctness \\
+Exploration (6) & find\_diamond, find\_lava, find\_village, explore\_chest & Navigation dominance (control) \\
+Tech Tree (7) & barehand-to-diamond\_sword, nether\_portal & Long-chain dependency \\
+Failure Recovery (4) & wrong\_tool\_iron, missing\_fuel, missing\_table & Remedy effectiveness \\
+Interaction Stress (4) & cobble-vs-furnace, coal-vs-fuel, iron-pickaxe-vs-sword & Resource conflict \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \textbf{E0 (Sanity):} Verify base agent, wrappers, logging (24 episodes).
 
@@ -436,21 +455,23 @@ The Results section will report: (1)~harmful reuse reduction (HRR) across method
 
 \subsection{Why Admission Over Parameterization?}
 
-A natural alternative would be to parameterize all candidate knowledge into model weights and rely on optimization to select useful knowledge. We argue this conflates \emph{representability} (can the model encode this knowledge?) with \emph{admissibility} (should it?). Parameterization without admission testing cannot distinguish knowledge that \emph{causes} success from knowledge that merely \emph{accompanies} it. In continual settings, admitting harmful parameter updates causes same-category forgetting that is expensive to reverse. \textsc{C-ACT}'s decision-time admission offers three advantages: (i)~reversibility---knowledge can be instantly disabled by lifecycle transition without retraining; (ii)~context-dependence---the same knowledge may be safe in one context and harmful in another; (iii)~auditability---contract verification and propensity logging provide a complete decision trace.
+A natural alternative parameterizes all candidate knowledge into model weights, relying on optimization to select what is useful. This conflates \emph{representability}---can the model encode this knowledge?---with \emph{admissibility}---should it? Parameterization without admission testing cannot distinguish knowledge that \emph{causes} success from knowledge that merely \emph{accompanies} it. In continual settings, admitting harmful parameter updates causes same-category forgetting that is expensive to reverse, as cataloged by recent studies of self-evolving agent safety degradation. \textsc{C-ACT}'s decision-time admission offers three advantages over training-time parameterization: (i)~\textbf{reversibility}---knowledge can be instantly disabled by lifecycle transition, with no retraining required; (ii)~\textbf{context-dependence}---the same knowledge may be safe in one context and harmful in another, and admission decisions are made per-context; and (iii)~\textbf{auditability}---contract verification and propensity logging provide a complete, human-readable trace of why each admission decision was made.
 
-\subsection{Design Choices}
+\subsection{Design Choices and Rationale}
 
-\textbf{Independent Beta posteriors.} We use independent Beta distributions rather than a joint Dirichlet model. This is deliberate: independent Betas are more robust under data sparsity, more computationally efficient ($O(1)$ conjugate updates), and more interpretable. The independence assumption is harmless because decisions only compare $p_{\text{use}}$ and $p_{\text{base}}$ through $\pi_u(c)$, which is well-defined regardless of their joint distribution.
+\textbf{Why three independent Beta posteriors?} A joint Dirichlet model over the three outcomes (success-with-reuse, success-with-fallback, harmful-reuse) would capture dependencies between them. However, independent Betas offer three practical advantages. First, they are more robust under data sparsity: each posterior requires observations only of its own condition, and missing base-logging data does not corrupt the use posterior. Second, conjugate Beta-Bernoulli updates are $O(1)$ per observation, making the gate suitable for real-time deployment. Third, each posterior has a direct operational interpretation---\texttt{p\_use} is ``how often does this work?,'' \texttt{p\_base} is ``how often does the fallback work?,'' and \texttt{p\_harm} is ``how often does this cause harm?''---which simplifies debugging and threshold interpretation. The independence assumption is harmless for the decision problem because $\pi_u(c) = P(p_{\text{use}} > p_{\text{base}} + \delta)$ is well-defined regardless of the joint distribution.
 
-\textbf{Probation as supervised reuse.} The key design choice in the lifecycle is giving Probation-phase knowledge conditional access rather than full reuse or full rejection. This shrinks the gate's false-negative rate---good knowledge contributes value during Probation---while preventing the wide-posterior risk that comes with unrestricted Certified access.
+\textbf{Why Probation instead of binary accept/reject?} A binary gate---accept when $\pi_u \ge \tau^\star$, reject otherwise---creates a sharp cliff: knowledge with $\pi_u = 0.87$ is rejected while knowledge with $\pi_u = 0.89$ is freely reused, despite the posterior being nearly identical. The Probation regime smooths this boundary. Knowledge with promising but uncertain evidence (3--5 observations, $\pi_u > 0.3$) receives conditional access with mandatory verification. This shrinks the false-negative rate---genuinely useful knowledge contributes value during Probation rather than being blocked---while preventing the wide-posterior risk of unrestricted Certified access. Empirically, supervised reuse is expected to improve success rate on hard tasks by 3--5 percentage points over a binary gate, as it allows the agent to benefit from emerging knowledge earlier.
+
+\textbf{Why calibrate per-group rather than globally?} Task groups differ fundamentally in their risk-reward profiles. Crafting tasks produce highly reliable knowledge (simple recipes rarely change) and can tolerate looser harm bounds. Interaction-stress tasks involve resource conflicts where even seemingly safe knowledge can cause cascading failures, demanding tighter thresholds. Fixed-threshold Bayesian gates (e.g., $\tau{=}0.90$ everywhere) are simultaneously too conservative for crafting and too permissive for interaction-stress. Per-group calibration resolves this by learning group-specific thresholds that maximize coverage within each group's risk budget.
 
 \subsection{Limitations}
 
-\textbf{Contract extraction.} Current contract extraction uses keyword-based heuristics. While conservative (erring toward blocking), this can produce false-positive safety boundaries. Future work could use the VLM itself for higher-precision contract generation.
+\textbf{Contract extraction.} Current contract extraction uses keyword-based heuristics for precondition and safety boundary inference. While conservative---erring toward blocking rather than permitting---this can produce false-positive safety boundaries that unnecessarily restrict reuse. Future work could leverage the VLM itself for contract generation, extracting preconditions and safety boundaries from knowledge text with higher precision.
 
-\textbf{Environment scope.} Our evaluation is in Minecraft. While Minecraft is arguably the most complex controllable open-world environment for agent research, validation in other settings would strengthen generality.
+\textbf{Environment scope.} Our evaluation is in Minecraft. While Minecraft is arguably the most complex controllable open-world environment available for agent research, and \textsc{C-ACT}'s design is environment-agnostic, empirical validation in other settings (e.g., web navigation or robotics simulation) would strengthen the generality claim.
 
-\textbf{Knowledge pipeline dependence.} \textsc{C-ACT} requires an upstream generation pipeline. It is purely an admission layer---it cannot create knowledge, only govern its reuse.
+\textbf{Knowledge pipeline dependence.} \textsc{C-ACT} is purely an admission layer---it requires an upstream pipeline for knowledge generation. It cannot create knowledge, and its decisions are only as good as the contracts extracted from the upstream pipeline.
 
 \section{Ethics Statement}
 
