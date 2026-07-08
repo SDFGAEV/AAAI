@@ -21,7 +21,7 @@ all_task:
 - {id: 9,  type: collect,  instruction: "Collect 8 wood logs by chopping trees.",                                 goal: log,              group: mining,       difficulty: easy}
 - {id: 10, type: collect,  instruction: "Collect 8 blocks of dirt.",                                             goal: dirt,             group: mining,       difficulty: easy}
 - {id: 11, type: collect,  instruction: "Collect 8 blocks of sand.",                                             goal: sand,             group: mining,       difficulty: easy}
-- {id: 12, type: collect,  instruction: "Collect 3 wool by shearing or killing sheep.",                           goal: wool,             group: mining,       difficulty: easy}
+- {id: 12, type: collect,  instruction: "Mine 3 coal ore using a wooden pickaxe or better.",                           goal: coal,             group: mining,       difficulty: easy}
 - {id: 13, type: mine,     instruction: "Mine 8 cobblestone using a wooden pickaxe or better.",                   goal: cobblestone,      group: mining,       difficulty: easy}
 - {id: 14, type: mine,     instruction: "Mine 3 iron ore using a stone pickaxe or better.",                       goal: iron_ore,         group: mining,       difficulty: medium}
 - {id: 15, type: mine,     instruction: "Mine diamond ore using an iron pickaxe or better.",                      goal: diamond,          group: mining,       difficulty: hard}
