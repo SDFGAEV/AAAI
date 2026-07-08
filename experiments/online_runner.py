@@ -88,8 +88,6 @@ class OnlineRunner:
             resume=False,
         )
 
-        # Print summary
-        from experiments.parallel_runner import ParallelRunner as PR
         runner.print_summary()
         return results
 

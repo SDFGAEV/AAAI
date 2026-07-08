@@ -102,10 +102,9 @@ class SafeThompsonProber:
             return False, 0.0
 
         # Thompson sample check
-        rng = np.random.default_rng()
-        p_use = float(rng.beta(use_alpha, use_beta))
-        p_base = float(rng.beta(base_alpha, base_beta))
-        p_harm = float(rng.beta(harm_alpha, harm_beta))
+        p_use = float(np.random.beta(use_alpha, use_beta))
+        p_base = float(np.random.beta(base_alpha, base_beta))
+        p_harm = float(np.random.beta(harm_alpha, harm_beta))
 
         conditions_met = (
             p_use > p_base + DELTA_PROBE and

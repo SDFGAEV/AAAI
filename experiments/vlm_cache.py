@@ -102,7 +102,7 @@ class VLMCache:
             self._misses = 0
 
 
-# ── Cache-aware ServerAPI wrapper ──
+# ── Cache-aware ServerAPI wrapper (optional, not used by default) ──
 class CachedServerAPI:
     """Drop-in replacement for ServerAPI with VLM cache.
 

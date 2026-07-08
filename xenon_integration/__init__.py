@@ -1,10 +1,9 @@
 """
-XENON Integration Layer for C-ACT.
+XENON Integration Layer for C-ACT (OPTIONAL — not used by default).
 
-Adapters to interface C-ACT's decision-time admission layer
-with XENON's knowledge structures:
-  - Adaptive Dependency Graph (ADG): dependency corrections
-  - Failure-aware Action Memory (FAM): action corrections / remedies
+Adapters to interface C-ACT with non-XENON agent bases.
+Current CactMemory directly wraps XENON DecomposedMemory.
+Use these adapters when porting C-ACT to a different agent.
 """
 
 from .xenon_adapter import XenonAdapter
