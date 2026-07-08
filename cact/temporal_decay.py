@@ -74,8 +74,8 @@ class TemporalDecay:
         alpha_new = alpha_0 + factor * (alpha_old - alpha_0)
         beta_new = beta_0 + factor * (beta_old - beta_0)
         # Clip to valid range
-        alpha_new = max(EFFECTIVE_STRENGTH_MIN, alpha_new)
-        beta_new = max(EFFECTIVE_STRENGTH_MIN, beta_new)
+        alpha_new = max(EFFECTIVE_STRENGTH_MIN, min(EFFECTIVE_STRENGTH_MAX, alpha_new))
+        beta_new = max(EFFECTIVE_STRENGTH_MIN, min(EFFECTIVE_STRENGTH_MAX, beta_new))
         return alpha_new, beta_new
 
     def get_drift_factor(self) -> float:
