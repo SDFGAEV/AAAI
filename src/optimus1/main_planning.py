@@ -641,7 +641,7 @@ def main(cfg: DictConfig):
     if cfg["task"]["interactive"] and cfg["type"] != "headless":
         raise NotImplementedError("Not implemented yet!")
 
-    running_tasks, running_goals = get_evaluate_task_and_goal(cfg)
+    running_tasks, running_goals, task_diffs, task_groups = get_evaluate_task_and_goal(cfg)
 
     if len(running_tasks) == 0:
         logger.error("No tasks to evaluate.")
@@ -652,7 +652,8 @@ def main(cfg: DictConfig):
     logger.info(OmegaConf.to_yaml(cfg))
 
     times = cfg["env"]["times"]
-    for task, goal in zip(running_tasks, running_goals):
+    for task, goal, diff, grp in zip(running_tasks, running_goals, task_diffs, task_groups):
+        action_memory.set_task_info(difficulty=diff, group=grp)
         monitors = []
         for run_t in range(times):
             try:

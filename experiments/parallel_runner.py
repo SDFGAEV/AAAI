@@ -31,6 +31,7 @@ from typing import Dict, List, Tuple, Optional
 from pathlib import Path
 
 _PROJ = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, _PROJ)
 
 # ── Defaults ──
 DEFAULT_METHODS = ["NoKnowledge", "XENON-Original", "BankCuration",
@@ -183,7 +184,7 @@ class ParallelRunner:
                 timeout=cfg.timeout * cfg.env_times + 120,
                 cwd=_PROJ,
                 env={**os.environ, "PYTHONUNBUFFERED": "1",
-                     "PYTHONPATH": os.path.join(_PROJ, "src"),
+                     "PYTHONPATH": os.pathsep.join([_PROJ, os.path.join(_PROJ, "src"), os.path.join(_PROJ, "minerl")]),
                      "VLM_BATCH_PROXY": f"http://127.0.0.1:{self.batch_proxy_port}"},
             )
             elapsed = time.perf_counter() - t0

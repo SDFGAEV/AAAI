@@ -77,6 +77,8 @@ class CactMemory:
         self._prev_kid = None
         self._last_was_supervised = False
         self._knowledge_cnt = 0
+        self._current_difficulty = "medium"
+        self._current_group = "crafting"
         self._pairwise_harm: Dict[Tuple[str, str], Tuple[int, int]] = {}
         self._drift_counter = 0
 
@@ -99,6 +101,11 @@ class CactMemory:
     def current_environment(self): return None
     @current_environment.setter
     def current_environment(self, v): pass
+
+    def set_task_info(self, difficulty: str = "medium", group: str = "crafting"):
+        """Set current task metadata for episode logging."""
+        self._current_difficulty = difficulty
+        self._current_group = group
 
     def needs_supervision_check(self) -> bool:
         """Check if the last reuse decision was in supervised (Probation) mode.
@@ -213,7 +220,8 @@ class CactMemory:
         # Episode log
         self.episode_logs.append({
             "waypoint": waypoint, "method": self.method, "frozen": self.frozen,
-            "task_group": task_grp, "success": int(is_success),
+            "task_group": task_grp, "difficulty": self._current_difficulty,
+            "success": int(is_success),
             "total_steps": 0, "llm_calls": 0, "tokens": 0,
             "unrecoverable_failure": 0 if is_success else 1,
         })

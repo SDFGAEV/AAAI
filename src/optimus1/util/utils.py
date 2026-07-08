@@ -52,16 +52,20 @@ def get_evaluate_task(cfg: DictConfig) -> List[str]:
         tasks = [id_map[task]["instruction"] for task in evaluate]
     return tasks
 
-def get_evaluate_task_and_goal(cfg: DictConfig) -> List[str]:
+def get_evaluate_task_and_goal(cfg: DictConfig):
     id_map = {task["id"]: task for task in cfg["all_task"]}
     evaluate = cfg["evaluate"]
     if len(evaluate) == 0:
         tasks = [id_map[task["id"]]["instruction"] for task in cfg["all_task"]]
         goals = [id_map[task["id"]]["goal"] for task in cfg["all_task"]]
+        diffs = [id_map[task["id"]].get("difficulty", "medium") for task in cfg["all_task"]]
+        groups = [id_map[task["id"]].get("group", "crafting") for task in cfg["all_task"]]
     else:
         tasks = [id_map[task]["instruction"] for task in evaluate]
         goals = [id_map[task]["goal"] for task in evaluate]
-    return tasks, goals
+        diffs = [id_map[task].get("difficulty", "medium") for task in evaluate]
+        groups = [id_map[task].get("group", "crafting") for task in evaluate]
+    return tasks, goals, diffs, groups
 
 def get_exploration_task(cfg: DictConfig) -> List[str]:
     if "exploration_task" not in cfg:

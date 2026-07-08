@@ -27,10 +27,6 @@ hydra-core
 pyyaml
 jsonlines
 
-# ── Minecraft ──
-gym<0.20
-minerl
-
 # ── Utilities ──
 requests
 shortuuid
