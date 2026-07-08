@@ -127,7 +127,7 @@ fi
 # 6 variants: each removes one component from C-ACT-Full
 # 50 tasks x 5 seeds = 250 eps per variant, 1500 total (~1h @ 4 workers)
 if $RUN_E4; then
-    for variant in w/o_Contract w/o_AdaptiveTau w/o_ActiveCalib w/o_Interaction w/o_LevelPrior w/o_LifecycleState; do
+    for variant in C-ACT-NoContract C-ACT-NoAdaptiveTau C-ACT-NoActiveCalib C-ACT-NoInteraction C-ACT-NoLevelPrior C-ACT-NoLifecycle; do
         echo "--- E4: $variant ---"
         $PYTHON experiments/parallel_runner.py \
             --benchmark cact_p3 \

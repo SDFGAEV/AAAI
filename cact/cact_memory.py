@@ -128,15 +128,18 @@ class CactMemory:
     def current_environment(self, v): pass
 
     def _sync_ablation_flags(self):
-        """Pass ablation flags to the decision controller."""
+        """Pass ablation flags to all affected components."""
         c = self._controller
+        # Decision controller flags
         c.abl_contract = self._use_contract
-        c.abl_adaptive_tau = self._use_adaptive_tau
         c.abl_active_calib = self._use_active_calib
         c.abl_interaction = self._use_interaction
-        c.abl_level_prior = self._use_level_prior
-        c.abl_lifecycle = self._use_lifecycle
         c.abl_thompson = self._use_thompson
+        # TrustStore flags
+        self._store.abl_lifecycle = self._use_lifecycle
+        self._store.abl_level_prior = self._use_level_prior
+        # TrustGate flags
+        self._gate.abl_adaptive = self._use_adaptive_tau
 
     def set_task_info(self, difficulty: str = "medium", group: str = "crafting"):
         """Set current task metadata for episode logging."""

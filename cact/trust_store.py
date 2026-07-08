@@ -104,7 +104,7 @@ class TrustStore:
         a0, b0 = self.DEFAULT_PRIORS.get(stat, (1.0, 1.0))
         s = self._prior_strength
 
-        if kid and kid in self._contracts:
+        if getattr(self, 'abl_level_prior', True) and kid and kid in self._contracts:
             ktype = self.get_knowledge_type(kid)
             klevel = self.get_knowledge_level(kid)
             a0, b0 = self.empirical_bayes.get_prior(ktype, klevel, stat)
@@ -151,16 +151,17 @@ class TrustStore:
             self.record_base(kid, context, success)
 
         # Auto lifecycle transitions
-        n = self.total_count(kid, context, "use")
-        pi = self.uplift_probability(kid, context)
-        hu = self.harm_upper_bound(kid, context)
-        tau = 0.88  # Default, overridden by config in practice
-        h_star = 0.10
+        if getattr(self, 'abl_lifecycle', True):
+            n = self.total_count(kid, context, "use")
+            pi = self.uplift_probability(kid, context)
+            hu = self.harm_upper_bound(kid, context)
+            tau = getattr(self, 'abl_tau_override', 0.88)
+            h_star = getattr(self, 'abl_harm_override', 0.10)
 
-        new_state = self.lifecycle.evaluate_auto_transition(
-            kid, pi, hu, tau, h_star, int(n))
-        if new_state:
-            self.lifecycle.transition(kid, new_state, "auto_after_observation")
+            new_state = self.lifecycle.evaluate_auto_transition(
+                kid, pi, hu, tau, h_star, int(n))
+            if new_state:
+                self.lifecycle.transition(kid, new_state, "auto_after_observation")
 
     # ── Queries ──
     def mean(self, kid: str, context: str, stat: str = "use") -> float:
@@ -240,7 +241,7 @@ class TrustStore:
         self._decay_events += 1
         for k in list(self._data.keys()):
             stat = k.rsplit("|", 1)[-1]
-            kid = k.split("|", 0)[0] if "|" in k else ""
+            kid = k.split("|")[0] if "|" in k else ""
             a0, b0 = self._effective_prior(stat, kid)
             d = self._data[k]
             d["alpha"], d["beta"] = self.decay.decay_params(

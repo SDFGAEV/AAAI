@@ -191,9 +191,12 @@ class TrustGate:
         """
         CANDIDATE = "candidate"
         key = task_group or "_global"
-        tau = self.tau.get(key, 0.90)
-        delta = self.delta.get(key, 0.05)
-        harm = self.harm.get(key, 0.10)
+        if getattr(self, 'abl_adaptive', True) and self.tau:
+            tau = self.tau.get(key, 0.90)
+            delta = self.delta.get(key, 0.05)
+            harm = self.harm.get(key, 0.10)
+        else:
+            tau, delta, harm = 0.90, 0.05, 0.10  # Global fixed defaults
 
         # Condition 0: Lifecycle gate
         if lifecycle_state in ("disabled", "deprecated"):
