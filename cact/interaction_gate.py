@@ -200,16 +200,14 @@ class InteractionGate:
         p_use_j = np.random.beta(stats_j["use_alpha"], stats_j["use_beta"], size=n_samples)
         p_joint = np.random.beta(a_joint, b_joint, size=n_samples)
 
-        # Conservative individual uplifts for each MC sample
-        # (use point estimates for base — base uncertainty is small relative to use)
-        base_i_mean = stats_i.get("base_alpha", 1.0) / max(
-            stats_i.get("base_alpha", 1.0) + stats_i.get("base_beta", 1.0), 1e-8)
-        base_j_mean = stats_j.get("base_alpha", 1.0) / max(
-            stats_j.get("base_alpha", 1.0) + stats_j.get("base_beta", 1.0), 1e-8)
+        # Full uncertainty propagation: sample from all Beta posteriors
+        p_base = np.random.beta(stats_i.get("base_alpha", 1.0),
+                                 stats_i.get("base_beta", 1.0), size=n_samples)
 
-        # Δ_int = (p_joint - base_mean) - (p_use_i - base_mean) - (p_use_j - base_mean)
-        #        = p_joint - p_use_i - p_use_j + base_mean
-        delta_samples = p_joint - p_use_i - p_use_j + base_i_mean + base_j_mean
+        # Δ_int = Δ(ui∧uj) - Δ(ui) - Δ(uj)
+        #       = (p_joint - p_base) - (p_use_i - p_base) - (p_use_j - p_base)
+        #       = p_joint - p_use_i - p_use_j + p_base
+        delta_samples = p_joint - p_use_i - p_use_j + p_base
         pi_syn = float(np.mean(delta_samples > DELTA_INT))
         pi_conf = float(np.mean(delta_samples < -DELTA_INT))
 
