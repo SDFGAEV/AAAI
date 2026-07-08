@@ -41,7 +41,7 @@ def main():
 
     # 3. GPU memory
     if __import__("torch").cuda.is_available():
-        mem = __import__("torch").cuda.get_device_properties(0).total_mem / 1e9
+        mem = __import__("torch").cuda.get_device_properties(0).total_memory / 1e9
         check("GPU memory >= 8GB", lambda: (mem >= 8, f"{mem:.1f} GB"))
 
     # 4. Java (for Minecraft)

@@ -221,7 +221,7 @@ class ParallelRunner:
         with open(bench_path) as f:
             bench_cfg = yaml.safe_load(f)
 
-        tasks = bench_cfg.get("evaluate", bench_cfg.get("tasks", []))
+        tasks = bench_cfg.get("all_task", [])
         grid = []
         for idx, task in enumerate(tasks):
             task_name = task if isinstance(task, str) else task.get("name", str(idx))
