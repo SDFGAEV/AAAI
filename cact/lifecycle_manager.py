@@ -29,6 +29,14 @@ class LifecycleState(Enum):
     DISABLED    = "disabled"
 
 
+# ── String constants for external import ──
+CANDIDATE   = "candidate"
+QUARANTINED = "quarantined"
+PROBATION   = "probation"
+CERTIFIED   = "certified"
+DEPRECATED  = "deprecated"
+DISABLED    = "disabled"
+
 # Ordering for comparison (later states >= earlier)
 STATE_ORDER = {
     LifecycleState.CANDIDATE: 0,

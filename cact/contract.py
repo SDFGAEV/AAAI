@@ -22,13 +22,9 @@ KNOWLEDGE_TYPES = ["skill", "remedy", "dependency_correction",
 KNOWLEDGE_LEVELS = ["strategy", "functional", "atomic",
                     "dependency", "failure_memory"]
 
-# ── Lifecycle states (shared with lifecycle_manager) ──
-CANDIDATE    = "candidate"
-QUARANTINED  = "quarantined"
-PROBATION    = "probation"
-CERTIFIED    = "certified"
-DEPRECATED   = "deprecated"
-DISABLED     = "disabled"
+# ── Lifecycle states (imported from lifecycle_manager) ──
+from .lifecycle_manager import (CANDIDATE, QUARANTINED, PROBATION,
+                                 CERTIFIED, DEPRECATED, DISABLED)
 
 # ── Hard safety boundaries: contexts where reuse is NEVER allowed ──
 HARD_SAFETY_CONTEXTS = [

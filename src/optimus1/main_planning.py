@@ -33,6 +33,7 @@ from optimus1.memories import KnowledgeGraph as OracleGraph
 # CASKe: Trust Before Reuse gate
 import sys, os as _os; sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), '..', '..'))
 from cask.cask_memory import CaskMemory
+from cact.cact_memory import CactMemory
 
 from optimus1.monitor import Monitors, StepMonitor, SuccessMonitor
 from optimus1.util import (
@@ -615,18 +616,27 @@ def main(cfg: DictConfig):
     env = env_make(cfg["env"]["name"], cfg, logger)
 
     action_memory = DecomposedMemory(cfg, logger)
-    # CASKe: wrap with Trust Before Reuse gate
+    # C-ACT / CASK: wrap with Trust Before Reuse gate
+    cact_method = cfg.get("cact_method", None)
     cask_method = cfg.get("cask_method", "NoTrust")
     cask_t_eps = cfg.get("cask_t_eps", 0.0)
     cask_frozen = cfg.get("cask_frozen", False)
     cask_cf = cfg.get("cask_cf_branching", False)
     cask_log_dir = os.path.join(_PROJ, "exp_results", "cask_logs")
-    logger.info(f"[CASKe] log_dir={cask_log_dir} proj={_PROJ}")
-    # Adaptive active calibration: rate auto-adjusted by CaskMemory per decision
-    ac_rate = 0.15 if cask_cf else 0.0  # default, overridden by adaptive logic per-call
-    action_memory = CaskMemory(action_memory, method=cask_method, t_eps=cask_t_eps,
-                               frozen=cask_frozen, cf_branching=cask_cf,
-                               active_calib_rate=ac_rate, log_dir=cask_log_dir)
+    ac_rate = 0.15 if cask_cf else 0.0
+
+    # Choose C-ACT or CASK wrapper based on config
+    if cact_method:
+        logger.info(f"[C-ACT] method={cact_method} log_dir={cask_log_dir}")
+        action_memory = CactMemory(action_memory, method=cact_method,
+                                   frozen=cask_frozen,
+                                   active_calib_rate=ac_rate,
+                                   log_dir=cask_log_dir)
+    else:
+        logger.info(f"[CASKe] method={cask_method} log_dir={cask_log_dir}")
+        action_memory = CaskMemory(action_memory, method=cask_method, t_eps=cask_t_eps,
+                                   frozen=cask_frozen, cf_branching=cask_cf,
+                                   active_calib_rate=ac_rate, log_dir=cask_log_dir)
 
     if cfg["task"]["interactive"] and cfg["type"] != "headless":
         raise NotImplementedError("Not implemented yet!")
