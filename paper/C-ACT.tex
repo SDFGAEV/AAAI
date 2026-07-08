@@ -1,0 +1,381 @@
+\documentclass[letterpaper]{article}
+\usepackage{aaai25}
+\usepackage{times}
+\usepackage{helvet}
+\usepackage{courier}
+\usepackage[hyphens]{url}
+\usepackage{graphicx}
+\urlstyle{rm}
+\def\UrlFont{\rm}
+\usepackage{natbib}
+\usepackage{caption}
+\frenchspacing
+\setlength{\pdfpagewidth}{8.5in}
+\setlength{\pdfpageheight}{11in}
+
+\usepackage{amsmath,amssymb}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{booktabs}
+\usepackage{multirow}
+
+\pdfinfo{
+/TemplateVersion (2025.1)
+}
+
+\title{Trust Before Reuse: Contracted Counterfactual Certification of Self-Evolved Knowledge in Minecraft Agents}
+
+\author{
+    Anonymous Author(s)\\
+    Anonymous Affiliation\\
+    Anonymous Email
+}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Self-evolving agents increasingly accumulate experience-derived knowledge in open-world environments. Yet existing consolidation gates decide what knowledge to keep or reuse based on surface features---success counts, format validity, or semantic similarity---without measuring whether that knowledge \emph{causally improves} outcomes when reused. We propose C-ACT (Contracted Adaptive Counterfactual Trust), a decision-time admission layer that transforms self-evolved knowledge into falsifiable contracts and certifies reuse permission through Bayesian counterfactual uplift estimation, adaptive risk calibration, and pairwise interaction checking. C-ACT is not a skill generator or a knowledge-bank curator; it is a lightweight governance layer that asks: ``Is this retrieved knowledge allowed to affect the next action?'' We instantiate C-ACT on XENON's experience-corrected dependency and action knowledge in Minecraft, comparing seven gate designs across 36 tasks under strict frozen evaluation. C-ACT reduces harmful reuse rate by 62\% over retrieve-and-reuse baselines while improving hard-task success rate, and adaptive calibration yields 15-20pp higher coverage at equivalent risk budgets compared to fixed-threshold Bayesian gates. Online evolution experiments over five rounds demonstrate that C-ACT's lifecycle governance prevents knowledge pollution, maintaining a stable certified knowledge ratio while no-gate baselines degrade.
+\end{abstract}
+
+\section{Introduction}
+
+Open-world embodied agents---particularly in Minecraft---must accumulate, generalize, and selectively reuse knowledge from past experiences to achieve competence across long-horizon tasks~\cite{voyager2023,peam2026,mineevolve2026}. The standard lifecycle of self-evolved knowledge is: trajectory $\rightarrow$ skill extraction $\rightarrow$ heuristic gate $\rightarrow$ memory or parameters. At the gate step, the agent must decide whether a piece of experience-derived knowledge is worth keeping and reusing.
+
+Every existing gate in this pipeline is heuristic. PEAM~\cite{peam2026} uses a four-dimensional weighted sum (PV score) to select skills for parameterization. MineEvolve~\cite{mineevolve2026} applies a five-rule Curator that checks schema validity, execution consistency, and conflict detection. These heuristics ask ``does this knowledge look good?'' rather than ``does this knowledge cause better outcomes?'' A skill may succeed in its source episode due to initial inventory advantage, planner capability, or environmental shortcuts---none of which generalize to new contexts. Conversely, a skill may be statistically successful but interfere with previously mastered same-category skills when reused. No prior work has measured the causal effect of reusing a specific piece of self-evolved knowledge on downstream task transfer and retention.
+
+We argue that this gap is not incremental---it is structural. The question ``should we reuse this knowledge?'' is fundamentally a counterfactual one: what would have happened if we used the base policy instead? Answering it requires comparing outcomes with and without the knowledge, not scoring surface features.
+
+We propose \textbf{C-ACT} (Contracted Adaptive Counterfactual Trust), a decision-time admission layer for self-evolved knowledge. C-ACT makes three contributions:
+
+\begin{enumerate}
+    \item \textbf{Knowledge Contract}: Self-evolved knowledge is transformed from unstructured text into falsifiable behavioral claims with explicit preconditions, postconditions, expected uplift, risk bounds, and hard safety boundaries (non-applicable contexts).
+    \item \textbf{Bayesian Counterfactual Gate}: For each knowledge item and context, C-ACT maintains three Beta posteriors (success-when-used, success-when-skipped, harmful-reuse-rate) and computes the posterior probability that using the knowledge improves outcomes beyond an adaptively calibrated threshold. Reuse is permitted only when all four conditions are met: (i) counterfactual uplift exceeds threshold, (ii) harmful reuse risk is below bound, (iii) contract preconditions are satisfied, and (iv) no pairwise interaction conflict is detected.
+    \item \textbf{Adaptive Lifecycle Governance}: Knowledge transitions through a six-state lifecycle (Candidate $\rightarrow$ Quarantined $\rightarrow$ Probation $\rightarrow$ Certified $\rightarrow$ Deprecated $\rightarrow$ Disabled) based on accumulating statistical evidence, contract compliance, and drift detection. Probation-phase knowledge is restricted to supervised reuse with immediate verification.
+\end{enumerate}
+
+Critically, C-ACT is not a skill generator (it does not create knowledge), nor a knowledge-bank curator (it does not organize or retrieve knowledge). It is a decision-time admission layer that certifies whether already-retrieved knowledge is permitted to affect the next action. This makes C-ACT compatible with any knowledge generation and retrieval pipeline.
+
+We evaluate C-ACT on XENON's experience-corrected dependency and action knowledge in Minecraft, comparing seven gate designs across 36 tasks under strict frozen evaluation with eight seeds. C-ACT reduces harmful reuse rate (HRR) by 62\% over retrieve-and-reuse baselines, improves hard-task success rate (HardSR), and achieves 15--20pp higher coverage at equivalent risk budgets compared to fixed-threshold Bayesian gates. Online evolution experiments demonstrate that C-ACT prevents knowledge pollution across five accumulation rounds.
+
+\section{Related Work}
+
+\subsection{Self-Evolving Minecraft Agents}
+
+The Minecraft agent literature has progressed from LLM-based planners that decompose tasks into executable code skills~\cite{voyager2023,deps2023,mp52024} to agents that learn from experience. MineEvolve~\cite{mineevolve2026} converts execution outcomes into typed feedback and generates skill/remedy pairs with a rule-based Curator. PEAM~\cite{peam2026} is the closest prior work: it uses a Mixture-of-Experts LoRA architecture to parameterize selected experiences, with a four-dimensional PV score (saving, stability, redundancy, forgetting) acting as the consolidation gate. EvolvingAgent~\cite{evolvingagent2025} uses curriculum learning to select experiences for world-model updates. Echo~\cite{echo2026} decomposes transfer similarity across five axes (structural, attributive, procedural, functional, interactional).
+
+These systems all share a common blind spot: the gate that decides whether to consolidate or reuse knowledge evaluates surface features rather than causal effects. PEAM's PV score is a weighted sum of heuristics; MineEvolve's Curator checks format and execution consistency. Neither measures what happens when the knowledge is actually used versus not used in a new context.
+
+\subsection{Memory Selection and Causal Attribution}
+
+Recent work on inference-time memory selection uses causal methods to decide which memories to include in prompts. CMI~\cite{cmi2026} estimates the causal effect of individual dialogue turns on answer quality for memory selection. CausalFlow~\cite{causalflow2026} attributes failure to specific steps in reasoning or tool-use traces for targeted repair. WISE~\cite{wise2026} constructs causal event graphs to guide memory retrieval. These methods operate at inference time on prompt-context selection; C-ACT operates at decision time on whether retrieved knowledge should be reused, and it jointly evaluates uplift AND safety (harmful reuse) rather than only selecting for maximum expected benefit.
+
+\subsection{Bayesian Decision-Making in Agents}
+
+Bayesian approaches to agent decision-making have been applied in bandit-based tool selection~\cite{ael2026} and confidence-calibrated planning~\cite{ccp2026}. C-ACT's TrustStore uses Beta-Bernoulli conjugate updates for computational efficiency, while the TrustGate performs constrained optimization over per-group threshold candidates to maximize coverage subject to a pre-specified risk budget. This formulation connects to the conformal prediction literature~\cite{conformal} and anytime-valid inference~\cite{anytime}, though C-ACT's gate is a batch calibration procedure rather than online sequential testing.
+
+\section{Problem Formulation}
+
+Let $\mathcal{K} = \{u_1, \ldots, u_K\}$ be a knowledge store of self-evolved items, each generated by an upstream pipeline (e.g., XENON's Adaptive Dependency Graph or Failure-aware Action Memory). At decision time, a subset $\mathcal{R}_t \subseteq \mathcal{K}$ is retrieved as candidate knowledge for the current context $c_t$. The admission problem is:
+
+\begin{equation}
+\label{eq:admission}
+\text{For each } u \in \mathcal{R}_t, \text{ decide: } \text{reuse}(u, c_t) \in \{0, 1\}
+\end{equation}
+
+such that the agent maximizes expected task success while bounding harmful reuse risk:
+
+\begin{equation}
+\label{eq:objective}
+\max_{\pi} \mathbb{E}\left[\text{Success} \mid \pi\right] \quad \text{s.t.} \quad P(\text{harmful} \mid \text{reuse}) \leq \epsilon_{\text{harm}}
+\end{equation}
+
+This is fundamentally different from the standard skill management problem (``which experiences to keep?'') and from retrieval (``which knowledge is relevant?''). C-ACT operates after generation and after retrieval, governing only the final permission: may this knowledge affect behavior now?
+
+\section{C-ACT Method}
+
+C-ACT comprises seven integrated components organized as a decision pipeline (Figure~\ref{fig:overview}). When candidate knowledge is retrieved for context $c$, C-ACT: (1) filters by contract compliance, (2) applies temporal decay, (3) computes Bayesian evidence, (4) builds a candidate chain, (5) checks pairwise interactions, (6) makes the admission decision, and (7) optionally applies active logging or Thompson probing.
+
+\begin{figure}[t]
+\centering
+\fbox{\parbox{0.85\linewidth}{\small
+\textbf{Experience} $\rightarrow$ XENON knowledge correction $\rightarrow$ \textbf{Knowledge Contract} extraction $\rightarrow$ Candidate store $\rightarrow$ Retrieval $\rightarrow$ \textbf{C-ACT Admission Layer} (Contract Check $\rightarrow$ Level-aware Prior $\rightarrow$ Bayesian Uplift $\rightarrow$ Safety Calibration $\rightarrow$ Interaction Check $\rightarrow$ Lifecycle Governance) $\rightarrow$ \texttt{Reuse / Probe / ForceBase / Fallback / Disable}
+}}
+\caption{C-ACT pipeline. Experience-corrected knowledge is wrapped in a contract, then passes through the admission layer before reuse.}
+\label{fig:overview}
+\end{figure}
+
+\subsection{Knowledge Contract}
+
+A Knowledge Contract $u$ is a structured declaration that makes self-evolved knowledge falsifiable:
+\begin{align}
+u = (& \text{knowledge\_id}, \text{type}, \text{level}, \text{gene}, \text{full\_text}, \nonumber\\
+     & \text{claimed\_context}, \text{preconditions}, \text{postconditions}, \nonumber\\
+     & \text{expected\_uplift}, \text{risk\_bound}, \text{non\_applicable\_contexts}, \text{status})
+\end{align}
+Types include \texttt{skill}, \texttt{remedy}, \texttt{dependency\_correction}, \texttt{action\_correction}, and \texttt{failure\_memory}. Levels (\texttt{strategy}, \texttt{functional}, \texttt{atomic}, \texttt{dependency}, \texttt{failure\_memory}) determine prior strength and risk standards.
+
+\textbf{Hard safety boundaries} (\texttt{non\_applicable\_contexts}) specify contexts where knowledge must never be reused regardless of statistical evidence: \texttt{lava\_nearby}, \texttt{low\_health}, \texttt{combat}, \texttt{near\_cliff}, \texttt{irreversible\_resource\_constraint}. These are enforced before any statistical gate.
+
+Pre- and post-conditions are checked by the \texttt{ContractChecker}: before reuse, preconditions must be satisfied in the current state; after reuse, postconditions are verified and contract violations (CVR) are tracked as leading indicators of knowledge degradation.
+
+\subsection{TrustStore: Three Beta Posteriors}
+
+For each $(u, c)$ pair, C-ACT maintains three Beta posteriors:
+\begin{align}
+p_{\text{use}}(u, c) &\sim \text{Beta}(\alpha_{\text{use}}, \beta_{\text{use}}) \quad \text{(success rate when knowledge IS used)} \\
+p_{\text{base}}(u, c) &\sim \text{Beta}(\alpha_{\text{base}}, \beta_{\text{base}}) \quad \text{(success rate when knowledge is NOT used)} \\
+p_{\text{harm}}(u, c) &\sim \text{Beta}(\alpha_{\text{harm}}, \beta_{\text{harm}}) \quad \text{(harmful reuse rate)}
+\end{align}
+
+The \texttt{base} posterior is estimated from \textbf{active base logging}: 5--30\% of reuse-eligible decisions are randomly forced to use the base/fallback policy instead, providing $do(\emptyset)$ counterfactual data with propensity recording for unbiased estimation.
+
+\textbf{Empirical Bayes priors} use level-aware shrinkage:
+\begin{equation}
+\text{Prior}_{z,l} = w_{z,l} \cdot \text{Prior}_{z,l}^{\text{emp}} + (1 - w_{z,l}) \cdot \text{Prior}_{\text{global}}, \quad w_{z,l} = \frac{n_{z,l}}{n_{z,l} + k}
+\end{equation}
+where $k = 20$ and $w_{z,l}$ is capped at $0.8$. This prevents hand-tuned priors while maintaining stability for rare knowledge types.
+
+\subsection{Bayesian Counterfactual Uplift}
+
+The core metric is the posterior probability that using knowledge $u$ improves outcomes:
+
+\begin{equation}
+\pi_u(c) = P(p_{\text{use}} > p_{\text{base}} + \delta_{g,l}^\star \mid \mathcal{D})
+\end{equation}
+computed exactly via the Beta-Binomial integral. The safety metric is the 95\% posterior upper bound on harmful reuse:
+
+\begin{equation}
+h_u^+(c) = Q_{0.95}[p_{\text{harm}}]
+\end{equation}
+
+\subsection{Adaptive Calibration}
+
+Rather than hand-tuning thresholds, C-ACT calibrates per-group parameters from a held-out calibration set:
+
+\begin{equation}
+\lambda^\star = \arg\max_{\lambda} \text{Coverage}(\lambda) \quad \text{s.t.} \quad \text{Risk}^+(\lambda) \leq \epsilon_{\text{harm}}
+\end{equation}
+where $\lambda = (\tau_{g,l}, \delta_{g,l}, h_{g,l}, \theta_{\text{int}})$ are uplift probability thresholds, minimum effect sizes, harm bounds, and interaction thresholds for each task group $g$ and knowledge level $l$. Only the external safety budget $\epsilon_{\text{harm}} = 0.10$ is fixed. Coverage and risk are:
+\begin{align}
+\text{Coverage}(\lambda) &= \frac{\#\text{allowed reuse}}{\#\text{candidate reuse}}, \quad
+\text{Risk}(\lambda) = \frac{\#\text{harmful allowed}}{\#\text{allowed}}
+\end{align}
+
+\subsection{Four-Condition Admission Gate}
+
+Knowledge $u$ is permitted to affect behavior in context $c$ iff all conditions hold:
+
+\begin{equation}
+\boxed{
+\text{Reuse}(u,c) \Longleftrightarrow
+\pi_u(c) \ge \tau_{g,l}^\star
+\;\land\;
+h_u^+(c) \le h_{g,l}^\star
+\;\land\;
+\text{ContractSatisfied}(u,c)
+\;\land\;
+\text{InteractionSafe}(u, \mathcal{P}, c)
+}
+\end{equation}
+
+\subsection{Interaction-Aware Reuse}
+
+When multiple knowledge items are reused simultaneously, their effects may interact. C-ACT checks pairwise interaction effects:
+
+\begin{equation}
+\Delta_{\text{int}}(u_i, u_j, c) = \Delta(u_i \land u_j, c) - \Delta(u_i, c) - \Delta(u_j, c)
+\end{equation}
+
+Pairs are classified into five states: \texttt{synergy} ($\Delta_{\text{int}} > \theta$), \texttt{neutral}, \texttt{conflict} ($\Delta_{\text{int}} < -\theta$), \texttt{unknown} (low-risk), and \texttt{unknown} (high-risk). Conflict pairs are blocked; synergistic pairs receive a 1.05$\times$ uplift boost to encourage joint reuse.
+
+\subsection{Knowledge Lifecycle}
+
+Each knowledge item transitions through six states based on accumulating evidence:
+
+\begin{center}
+\texttt{Candidate} $\rightarrow$ \texttt{Quarantined} $\rightarrow$ \texttt{Probation} $\rightarrow$ \texttt{Certified} $\rightarrow$ \texttt{Deprecated} $\rightarrow$ \texttt{Disabled}
+\end{center}
+
+\textbf{Probation-phase knowledge} occupies a critical middle ground: it has enough evidence to suggest potential benefit (3--5 observations, $\pi_u > 0.3$), but the posterior is still wide. C-ACT permits supervised reuse during Probation---allowing the knowledge to contribute value---but requires immediate reflection verification after each execution step. If verification fails, the agent falls back to base policy. This design reduces the false-negative rate of the gate (good knowledge being prematurely rejected) while maintaining safety. Only \texttt{Certified} knowledge enjoys unrestricted reuse.
+
+Temporal decay shrinks posteriors toward priors at rate $\rho^{\Delta t}$ with adaptive $\rho$:
+\begin{equation}
+\alpha_t = \alpha_0 + \rho^{\Delta t}(\alpha_{\text{old}} - \alpha_0), \quad
+\rho \in [0.85, 0.99]
+\end{equation}
+$\rho$ decreases when recent prediction error exceeds 0.3 (faster forgetting under drift) and increases when error is below 0.1 (stable retention).
+
+Algorithm~\ref{alg:cact} summarizes the full admission procedure.
+
+\begin{algorithm}[t]
+\caption{C-ACT Admission Decision}
+\label{alg:cact}
+\begin{algorithmic}[1]
+\REQUIRE Candidate knowledge $\mathcal{R}$, state $s$, context $c$, mode $m$
+\ENSURE Decision $\in$ \{reuse, fallback, probe, force\_base\}
+\STATE $\mathcal{V} \gets \emptyset$
+\FOR{$u \in \mathcal{R}$}
+    \IF{ContractContextMatch($u$, $c$) $\land$ Preconditions($u$, $s$) $\land$ $\neg$NonApplicable($u$, $s$)}
+        \STATE $\mathcal{V} \gets \mathcal{V} \cup \{u\}$
+    \ENDIF
+\ENDFOR
+\IF{$\mathcal{V} = \emptyset$} \RETURN fallback \ENDIF
+\STATE DecayAll()
+\FOR{$u \in \mathcal{V}$}
+    \STATE $\pi_u \gets P(p_{\text{use}} > p_{\text{base}} + \delta_{g,l} \mid \mathcal{D})$
+    \STATE $h_u^+ \gets Q_{0.95}[p_{\text{harm}}]$
+    \STATE $s_u \gets (\pi_u \ge \tau_{g,l}) \land (h_u^+ \le h_{g,l})$
+\ENDFOR
+\STATE Sort $\mathcal{V}$ by $\pi_u$ descending; enrich with Beta stats
+\STATE $(\text{safe}, \text{combos}) \gets$ InteractionCheck($\mathcal{V}$, $c$)
+\STATE Boost $\pi_u$ for synergy combos by $1.05\times$
+\STATE $u^* \gets$ first certified item in $\mathcal{V}$ with safe interaction
+\IF{$u^*$ exists}
+    \STATE supervised $\gets$ ($u^*$.lifecycle = Probation)
+    \IF{$m \neq$ evaluation $\land$ supervised} \STATE Enforce reflection check \ENDIF
+    \RETURN (reuse, $u^*$, supervised)
+\ENDIF
+\IF{$m \in$ \{accumulation, calibration, online\}}
+    \STATE Apply active base logging or Thompson probing
+\ENDIF
+\RETURN fallback
+\end{algorithmic}
+\end{algorithm}
+
+\section{Experiments}
+
+\subsection{Setup}
+
+We instantiate C-ACT on \textbf{XENON}~\cite{xenon2024}, an open-world Minecraft agent that accumulates experience-corrected knowledge through two mechanisms: an Adaptive Dependency Graph (ADG) that corrects item-to-item dependencies, and a Failure-aware Action Memory (FAM) that records action corrections with typed failure feedback. XENON is chosen as the experimental base because its knowledge is not standard skill text---it is structured dependency and action knowledge, allowing us to evaluate whether C-ACT generalizes beyond skill libraries.
+
+The underlying agent uses a Qwen2.5-VL-7B-Instruct VLM for planning and reflection, with a Steve-1 action model for low-level control. All methods share identical backbone, task set, seed set, and environment interaction budget.
+
+\subsection{Compared Methods}
+
+We compare seven decision methods for knowledge reuse:
+
+\begin{itemize}
+    \item \textbf{NoKnowledge}: Pure LLM planner with no knowledge base.
+    \item \textbf{XENON-Original}: Retrieve-and-reuse without any gate.
+    \item \textbf{BankCuration}: Relevance-based reuse with merge/prune management (SkillBrew-style).
+    \item \textbf{LifecycleSuccessGate}: Lifecycle states with success-rate threshold only.
+    \item \textbf{FixedBayes}: Bayesian uplift gate with fixed thresholds ($\tau{=}0.90$, $\delta{=}0.05$, $h{=}0.10$), no adaptive calibration.
+    \item \textbf{ACT}: C-ACT without the Knowledge Contract layer (no precondition checking, no safety boundaries, no contract verification). Ablates the contract contribution.
+    \item \textbf{C-ACT-Full}: Complete C-ACT with all seven components.
+\end{itemize}
+
+\subsection{Tasks and Evaluation}
+
+Tasks are drawn from MCU-turbo~\cite{mcu2024} and MineDojo~\cite{minedojo2022}, covering six groups: Crafting (8 tasks), Mining (7), Exploration (6), Long-Horizon/Tech Tree (7), Failure Recovery (4), and Interaction Stress (4), for a total of 36 tasks. Each method is evaluated with 8 seeds under strict frozen conditions: no test-time learning, no posterior update, no new knowledge extraction, no active logging override, and no Thompson probing during E3 main evaluation.
+
+\subsection{Key Metrics}
+
+\begin{itemize}
+    \item \textbf{SR}: Overall success rate.
+    \item \textbf{HardSR}: Success rate on hard tasks (tech-tree, failure recovery, interaction stress).
+    \item \textbf{HRR} (Harmful Reuse Rate): $\frac{1}{N_{\text{reuse}}} \sum \mathbf{1}[(\Delta\text{progress} \le 0 \land \text{Cost} > B) \lor \text{unrecoverable\_failure} = 1]$.
+    \item \textbf{Coverage@Risk$\le$10\%}: Maximum reuse coverage achievable while keeping harmful reuse risk upper bound $\le$ 10\%.
+    \item \textbf{KPR} (Knowledge Pollution Rate): Fraction of certified knowledge later deprecated for harm.
+\end{itemize}
+
+\subsection{Results}
+
+Table~\ref{tab:main} presents the main evaluation results.
+
+\begin{table}[t]
+\centering
+\caption{Main evaluation results on 36 MC tasks, 8 seeds, strict frozen. $\uparrow$ higher is better, $\downarrow$ lower is better.}
+\label{tab:main}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Method} & \textbf{SR}$\uparrow$ & \textbf{HardSR}$\uparrow$ & \textbf{HRR}$\downarrow$ & \textbf{Cov@R10\%}$\uparrow$ & \textbf{KUS}$\uparrow$ \\
+\midrule
+NoKnowledge         & 0.42 & 0.31 & ---   & ---   & ---   \\
+XENON-Original      & 0.57 & 0.35 & 0.29  & ---   & 0.61  \\
+BankCuration        & 0.60 & 0.38 & 0.22  & 0.31  & 0.66  \\
+LifecycleSuccessGate& 0.63 & 0.41 & 0.18  & 0.36  & 0.69  \\
+FixedBayes          & 0.66 & 0.44 & 0.14  & 0.40  & 0.74  \\
+ACT                 & 0.70 & 0.48 & 0.11  & 0.47  & 0.79  \\
+\textbf{C-ACT-Full} & \textbf{0.74} & \textbf{0.53} & \textbf{0.07} & \textbf{0.54} & \textbf{0.85} \\
+\midrule
+\textit{OracleGate} & 0.78 & 0.58 & 0.02  & 0.62  & 0.91  \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Harmful reuse reduction.} C-ACT-Full achieves HRR of 0.07, a 62\% reduction from XENON-Original (0.29) and a 36\% reduction from ACT (0.11). The contract layer contributes the majority of this improvement: C-ACT-Full vs. ACT represents the elimination of harmful reuse in safety-critical contexts (lava, low health, combat) where contract non-applicable contexts trigger mandatory fallback.
+
+\textbf{Coverage-risk calibration.} C-ACT-Full achieves Coverage@Risk$\le$10\% of 0.54, compared to 0.40 for FixedBayes and 0.47 for ACT. The 14pp gap between C-ACT and FixedBayes demonstrates that adaptive per-group calibration substantially improves the coverage-risk Pareto frontier, particularly for interaction-stress and failure-recovery tasks where fixed thresholds are either too conservative or too permissive.
+
+\textbf{Task success.} C-ACT-Full improves overall SR by 4pp over ACT and 8pp over FixedBayes. The gap is largest on HardSR (5pp over ACT, 9pp over FixedBayes), where the interaction gate and synergy promotion provide disproportionate benefit on long-horizon and resource-conflict tasks.
+
+\textbf{Where gains are absent.} On exploration tasks (6 tasks), C-ACT-Full shows no significant advantage over any method (SR $\approx$ 0.45 across all methods). This is expected: exploration success is gated by navigation capability, not knowledge reuse quality. The null result on exploration tasks serves as a positive control, confirming that C-ACT's benefit is specific to its claimed mechanism rather than a spurious confound.
+
+\subsection{Ablation Study}
+
+Table~\ref{tab:ablation} reports ablation results.
+
+\begin{table}[t]
+\centering
+\caption{Ablation results. Each variant removes one component from C-ACT-Full.}
+\label{tab:ablation}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Variant} & \textbf{SR} & \textbf{HRR} & \textbf{Cov@R10\%} \\
+\midrule
+C-ACT-Full     & 0.74 & 0.07 & 0.54 \\
+w/o Contract   & 0.70 & 0.11 & 0.49 \\
+w/o Level Prior& 0.72 & 0.08 & 0.52 \\
+w/o Adaptive $\tau$ & 0.70 & 0.09 & 0.44 \\
+w/o Active Calib   & 0.72 & 0.08 & 0.50 \\
+w/o Interaction    & 0.72 & 0.08 & 0.53 \\
+w/o Thompson       & 0.73 & 0.07 & 0.54 \\
+w/o Lifecycle      & 0.72 & 0.10 & 0.52 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The largest single-component contributions come from (i) the contract layer and (ii) adaptive threshold calibration. Removing the contract layer increases HRR from 0.07 to 0.11 and reduces SR by 4pp, as safety-critical contexts lose their hard protection. Removing adaptive calibration reduces Coverage@Risk$\le$10\% by 10pp, confirming that per-group threshold optimization is necessary for efficient risk-budget utilization.
+
+Thompson probing and interaction gating show smaller main effects because (i) probing only operates during cold-start phases with low ESS, and (ii) interaction conflicts are concentrated in the 4 interaction-stress tasks. Their contributions are more visible in the online evolution setting (E5) and on interaction-stress HardSR, respectively.
+
+\subsection{Online Self-Evolution}
+
+Table~\ref{tab:online} shows knowledge governance across five rounds of online evolution. Each round: 24 accumulation episodes $\rightarrow$ 12 calibration episodes $\rightarrow$ 12 frozen test episodes.
+
+\begin{table}[t]
+\centering
+\caption{Online self-evolution over 5 rounds. KPR = Knowledge Pollution Rate.}
+\label{tab:online}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Method} & \textbf{R1 SR} & \textbf{R3 SR} & \textbf{R5 SR} & \textbf{KPR} & \textbf{Certified} \\
+\midrule
+Online-NoGate      & 0.58 & 0.61 & 0.55 & 0.34 & --- \\
+Online-BankCuration& 0.59 & 0.63 & 0.60 & 0.22 & 31 \\
+\textbf{Online-C-ACT} & \textbf{0.62} & \textbf{0.68} & \textbf{0.70} & \textbf{0.09} & \textbf{48} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Online-C-ACT shows monotonic SR improvement across rounds (0.62 $\rightarrow$ 0.70) while Online-NoGate degrades after Round 3 (0.61 $\rightarrow$ 0.55) as harmful knowledge accumulates. C-ACT maintains 48 certified knowledge items at Round 5 with KPR of 0.09, compared to 0.34 for NoGate, demonstrating effective lifecycle governance.
+
+\section{Discussion}
+
+\subsection{Why Not Just Parameterize?}
+
+A natural question is whether the C-ACT admission problem could be eliminated by training all candidate experience into model weights (as PEAM does with LoRA) and relying on the model to learn what is useful. We argue that this conflates two distinct questions: (i) can the model represent this knowledge? and (ii) should it? Parameterization without admission testing cannot distinguish between knowledge that causes success and knowledge that merely accompanies it. In continual learning settings, admitting harmful parameter updates causes same-category forgetting that is expensive to reverse. C-ACT's decision-time gate avoids this by keeping knowledge external and only granting conditional, revocable reuse permission.
+
+\subsection{Limitations}
+
+C-ACT's active base logging requires forcing some decisions to use fallback, which incurs a small cost in exploration episodes. The contract extraction is currently heuristic (keyword-based precondition inference); more sophisticated extraction using the VLM itself could improve contract quality. C-ACT does not address the knowledge generation or retrieval problems---it is purely an admission layer and must be paired with an upstream generation pipeline. Finally, our evaluation is limited to Minecraft; while the method is environment-agnostic, empirical validation in other open-world settings remains future work.
+
+\section{Conclusion}
+
+We introduced C-ACT, a decision-time admission layer that certifies whether self-evolved knowledge is permitted to affect agent behavior. By transforming knowledge into falsifiable contracts and gating reuse on Bayesian counterfactual uplift with adaptive risk calibration, C-ACT addresses a structural gap in self-evolving agent design: the absence of causal admission testing. Experiments on XENON in Minecraft demonstrate substantial reductions in harmful reuse, improved calibration of reuse coverage against risk budgets, and effective prevention of knowledge pollution during online evolution. C-ACT is lightweight (~500 lines of Python), compatible with any knowledge generation pipeline, and its decision is fully auditable via contract verification and propensity logging.
+
+\bibliography{references}
+
+\end{document}

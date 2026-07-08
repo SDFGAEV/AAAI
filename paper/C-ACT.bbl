@@ -1,0 +1,98 @@
+\begin{thebibliography}{17}
+\providecommand{\natexlab}[1]{#1}
+
+\bibitem[{Angelopoulos and Bates(2021)}]{conformal}
+Angelopoulos, A.~N.; and Bates, S. 2021.
+\newblock A Gentle Introduction to Conformal Prediction and Distribution-Free
+  Uncertainty Quantification.
+\newblock In \emph{arXiv preprint}.
+
+\bibitem[{Anonymous(2024{\natexlab{a}})}]{mcu2024}
+Anonymous. 2024{\natexlab{a}}.
+\newblock MCU: A Comprehensive Benchmark for Minecraft Agent Evaluation.
+\newblock \emph{arXiv preprint}.
+
+\bibitem[{Anonymous(2024{\natexlab{b}})}]{mp52024}
+Anonymous. 2024{\natexlab{b}}.
+\newblock MP5: A Multi-Modal Open-Ended Embodied System in Minecraft.
+\newblock \emph{arXiv preprint}.
+
+\bibitem[{Anonymous(2024{\natexlab{c}})}]{xenon2024}
+Anonymous. 2024{\natexlab{c}}.
+\newblock XENON: Experience-Corrected Dependency and Action Knowledge for
+  Minecraft Agents.
+\newblock \emph{arXiv preprint}.
+
+\bibitem[{Anonymous(2025)}]{evolvingagent2025}
+Anonymous. 2025.
+\newblock EvolvingAgent: Continual World Model Learning for Embodied Agents.
+\newblock \emph{arXiv preprint}.
+
+\bibitem[{Anonymous(2026{\natexlab{a}})}]{ael2026}
+Anonymous. 2026{\natexlab{a}}.
+\newblock AEL: Autonomous Evolution of Large Language Model Agents.
+\newblock \emph{arXiv preprint}.
+
+\bibitem[{Anonymous(2026{\natexlab{b}})}]{ccp2026}
+Anonymous. 2026{\natexlab{b}}.
+\newblock Capability-Calibrated Planning for Long-Horizon Open-World Agents.
+\newblock \emph{arXiv preprint}.
+
+\bibitem[{Anonymous(2026{\natexlab{c}})}]{cmi2026}
+Anonymous. 2026{\natexlab{c}}.
+\newblock Causal Memory Intervention for Long-Context Agents.
+\newblock \emph{arXiv preprint}.
+
+\bibitem[{Anonymous(2026{\natexlab{d}})}]{causalflow2026}
+Anonymous. 2026{\natexlab{d}}.
+\newblock CausalFlow: Step-Level Failure Attribution for Agent Repair.
+\newblock \emph{arXiv preprint}.
+
+\bibitem[{Anonymous(2026{\natexlab{e}})}]{echo2026}
+Anonymous. 2026{\natexlab{e}}.
+\newblock Echo: Five-Axis Experience Transfer for Embodied Agents.
+\newblock \emph{arXiv preprint}.
+
+\bibitem[{Anonymous(2026{\natexlab{f}})}]{mineevolve2026}
+Anonymous. 2026{\natexlab{f}}.
+\newblock MineEvolve: Self-Evolving Minecraft Agent through Typed Feedback.
+\newblock \emph{arXiv preprint}.
+
+\bibitem[{Anonymous(2026{\natexlab{g}})}]{peam2026}
+Anonymous. 2026{\natexlab{g}}.
+\newblock PEAM: Parametric Experience Accumulation for Minecraft Agents.
+\newblock \emph{arXiv preprint}.
+
+\bibitem[{Anonymous(2026{\natexlab{h}})}]{wise2026}
+Anonymous. 2026{\natexlab{h}}.
+\newblock WISE: World-Informed Skill Engine with Causal Event Graphs.
+\newblock \emph{arXiv preprint}.
+
+\bibitem[{Fan et~al.(2022)Fan, Wang, Jiang, Mandlekar, Yang, Zhu, Tang, Huang,
+  Zhu, and Anandkumar}]{minedojo2022}
+Fan, L.; Wang, G.; Jiang, Y.; Mandlekar, A.; Yang, Y.; Zhu, H.; Tang, A.;
+  Huang, D.-A.; Zhu, Y.; and Anandkumar, A. 2022.
+\newblock MineDojo: Building Open-Ended Embodied Agents with Internet-Scale
+  Knowledge.
+\newblock In \emph{NeurIPS}.
+
+\bibitem[{Ramdas et~al.(2023)Ramdas, Gr{\"u}nwald, Vovk, and Shafer}]{anytime}
+Ramdas, A.; Gr{\"u}nwald, P.; Vovk, V.; and Shafer, G. 2023.
+\newblock Game-Theoretic Statistics and Safe Anytime-Valid Inference.
+\newblock \emph{Statistical Science}.
+
+\bibitem[{Wang et~al.(2023{\natexlab{a}})Wang, Xie, Jiang, Mandlekar, Xiao,
+  Zhu, Fan, and Anandkumar}]{voyager2023}
+Wang, G.; Xie, Y.; Jiang, Y.; Mandlekar, A.; Xiao, C.; Zhu, Y.; Fan, L.; and
+  Anandkumar, A. 2023{\natexlab{a}}.
+\newblock Voyager: An Open-Ended Embodied Agent with Large Language Models.
+\newblock In \emph{NeurIPS}.
+
+\bibitem[{Wang et~al.(2023{\natexlab{b}})Wang, Cai, Chen, Liu, Ma, and
+  Liang}]{deps2023}
+Wang, Z.; Cai, S.; Chen, G.; Liu, A.; Ma, X.; and Liang, Y. 2023{\natexlab{b}}.
+\newblock Describe, Explain, Plan and Select: Interactive Planning with Large
+  Language Models Enables Open-World Multi-Task Agents.
+\newblock In \emph{Advances in Neural Information Processing Systems}.
+
+\end{thebibliography}
