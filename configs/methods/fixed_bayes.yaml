@@ -2,8 +2,7 @@
 # Bayesian uplift + harm check with hand-tuned thresholds.
 # No adaptive calibration, no contract.
 
-method: "FixedBayes"
+cact_method: "FixedBayes"
 frozen: false
 active_calib_rate: 0.0
-cask_method: "Fixed-Bayes"
-description: "Bayesian gate with fixed thresholds (τ=0.90, δ=0.05, h=0.10)"
+description: "Bayesian gate with fixed thresholds (tau=0.90, delta=0.05, h=0.10)"

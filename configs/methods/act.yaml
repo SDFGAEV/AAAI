@@ -2,8 +2,7 @@
 # Bayesian counterfactual uplift with adaptive thresholds.
 # No Knowledge Contract — the closest ablation to C-ACT-Full.
 
-method: "ACT"
+cact_method: "ACT"
 frozen: false
 active_calib_rate: 0.15
-cask_method: "ACT-RL-Full"
 description: "Adaptive counterfactual trust, no contract layer"

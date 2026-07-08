@@ -30,7 +30,7 @@ from optimus1.env import CustomEnvWrapper, env_make, register_custom_env
 from optimus1.helper import NewHelper
 from optimus1.memories import DecomposedMemory
 from optimus1.memories import KnowledgeGraph as OracleGraph
-# CASKe: Trust Before Reuse gate
+# C-ACT: Contracted Adaptive Counterfactual Trust gate
 import sys, os as _os; sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), '..', '..'))
 from cact.cact_memory import CactMemory
 
@@ -562,7 +562,7 @@ def new_agent_do(
 
 @hydra.main(version_base=None, config_path="conf", config_name="evaluate")
 def main(cfg: DictConfig):
-    # Project root: go up 2 levels from src/optimus1/ -> XENON_cask/
+    # Project root: go up 2 levels from src/optimus1/ -> C-ACT/
     _PROJ = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     register_custom_env(cfg)
 
@@ -616,9 +616,9 @@ def main(cfg: DictConfig):
 
     action_memory = DecomposedMemory(cfg, logger)
     # C-ACT: wrap with Contracted Adaptive Counterfactual Trust gate
-    cact_method = cfg.get("cact_method", cfg.get("cask_method", "NoTrust"))
-    cact_frozen = cfg.get("cask_frozen", cfg.get("cact_frozen", False))
-    cact_cf = cfg.get("cask_cf_branching", False)
+    cact_method = cfg.get("cact_method", "C-ACT-Full")
+    cact_frozen = cfg.get("cact_frozen", False)
+    cact_cf = cfg.get("cact_cf_branching", False)
     cact_log_dir = os.path.join(_PROJ, "exp_results", "cact_logs")
     ac_rate = 0.15 if cact_cf else 0.0
 
@@ -804,16 +804,16 @@ def main(cfg: DictConfig):
 
             t.join()
             logger.info(f"Done of trial: {run_t}, task: {task}, hydra_path: {hydra_path}, run_uuid: {run_uuid}")
-            # CASKe: update stats and dump structured logs after each trial
-            if hasattr(action_memory, 'dump_logs') and not cask_frozen:
-                logger.info(f"[CASKe] dumping logs: has_log_dir={hasattr(action_memory, 'log_dir')} log_dir={getattr(action_memory, 'log_dir', 'N/A')}")
+            # C-ACT: update stats and dump structured logs after each trial
+            if hasattr(action_memory, 'dump_logs') and not cact_frozen:
+                logger.info(f"[C-ACT] dumping logs: {cact_log_dir}")
                 if hasattr(action_memory, 'update_last_episode'):
                     action_memory.update_last_episode(
                         total_steps=steps, llm_calls=_llm_calls,
                         wall_time_sec=round(_wall_time, 1),
                         input_tokens=_in_tok, output_tokens=_out_tok)
                 action_memory.dump_logs()
-                logger.info(f"[CASKe] dump_logs done")
+                logger.info(f"[C-ACT] dump_logs done")
 
             img_dir = os.path.join(hydra_path, run_uuid, "imgs")
             shutil.rmtree(img_dir)

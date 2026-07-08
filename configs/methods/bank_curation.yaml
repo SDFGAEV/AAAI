@@ -1,8 +1,7 @@
 # BankCuration: SkillBrew-style relevance-based curation
 # Filters by semantic relevance and utility, merge/prune management.
 
-method: "BankCuration"
+cact_method: "BankCuration"
 frozen: false
 active_calib_rate: 0.0
-cask_method: "BankCuration"
 description: "Relevance + utility curation, merge/prune lifecycle"

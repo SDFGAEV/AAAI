@@ -1,8 +1,7 @@
 # NoKnowledge: Pure LLM baseline (DEPS-style)
 # No knowledge base. Every decision uses LLM planner only.
 
-method: "NoKnowledge"
+cact_method: "NoKnowledge"
 frozen: false
 active_calib_rate: 0.0
-cask_method: "NoKnowledge"
 description: "Pure LLM planner, no knowledge base, no memory"
