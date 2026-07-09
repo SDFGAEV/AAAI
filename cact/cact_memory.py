@@ -301,7 +301,8 @@ class CactMemory:
         kid = self._waypoint_to_kid.get(waypoint, f"skill:{waypoint}")
         ctx = self._bucket.encode(knowledge_type="skill",
                                   subgoal_type=self._infer_subgoal_type(waypoint),
-                                  task_tier=self._infer_tier(waypoint))
+                                  task_tier=self._infer_tier(waypoint),
+                                  risk_level=self._infer_risk(waypoint))
         task_grp = self._infer_group(waypoint)
 
         # Use last decision result
@@ -316,12 +317,12 @@ class CactMemory:
 
         # Contract / interaction status
         contract = self._store.get_contract(kid)
-        # Contract violation: prefer explicit postcondition check from decision result,
-        # fall back to harm_ucb proxy (high harm rate suggests contract not protective)
-        contract_violated = (
-            last.contract_violation_after if last and last.contract_violation_after
-            else ((not is_success and hu >= 0.10) if contract else False)
-        )
+        # Contract violation: in the current architecture, post-execution state is not
+        # available here (the caller has no mechanism to pass postcond check results).
+        # We use harm_ucb >= 0.10 as a proxy: a high harm upper bound suggests the
+        # contract's safety claims are not being upheld. This is imperfect but is the
+        # best available signal without deeper integration into XENON's observation loop.
+        contract_violated = (not is_success and hu >= 0.10 and contract is not None)
         interaction_conflict = not last.interaction_safe if last else False
         csr_before = last.contract_satisfied_before if last else True
         is_harmful = 1 if (not is_success and hu >= 0.10) else 0
@@ -389,7 +390,8 @@ class CactMemory:
         """C-ACT admission gate for knowledge reuse."""
         ctx = self._bucket.encode(knowledge_type="skill",
                                   subgoal_type=self._infer_subgoal_type(waypoint),
-                                  task_tier=self._infer_tier(waypoint))
+                                  task_tier=self._infer_tier(waypoint),
+                                  risk_level=self._infer_risk(waypoint))
         kid = self._waypoint_to_kid.get(waypoint, f"skill:{waypoint}")
         task_grp = self._infer_group(waypoint)
         lc = self._store.get_lifecycle_state(kid)
@@ -432,11 +434,14 @@ class CactMemory:
                         pass
             state.update(inv_flat)
 
-            # Equipment: what tool/weapon is currently equipped
+            # Equipment: what tool/weapon is currently equipped.
+            # mineRL may return nested dicts (e.g. {"mainhand": {"type": "iron_pickaxe", ...}})
             eq = obs.get("equipped_items", {})
             if isinstance(eq, dict):
                 for k, v in eq.items():
-                    if isinstance(v, str) and v != "none":
+                    if isinstance(v, dict):
+                        state[k] = dict(v)  # shallow copy nested dict
+                    elif isinstance(v, str) and v != "none":
                         state[k] = v
 
             # Compute safety flags from available data
@@ -467,12 +472,12 @@ class CactMemory:
                    "task_group": task_grp, "task_tier": self._infer_tier(waypoint),
                    "failure_type": "none", "risk_level": self._infer_risk(waypoint)}
 
-        if self.method.startswith("Online-"):
+        if self.frozen:
+            mode = "evaluation"
+        elif self.method.startswith("Online-"):
             mode = "online"
         elif self.active_calib_rate > 0:
             mode = "calibration"
-        elif self.frozen:
-            mode = "evaluation"
         else:
             mode = "accumulation"
 

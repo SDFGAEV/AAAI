@@ -24,9 +24,10 @@ MAX_DEDUP_GROUP_SIZE = 5
 
 # ── Quarantine: fields that must be present ──
 REQUIRED_CONTRACT_FIELDS = [
-    "gene", "type", "preconditions",
-    # Scope or legacy claimed_context (at least one must be present)
-    # Safety boundaries — check both v2 and legacy field names
+    "gene", "type",
+    # preconditions: intentionally NOT required — some universal knowledge has
+    # no preconditions (applies to all contexts). ContractExtractor also
+    # produces empty preconditions for universal skills.
 ]
 
 # Fields checked with dual key support (v2 + legacy fallback)
