@@ -34,3 +34,4 @@ checkpoints/
 *.jar
 ckpt/
 *.tar.gz
+cact_ckpt/
