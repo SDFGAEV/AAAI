@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 
 
 # ── Dedup constants ──
-EMBED_SIM_THRESHOLD = 0.85
+EMBED_SIM_THRESHOLD = 0.65  # Jaccard token overlap for near-duplicate detection
 MAX_DEDUP_GROUP_SIZE = 5
 
 # ── Quarantine: fields that must be present ──

@@ -447,7 +447,8 @@ class CactMemory:
                     state[k] = obs[k]
         task = {"task_id": waypoint, "group": task_grp}
         context = {"bucket": ctx, "subgoal_type": self._infer_subgoal_type(waypoint),
-                   "risk_level": self._infer_risk(waypoint)}
+                   "task_group": task_grp, "task_tier": self._infer_tier(waypoint),
+                   "failure_type": "none", "risk_level": self._infer_risk(waypoint)}
 
         if self.method.startswith("Online-"):
             mode = "online"
