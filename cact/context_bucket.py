@@ -17,7 +17,7 @@ class ContextBucket:
                  n_split_min: int = 10, n_merge_min: int = 3):
         self.ece_threshold = ece_threshold
         self.merge_threshold = merge_threshold
-        self.n_split_min = n_split_min
+        self.n_split_min = max(n_split_min, 30)
         self.n_merge_min = n_merge_min
         self._bucket_stats: Dict[str, Dict] = {}
         self._split_fields = ["subgoal_type", "failure_type", "inventory_sig",
@@ -84,7 +84,13 @@ class ContextBucket:
 
     def maybe_merge(self, buckets: List[str],
                     bucket_stats: Dict[str, Tuple[float, float, int]]) -> List[List[str]]:
-        """Merge low-sample similar buckets. Returns list of merged bucket groups."""
+        """Merge low-sample similar buckets (doc TABLE 59).
+
+        Merge condition: KL(Beta_use1 || Beta_use2) < 0.05.
+        Note: the doc also specifies KL(Beta_harm1 || Beta_harm2) < 0.05 but
+        bucket_stats currently only track use-success. Harm-aware merge would
+        require a parallel harm-stat accumulator.
+        """
         if len(buckets) < 2: return []
         merges = []; used = set()
         for i, b1 in enumerate(buckets):
@@ -92,17 +98,26 @@ class ContextBucket:
             group = [b1]; used.add(b1)
             a1, b1_s, n1 = bucket_stats.get(b1, (1.0, 1.0, 0))
             if n1 >= self.n_merge_min * 2: continue
-            m1 = a1 / max(a1 + b1_s, 1e-8) if a1 + b1_s > 0 else 0.5
             for b2 in buckets[i+1:]:
                 if b2 in used: continue
                 a2, b2_s, n2 = bucket_stats.get(b2, (1.0, 1.0, 0))
                 if n2 >= self.n_merge_min * 2: continue
-                m2 = a2 / max(a2 + b2_s, 1e-8) if a2 + b2_s > 0 else 0.5
-                kl = self._approx_kl(m1, m2)
+                # KL divergence on Beta posteriors directly (not just means)
+                kl = self._beta_kl_divergence(a1, b1_s, a2, b2_s)
                 if kl < self.merge_threshold:
                     group.append(b2); used.add(b2)
             if len(group) > 1: merges.append(group)
         return merges
+
+    @staticmethod
+    def _beta_kl_divergence(a1, b1, a2, b2) -> float:
+        """KL(Beta(a1,b1) || Beta(a2,b2))."""
+        from scipy.special import betaln, digamma
+        term = (betaln(a2, b2) - betaln(a1, b1) +
+                (a1 - a2) * digamma(a1) +
+                (b1 - b2) * digamma(b1) +
+                (a2 - a1 + b2 - b1) * digamma(a1 + b1))
+        return max(0.0, float(term))
 
     @staticmethod
     def _compute_ece(conf: List[float], out: List[float], n_bins: int = 5) -> float:

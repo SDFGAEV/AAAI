@@ -195,7 +195,7 @@ class TrustGate:
             delta = self.delta.get(key, 0.05)
             harm = self.harm.get(key, 0.10)
         else:
-            tau, delta, harm = 0.90, 0.05, 0.10  # Global fixed defaults
+            tau, delta, harm = 0.88, 0.05, 0.10  # Global fixed defaults (doc TABLE 76/152)
 
         # Condition 0: Lifecycle gate
         if lifecycle_state in ("disabled", "deprecated"):
@@ -241,8 +241,17 @@ class TrustGate:
                            "harm_ucb": harm_ucb_val,
                            "supervised": False}
 
-        # Condition 4: Probation knowledge requires supervised reuse
+        # Condition 4: Probation knowledge (separate thresholds per TABLE 95-96)
+        # τ_prob = max(0.55, τ_cert - 0.20), h_prob = min(h_cert, 0.10)
         supervised = lifecycle_state == "probation"
+        if supervised:
+            tau_prob = max(0.55, tau - 0.20)
+            h_prob = min(harm, 0.10)
+            if pi_uplift < tau_prob or harm_ucb_val > h_prob:
+                return False, {"reason": "probation_fail",
+                               "tau": tau_prob, "delta": delta, "harm": h_prob,
+                               "pi_uplift": pi_uplift, "harm_ucb": harm_ucb_val,
+                               "supervised": True}
 
         return True, {"reason": "gate_pass", "tau": tau,
                       "delta": delta, "harm": harm,

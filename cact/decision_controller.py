@@ -143,6 +143,10 @@ class DecisionController:
                 task_group=task_group, lifecycle_state=lc,
                 contract_satisfied=contract_ok, interaction_safe=True,
             )
+            # Probation safety guard (TABLE 95): no probation reuse in high-risk context
+            if allow and lc == "probation" and context.get("risk_level") == "high":
+                allow = False
+                info["reason"] = "probation_high_risk_blocked"
 
             scored.append({
                 "knowledge_id": kid,
@@ -163,7 +167,7 @@ class DecisionController:
 
         # ── Step 4: Build candidate chain ──
         # Sort by pi_uplift descending, enrich with stats for interaction check
-        chain = sorted(scored, key=lambda x: x["pi_uplift"], reverse=True)
+        chain = sorted(scored, key=lambda x: x.get("synergy_score", x["pi_uplift"]), reverse=True)
         ctx_key = context.get("bucket", context.get("subgoal_type", "craft"))
         for c in chain:
             kid = c["knowledge_id"]
@@ -185,21 +189,25 @@ class DecisionController:
             result.interaction_safe = chain_check["safe"]
             result.interaction_state = chain_check["recommendation"]
 
-            # Promote synergy combos: if two candidates have synergistic interaction,
-            # prefer using both together rather than picking just the best one.
+            # Promote synergy combos: synergy affects RANKING only, not gate decision.
+            # Per TABLE 102: "synergy 不能直接乘 posterior probability"
+            for c in chain:
+                c["synergy_score"] = c["pi_uplift"]  # Default: no synergy boost
             for combo in chain_check.get("recommended_combos", []):
                 ki, kj = combo["pair"]
                 result.synergy_pairs.append({
                     "pair": (ki, kj),
                     "pi_synergy": combo["pi_synergy"],
                 })
-                # Boost both candidates' effective score to encourage joint reuse
+                # Boost synergy_score for ranking, but NEVER modify pi_uplift
                 for c in chain:
                     if c["knowledge_id"] in (ki, kj):
-                        c["pi_uplift"] = min(1.0, c["pi_uplift"] * 1.05)
+                        c["synergy_score"] = min(1.0, c["pi_uplift"] + 0.02)
                         c["synergy_boosted"] = True
 
         # ── Step 6: Make decision ──
+        # Sort by synergy_score (which incorporates synergy boost for ranking),
+        # but gate on certified flag which uses unmodified pi_uplift
         best = None
         for c in chain:
             if c["certified"] and c["contract_ok"]:
