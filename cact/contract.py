@@ -1,14 +1,18 @@
 """
-Knowledge Contract: falsifiable behavioral claims for self-evolved knowledge.
+Knowledge Contract v2: falsifiable behavioral claims for self-evolved knowledge.
 
-C-ACT transforms raw XENON knowledge (ADG dependency corrections,
-FAM action corrections) into structured contracts with:
-  - preconditions  (must hold before reuse)
-  - postconditions (must hold after reuse)
-  - non_applicable_contexts (hard safety boundaries)
-  - expected_uplift / risk_bound (declared expectations)
+C-ACT transforms raw self-evolved knowledge into structured contracts with:
+  - scope          — structured applicability domain
+  - preconditions  — must hold before reuse
+  - postconditions — must hold after reuse
+  - hard_non_applicable_contexts — safety boundaries (never reuse)
+  - recovery_rule  — fallback strategy when preconditions unmet
+  - termination_condition — when to stop applying
+  - evidence_requirement — minimum evidence for lifecycle promotion
+  - expected_uplift / risk_bound — declared expectations
 
-Contract verification happens before AND after each reuse decision.
+Contract verification: pre-admission (scope + pre + boundary + risk)
+and post-execution (postconditions + progress + no new harm).
 """
 
 import json, uuid
@@ -16,11 +20,12 @@ from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, field, asdict
 
 
-# ── Knowledge type & level enums ──
+# ── Knowledge type & level enums (v2 expanded) ──
 KNOWLEDGE_TYPES = ["skill", "remedy", "dependency_correction",
-                   "action_correction", "failure_memory"]
-KNOWLEDGE_LEVELS = ["strategy", "functional", "atomic",
-                    "dependency", "failure_memory"]
+                   "action_correction", "failure_memory",
+                   "planning_rule", "guardrail", "interaction_pattern"]
+KNOWLEDGE_LEVELS = ["strategy", "functional", "atomic_correction",
+                    "dependency", "failure_memory", "interaction"]
 
 # ── Lifecycle states (imported from lifecycle_manager) ──
 from .lifecycle_manager import (CANDIDATE, QUARANTINED, PROBATION,
@@ -28,7 +33,7 @@ from .lifecycle_manager import (CANDIDATE, QUARANTINED, PROBATION,
 
 # ── Hard safety boundaries: contexts where reuse is NEVER allowed ──
 HARD_SAFETY_CONTEXTS = [
-    "lava_nearby", "low_health", "combat",
+    "lava_nearby", "low_health", "combat_active",
     "near_cliff", "irreversible_resource_constraint"
 ]
 
@@ -38,35 +43,69 @@ RISK_LEVELS = ["low", "medium", "high"]
 
 @dataclass
 class KnowledgeContract:
-    """A self-evolved knowledge item turned into a falsifiable behavioral claim."""
+    """A self-evolved knowledge item turned into a falsifiable behavioral claim (v2)."""
     knowledge_id: str = field(default_factory=lambda: f"kc_{uuid.uuid4().hex[:12]}")
     source: str = ""              # "XENON_ADG" | "XENON_FAM"
-    type: str = ""                # skill | remedy | dependency_correction | action_correction | failure_memory
-    level: str = ""               # strategy | functional | atomic | dependency | failure_memory
+    type: str = ""                # skill|remedy|dependency_correction|action_correction|failure_memory|planning_rule|guardrail|interaction_pattern
+    level: str = ""               # strategy|functional|atomic_correction|dependency|failure_memory|interaction
 
     # Core knowledge
     gene: str = ""                # One-sentence core
     full_text: str = ""           # Complete behavioral description
 
-    # Contract claims
+    # Structured scope (v2): replaces flat claimed_context
+    scope: Dict[str, str] = field(default_factory=dict)
+    # Backward-compat: claimed_context maps to scope
     claimed_context: Dict[str, str] = field(default_factory=dict)
+
+    # Contract claims
     preconditions: List[str] = field(default_factory=list)
     postconditions: List[str] = field(default_factory=list)
     expected_uplift: float = 0.05
     risk_bound: float = 0.10
 
-    # Hard safety boundaries
+    # Hard safety boundaries (v2: renamed from non_applicable_contexts)
+    hard_non_applicable_contexts: List[str] = field(default_factory=list)
+    # Backward-compat alias
     non_applicable_contexts: List[str] = field(default_factory=list)
+
+    # v2 new fields
+    recovery_rule: str = ""               # Fallback strategy when preconditions unmet
+    termination_condition: str = ""       # When to stop applying this knowledge
+    evidence_requirement: Dict[str, float] = field(default_factory=dict)
+    # evidence_requirement keys: min_use, min_base, max_harm_ucb
 
     # Provenance
     source_episode: str = ""
     status: str = CANDIDATE
 
     def to_dict(self) -> Dict:
-        return asdict(self)
+        d = asdict(self)
+        # Remove backward-compat alias from serialization
+        d.pop("non_applicable_contexts", None)
+        d.pop("claimed_context", None)
+        return d
+
+    def get_scope(self) -> Dict[str, str]:
+        """Return effective scope, preferring v2 scope field over legacy claimed_context."""
+        if self.scope:
+            return self.scope
+        return self.claimed_context
+
+    def get_safety_boundaries(self) -> List[str]:
+        """Return effective hard safety boundaries."""
+        if self.hard_non_applicable_contexts:
+            return self.hard_non_applicable_contexts
+        return self.non_applicable_contexts
 
     @classmethod
     def from_dict(cls, d: Dict) -> "KnowledgeContract":
+        # Normalize legacy fields
+        d = dict(d)
+        if "claimed_context" in d and not d.get("scope"):
+            d["scope"] = d["claimed_context"]
+        if "non_applicable_contexts" in d and not d.get("hard_non_applicable_contexts"):
+            d["hard_non_applicable_contexts"] = d["non_applicable_contexts"]
         d = {k: v for k, v in d.items()
              if k in cls.__dataclass_fields__}
         return cls(**d)
@@ -113,13 +152,41 @@ def infer_level_from_xenon(content: str, task_tier: str = "stone") -> str:
         return "failure_memory"
 
     # Default by tier
-    return "atomic" if tier <= 2 else "functional"
+    return "atomic_correction" if tier <= 2 else "functional"
 
 
 # ── Contract verification ──
 
 class ContractChecker:
-    """Verify contract conditions before and after knowledge reuse."""
+    """Verify contract conditions before and after knowledge reuse (v2)."""
+
+    # ── Pre-admission checks (4 conditions) ──
+
+    @staticmethod
+    def check_scope_match(contract: KnowledgeContract,
+                          context: Dict) -> bool:
+        """Check if current context falls within contract scope.
+
+        Scope fields (task_group, subgoal_type, failure_type, task_tier)
+        are compared against context bucket. A scope field with value "*"
+        matches any context value.
+        """
+        scope = contract.get_scope()
+        if not scope:
+            return True  # No scope = universally applicable
+        for key, val in scope.items():
+            if val == "*":
+                continue
+            ctx_val = context.get(key, "")
+            if str(ctx_val) != str(val):
+                return False
+        return True
+
+    @staticmethod
+    def check_context_match(contract: KnowledgeContract,
+                            context: Dict) -> bool:
+        """Backward-compat alias for check_scope_match."""
+        return ContractChecker.check_scope_match(contract, context)
 
     @staticmethod
     def check_preconditions(contract: KnowledgeContract,
@@ -134,6 +201,27 @@ class ContractChecker:
         return len(violations) == 0, violations
 
     @staticmethod
+    def check_hard_boundary(contract: KnowledgeContract,
+                            state: Dict) -> Tuple[bool, List[str]]:
+        """Check if any hard_non_applicable_context is triggered.
+        Returns (safe, [triggered_contexts]).
+        True = safe (no hard boundary triggered).
+        """
+        triggered = []
+        for ctx in contract.get_safety_boundaries():
+            if ContractChecker._eval_context_flag(ctx, state):
+                triggered.append(ctx)
+        return len(triggered) == 0, triggered
+
+    @staticmethod
+    def check_non_applicable(contract: KnowledgeContract,
+                             state: Dict) -> Tuple[bool, List[str]]:
+        """Backward-compat alias for check_hard_boundary."""
+        return ContractChecker.check_hard_boundary(contract, state)
+
+    # ── Post-execution checks ──
+
+    @staticmethod
     def check_postconditions(contract: KnowledgeContract,
                              state_before: Dict,
                              state_after: Dict) -> Tuple[bool, List[str]]:
@@ -145,31 +233,6 @@ class ContractChecker:
             if not ContractChecker._eval_condition(cond, state_after):
                 violations.append(cond)
         return len(violations) == 0, violations
-
-    @staticmethod
-    def check_non_applicable(contract: KnowledgeContract,
-                             state: Dict) -> Tuple[bool, List[str]]:
-        """Check if any non_applicable_context is triggered.
-        Returns (safe, [triggered_contexts]).
-        True = safe (no non-applicable context triggered).
-        """
-        triggered = []
-        for ctx in contract.non_applicable_contexts:
-            if ContractChecker._eval_context_flag(ctx, state):
-                triggered.append(ctx)
-        return len(triggered) == 0, triggered
-
-    @staticmethod
-    def check_context_match(contract: KnowledgeContract,
-                            context: Dict) -> bool:
-        """Check if current context matches claimed_context."""
-        claimed = contract.claimed_context
-        if not claimed:
-            return True  # No context claim = always applicable
-        for key, val in claimed.items():
-            if context.get(key) != val and val != "*":
-                return False
-        return True
 
     @staticmethod
     def _eval_condition(condition: str, state: Dict) -> bool:
@@ -209,7 +272,7 @@ class ContractChecker:
             "lava_nearby": lambda s: s.get("near_lava", False),
             "low_health": lambda s: s.get("low_health",
                                           s.get("health", 20) < 5),
-            "combat": lambda s: s.get("in_combat", False),
+            "combat_active": lambda s: s.get("in_combat", False),
             "near_cliff": lambda s: s.get("near_cliff", False),
             "irreversible_resource_constraint": lambda s:
                 s.get("resource_critical", False),
@@ -260,6 +323,12 @@ class ContractExtractor:
                 infer_level_from_xenon(content, knowledge.get("task_tier", "stone"))),
             gene=knowledge.get("gene", self._extract_gene(content)),
             full_text=content,
+            scope={
+                "task_group": knowledge.get("task_group", knowledge.get("group", "")),
+                "subgoal_type": knowledge.get("subgoal_type", ""),
+                "failure_type": knowledge.get("failure_type", ""),
+                "task_tier": knowledge.get("task_tier", "stone"),
+            },
             claimed_context={
                 "subgoal_type": knowledge.get("subgoal_type", ""),
                 "failure_type": knowledge.get("failure_type", ""),
@@ -269,7 +338,14 @@ class ContractExtractor:
             postconditions=postconds,
             expected_uplift=knowledge.get("expected_uplift", 0.05),
             risk_bound=knowledge.get("risk_bound", 0.10),
-            non_applicable_contexts=non_app,
+            hard_non_applicable_contexts=non_app,
+            recovery_rule=knowledge.get("recovery_rule", ""),
+            termination_condition=knowledge.get("termination_condition", ""),
+            evidence_requirement={
+                "min_use": knowledge.get("min_use", 5),
+                "min_base": knowledge.get("min_base", 3),
+                "max_harm_ucb": knowledge.get("max_harm_ucb", 0.10),
+            },
             source_episode=knowledge.get("episode_id", ""),
             status=CANDIDATE,
         )

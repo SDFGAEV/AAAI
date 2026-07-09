@@ -38,6 +38,7 @@ from .interaction_gate import InteractionGate
 from .active_logging import ActiveBaseLogger
 from .thompson_probe import SafeThompsonProber
 from .bank_sanitizer import BankSanitizer
+from .attribution import OutcomeAttributor, apply_attribution_to_lifecycle
 
 
 class CactMemory:
@@ -87,6 +88,7 @@ class CactMemory:
             log_path=os.path.join(log_dir, "base", "propensity.jsonl") if log_dir else None)
         self._tp = SafeThompsonProber()
         self._sanitizer = BankSanitizer()
+        self._attributor = OutcomeAttributor()
         self._controller = DecisionController(
             self._store, self._gate, self._ig, self._al, self._tp, self._checker)
 
@@ -282,7 +284,7 @@ class CactMemory:
 
     # ── save_success_failure ──
     def save_success_failure(self, waypoint, language_action_str, is_success):
-        """Record outcome after a knowledge use/failure."""
+        """Record outcome after a knowledge use/failure with attribution."""
         self._mem.save_success_failure(waypoint, language_action_str, is_success)
         sv = 1.0 if is_success else 0.0
         kid = f"skill:{waypoint}"
@@ -291,11 +293,9 @@ class CactMemory:
                                   task_tier=self._infer_tier(waypoint))
         task_grp = self._infer_group(waypoint)
 
-        if not self.frozen:
-            last = getattr(self, '_last_decision_result', None)
-            was_used = last.decision in ("reuse", "probe") if last else True
-            self._store.record_episode(kid, ctx, used=was_used, success=sv,
-                                       is_harmful=0.0 if is_success else 0.5)
+        # Use last decision result
+        last = getattr(self, '_last_decision_result', None)
+        was_used = last.decision in ("reuse", "probe") if last else True
 
         ess = self._store.ess(kid, ctx)
         pi = self._store.uplift_probability(kid, ctx)
@@ -303,16 +303,30 @@ class CactMemory:
         ul = self._store.uplift_lcb(kid, ctx)
         lc = self._store.get_lifecycle_state(kid)
 
-        # Contract violation: failure + high harm probability
+        # Contract / interaction status
         contract = self._store.get_contract(kid)
         contract_violated = (not is_success and hu >= 0.10) if contract else False
-
-        # Use last decision result for contract and interaction info
-        last = getattr(self, '_last_decision_result', None)
+        interaction_conflict = not last.interaction_safe if last else False
         csr_before = last.contract_satisfied_before if last else True
-
-        # Harmful if harm_ucb exceeds threshold AND task failed
         is_harmful = 1 if (not is_success and hu >= 0.10) else 0
+
+        # ── Attribution-aware lifecycle update ──
+        if not self.frozen:
+            attribution = self._attributor.attribute(
+                success=is_success,
+                is_harmful=bool(is_harmful),
+                contract_violated=contract_violated,
+                interaction_conflict=interaction_conflict,
+                used_knowledge=was_used,
+                progress_delta=0.0,  # Updated by caller if available
+            )
+            # Apply attribution-aware update
+            attr_result = apply_attribution_to_lifecycle(
+                kid, attribution, sv, float(is_harmful),
+                self._store, ctx, self._attributor)
+        else:
+            attribution = None
+            attr_result = {"action": "frozen", "attribution": "none"}
 
         # Reuse decision log
         self.reuse_logs.append({
@@ -325,6 +339,8 @@ class CactMemory:
             "contract_satisfied_before": csr_before,
             "contract_violation_after": contract_violated,
             "is_harmful": is_harmful,
+            "attribution": attribution.value if attribution else "frozen",
+            "attr_action": attr_result.get("action", "none"),
             "outcome_success": int(is_success),
         })
 

@@ -1,0 +1,181 @@
+"""
+Attribution-Aware Outcome Classification for C-ACT Lifecycle.
+
+Minecraft failures have many causes besides bad knowledge:
+  - Navigation failure (got lost, couldn't reach target)
+  - Environment randomness (mob interference, block placement RNG)
+  - Executor failure (VLM hallucination, Steve-1 action error)
+  - Resource conflict (competing knowledge for same resource)
+  - Contract violation (postcondition not met)
+  - Base planner failure (would have failed anyway)
+
+C-ACT must distinguish these before updating lifecycle.
+Otherwise, good knowledge is penalized for failures it didn't cause.
+
+Design doc §14: "好知识因为导航失败被误杀" must be prevented.
+"""
+
+from typing import Dict, List, Optional
+from enum import Enum
+
+
+class AttributionLabel(str, Enum):
+    """Outcome attribution for lifecycle updates."""
+    KNOWLEDGE_CAUSED_SUCCESS = "knowledge_caused_success"
+    BASE_WOULD_SUCCEED      = "base_would_succeed"
+    ENVIRONMENT_FAILURE     = "environment_failure"
+    NAVIGATION_FAILURE      = "navigation_failure"
+    EXECUTION_FAILURE       = "execution_failure"
+    RESOURCE_CONFLICT       = "resource_conflict"
+    CONTRACT_VIOLATION      = "contract_violation"
+    CHAIN_FAILURE           = "chain_failure"
+    HARMFUL_REUSE           = "harmful_reuse"
+    UNCERTAIN               = "uncertain"
+
+
+class OutcomeAttributor:
+    """Attribute episode outcomes to knowledge vs. external factors."""
+
+    def attribute(self, success: bool, is_harmful: bool,
+                  contract_violated: bool,
+                  interaction_conflict: bool,
+                  used_knowledge: bool,
+                  progress_delta: float = 0.0,
+                  postcondition_satisfied: Optional[bool] = None,
+                  base_would_have_succeeded: Optional[bool] = None,
+                  execution_errors: int = 0,
+                  navigation_errors: int = 0,
+                  ) -> AttributionLabel:
+        """Attribute outcome to the most likely cause.
+
+        Called after each knowledge use or fallback decision.
+        """
+
+        # ── Success cases ──
+        if success:
+            if not used_knowledge:
+                # Base/fallback succeeded — counterfactual signal
+                return AttributionLabel.BASE_WOULD_SUCCEED
+            # Knowledge was used and succeeded
+            if is_harmful:
+                return AttributionLabel.HARMFUL_REUSE  # Succeeded but caused harm
+            if contract_violated:
+                return AttributionLabel.CONTRACT_VIOLATION
+            return AttributionLabel.KNOWLEDGE_CAUSED_SUCCESS
+
+        # ── Failure cases ──
+        if not used_knowledge:
+            # Base planner failed on its own — not knowledge fault
+            return AttributionLabel.BASE_WOULD_SUCCEED  # counterfactual: base also fails
+
+        # Knowledge was used and task failed
+        if is_harmful:
+            return AttributionLabel.HARMFUL_REUSE
+
+        if contract_violated:
+            return AttributionLabel.CONTRACT_VIOLATION
+
+        if interaction_conflict:
+            return AttributionLabel.CHAIN_FAILURE
+
+        # Postcondition check: if knowledge's promises were kept
+        # but overall task still failed, blame environment/execution
+        if postcondition_satisfied is True:
+            if progress_delta > 0:
+                # Knowledge helped but something else failed
+                if navigation_errors > execution_errors:
+                    return AttributionLabel.NAVIGATION_FAILURE
+                return AttributionLabel.EXECUTION_FAILURE
+            return AttributionLabel.ENVIRONMENT_FAILURE
+
+        # Postcondition violated — knowledge didn't deliver
+        if postcondition_satisfied is False:
+            # Check if base would have succeeded
+            if base_would_have_succeeded is True:
+                return AttributionLabel.CONTRACT_VIOLATION
+            return AttributionLabel.KNOWLEDGE_CAUSED_SUCCESS  # knowledge was the diff
+
+        # Ambiguous: cannot determine cause
+        return AttributionLabel.UNCERTAIN
+
+    def should_penalize(self, label: AttributionLabel) -> bool:
+        """Whether this attribution should increment harm/cvr counts."""
+        PENALIZE = {
+            AttributionLabel.HARMFUL_REUSE,
+            AttributionLabel.CONTRACT_VIOLATION,
+            AttributionLabel.CHAIN_FAILURE,
+        }
+        return label in PENALIZE
+
+    def should_reward(self, label: AttributionLabel) -> bool:
+        """Whether this attribution should increment use/success counts."""
+        REWARD = {
+            AttributionLabel.KNOWLEDGE_CAUSED_SUCCESS,
+        }
+        return label in REWARD
+
+    def should_count_base(self, label: AttributionLabel) -> bool:
+        """Whether this attribution provides base (counterfactual) signal."""
+        COUNT_BASE = {
+            AttributionLabel.BASE_WOULD_SUCCEED,
+        }
+        return label in COUNT_BASE
+
+    def is_no_fault(self, label: AttributionLabel) -> bool:
+        """Whether the knowledge is blameless for this outcome."""
+        NO_FAULT = {
+            AttributionLabel.ENVIRONMENT_FAILURE,
+            AttributionLabel.NAVIGATION_FAILURE,
+            AttributionLabel.EXECUTION_FAILURE,
+            AttributionLabel.RESOURCE_CONFLICT,
+        }
+        return label in NO_FAULT
+
+
+def apply_attribution_to_lifecycle(
+    kid: str,
+    attribution: AttributionLabel,
+    success: float,
+    is_harmful: float,
+    trust_store,        # TrustStore instance
+    context: str,
+    attributor: OutcomeAttributor = None,
+) -> Dict:
+    """Apply attribution-aware update to lifecycle and trust store.
+
+    Returns dict with update summary for logging.
+    """
+    if attributor is None:
+        attributor = OutcomeAttributor()
+
+    result = {
+        "knowledge_id": kid,
+        "attribution": attribution.value,
+        "action": "none",
+    }
+
+    if attributor.should_reward(attribution):
+        # Knowledge caused success → record use + promote
+        trust_store.record_use(kid, context, success, save=False)
+        trust_store.record_harm(kid, context, is_harmful, save=False)
+        result["action"] = "reward"
+
+    elif attributor.should_penalize(attribution):
+        # Knowledge caused harm → record harm + demote
+        trust_store.record_harm(kid, context, is_harmful, save=False)
+        result["action"] = "penalize"
+
+    elif attributor.should_count_base(attribution):
+        # Base outcome → record base counterfactual
+        trust_store.record_base(kid, context, success, save=False)
+        result["action"] = "count_base"
+
+    elif attributor.is_no_fault(attribution):
+        # External factor → no penalty, no reward
+        result["action"] = "no_fault"
+
+    else:
+        # Uncertain → log for audit, no action
+        result["action"] = "uncertain"
+
+    return result
