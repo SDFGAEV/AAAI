@@ -647,6 +647,7 @@ def main(cfg: DictConfig):
                                store_path=cact_store_path or None,
                                active_calib_rate=ac_rate,
                                log_dir=cact_log_dir)
+    action_memory.set_seed(seed)
 
     if cfg["task"]["interactive"] and cfg["type"] != "headless":
         raise NotImplementedError("Not implemented yet!")
@@ -826,7 +827,7 @@ def main(cfg: DictConfig):
             t.join()
             logger.info(f"Done of trial: {run_t}, task: {task}, hydra_path: {hydra_path}, run_uuid: {run_uuid}")
             # C-ACT: update stats and dump structured logs after each trial
-            if hasattr(action_memory, 'dump_logs') and not cact_frozen:
+            if hasattr(action_memory, 'dump_logs'):
                 logger.info(f"[C-ACT] dumping logs: {cact_log_dir}")
                 if hasattr(action_memory, 'update_last_episode'):
                     action_memory.update_last_episode(

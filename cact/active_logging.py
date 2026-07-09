@@ -134,11 +134,12 @@ class ActiveBaseLogger:
         """Log a forced-base decision with propensity."""
         entry = {
             "decision_id": decision_id,
-            "candidate": knowledge_id,
-            "assigned": assigned_action,
+            "candidate_knowledge_id": knowledge_id,
+            "assigned_action": assigned_action,
             "propensity_reuse": propensity_reuse,
             "propensity_base": propensity_base,
             "context_bucket": context_bucket,
+            "would_reuse_under_policy": True,
         }
         # Write to log file if path configured
         if self._log_path:

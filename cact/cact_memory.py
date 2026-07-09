@@ -111,6 +111,7 @@ class CactMemory:
         self.base_logs: List[Dict] = []
         self.interaction_logs: List[Dict] = []
         self.lifecycle_logs: List[Dict] = []
+        self.sanitizer_logs: List[Dict] = []
 
         # State tracking
         self._prev_kid = None
@@ -127,6 +128,11 @@ class CactMemory:
         self._last_sync_hash = 0    # cache key for _sync_ablation_flags
         self._waypoint_to_kid: Dict[str, str] = {}  # waypoint → registered knowledge_id
         self._inventory_snapshot: Dict[str, int] = {}  # item→count when knowledge was used
+        self._current_seed = 0      # experiment seed
+        self._current_round = 0     # experiment round
+        self._reuse_count = 0       # number of reuse decisions
+        self._fallback_count = 0    # number of fallback decisions
+        self._harmful_count = 0     # number of harmful reuse decisions
 
     # ── Pass-through to XENON DecomposedMemory ──
     @property
@@ -212,6 +218,14 @@ class CactMemory:
         self._current_difficulty = difficulty
         self._current_group = group
 
+    def set_seed(self, seed: int):
+        """Set experiment seed for logging."""
+        self._current_seed = seed
+
+    def set_round(self, r: int):
+        """Set experiment round for logging."""
+        self._current_round = r
+
     def needs_supervision_check(self) -> bool:
         """Check if the last reuse decision was in supervised (Probation) mode.
 
@@ -231,6 +245,7 @@ class CactMemory:
             "base/base_logging.jsonl": self.base_logs,
             "interaction/interaction.jsonl": self.interaction_logs,
             "lifecycle/lifecycle.jsonl": self.lifecycle_logs,
+            "sanitizer/sanitizer.jsonl": self.sanitizer_logs,
         }
         # Always append — each worker has its own log_dir (seed+method unique),
         # and within a worker, episodes accumulate. Parallel workers don't conflict.
@@ -250,6 +265,7 @@ class CactMemory:
         self.base_logs.clear()
         self.interaction_logs.clear()
         self.lifecycle_logs.clear()
+        self.sanitizer_logs.clear()
 
     # ── Episode stats update ──
     def update_last_episode(self, total_steps=0, llm_calls=0, wall_time_sec=0.0,
@@ -270,6 +286,15 @@ class CactMemory:
         # Pass through Bank Sanitizer before contract extraction
         if self._use_sanitizer:
             clean_list, actions = self._sanitizer.sanitize([knowledge_dict])
+            # Log sanitizer actions
+            for action in actions:
+                self.sanitizer_logs.append({
+                    "knowledge_id": action.knowledge_id,
+                    "action": action.action,
+                    "reason": action.reason,
+                    "merge_group": action.merge_group,
+                    "merged_into": action.merged_into,
+                })
             if not clean_list:
                 return None  # Deduplicated or discarded
             knowledge_dict = clean_list[0]
@@ -295,6 +320,10 @@ class CactMemory:
             "level": contract.level,
             "gene": contract.gene,
             "claimed_context": contract.claimed_context,
+            "scope": "|".join(str(v) for v in contract.scope.values()) if contract.scope else "",
+            "preconditions": contract.preconditions,
+            "postconditions": contract.postconditions,
+            "hard_non_applicable_contexts": contract.get_safety_boundaries(),
             "expected_uplift": contract.expected_uplift,
             "risk_bound": contract.risk_bound,
             "status": knowledge_dict.get("status", CANDIDATE),
@@ -319,6 +348,12 @@ class CactMemory:
         last = getattr(self, '_last_decision_result', None)
         was_used = last.decision in ("reuse", "probe") if last else True
 
+        # Increment reuse/fallback/harmful counters
+        if was_used:
+            self._reuse_count += 1
+        else:
+            self._fallback_count += 1
+
         ess = self._store.ess(kid, ctx)
         pi = self._store.uplift_probability(kid, ctx)
         hu = self._store.harm_upper_bound(kid, ctx)
@@ -336,6 +371,9 @@ class CactMemory:
         interaction_conflict = not last.interaction_safe if last else False
         csr_before = last.contract_satisfied_before if last else True
         is_harmful = 1 if (not is_success and hu >= 0.10) else 0
+
+        if is_harmful:
+            self._harmful_count += 1
 
         # ── Lifecycle update ──
         if not self.frozen:
@@ -371,21 +409,44 @@ class CactMemory:
                                            is_harmful=float(is_harmful))
                 attribution = None
                 attr_result = {"action": "simple_record", "attribution": "none"}
+                progress_delta = 0.0
         else:
             attribution = None
             attr_result = {"action": "frozen", "attribution": "none"}
+            progress_delta = 0.0
 
-        # Reuse decision log
+        # ── Wire lifecycle_logs ──
+        self.lifecycle_logs.append({
+            "knowledge_id": kid,
+            "old_status": lc,
+            "new_status": self._store.get_lifecycle_state(kid),
+            "reason": attr_result.get("action", "unknown"),
+            "pi_uplift": round(pi, 4),
+            "harm_ucb": round(hu, 4),
+            "round": getattr(self, '_current_round', 0),
+        })
+
+        # Reuse decision log (TABLE 152)
         self.reuse_logs.append({
+            "decision_id": f"{waypoint}_{self._current_seed}_{self._reuse_count + self._fallback_count}",
+            "episode_id": f"ep_{waypoint}_{self._current_seed}_{self.method}",
             "waypoint": waypoint, "kid": kid, "ctx": ctx,
             "method": self.method, "frozen": self.frozen,
             "success": is_success, "task_group": task_grp,
             "pi_uplift": round(pi, 4), "uplift_lcb": round(ul, 4),
             "harm_ucb": round(hu, 4), "ess": round(ess, 1),
-            "lifecycle": lc, "decision": last.decision if last else "reuse",
-            "contract_satisfied_before": csr_before,
+            "status_before": lc, "decision": last.decision if last else "reuse",
+            "pre_admit_contract_pass": csr_before,
             "contract_violation_after": contract_violated,
-            "is_harmful": is_harmful,
+            "harmful_reuse": is_harmful,
+            "tau_threshold": last.tau_group_level if last else 0.88,
+            "delta_threshold": last.delta_group_level if last else 0.05,
+            "harm_threshold": last.harm_threshold_group_level if last else 0.10,
+            "hard_boundary_triggered": False,
+            "interaction_state": last.interaction_state if last else "safe",
+            "supervised": self._last_was_supervised,
+            "postcondition_satisfied": None,
+            "progress_delta": progress_delta,
             "attribution": attribution.value if attribution else "frozen",
             "attr_action": attr_result.get("action", "none"),
             "outcome_success": int(is_success),
@@ -393,9 +454,17 @@ class CactMemory:
 
         # Episode log
         self.episode_logs.append({
+            "episode_id": f"ep_{waypoint}_{self._current_seed}_{self.method}",
+            "task_id": waypoint,
             "waypoint": waypoint, "method": self.method, "frozen": self.frozen,
             "task_group": task_grp, "difficulty": self._current_difficulty,
+            "seed": self._current_seed,
+            "hard_task": self._current_difficulty == "hard",
             "success": int(is_success),
+            "latency_sec": 0.0,
+            "reuse_count": self._reuse_count,
+            "fallback_count": self._fallback_count,
+            "harmful_reuse_count": self._harmful_count,
             "total_steps": 0, "llm_calls": 0, "tokens": 0,
             "unrecoverable_failure": 0 if is_success else 1,
         })
@@ -561,11 +630,14 @@ class CactMemory:
         if result.propensity_base > 0:
             self.base_logs.append({
                 "decision_id": f"{waypoint}_step",
-                "candidate": result.chosen_knowledge_id,
+                "candidate_knowledge_id": result.chosen_knowledge_id,
                 "assigned_action": result.decision,
                 "propensity_reuse": result.propensity_reuse,
                 "propensity_base": result.propensity_base,
                 "context_bucket": ctx,
+                "would_reuse_under_policy": True,
+                "base_success": 0,
+                "base_progress_delta": 0.0,
             })
 
         self._prev_kid = kid if trusted else None
