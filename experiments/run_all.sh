@@ -158,13 +158,13 @@ fi
 
 # ════════════════════════════════════════════════════════════════════
 # E4: Ablation Study — 12 tasks × 5 seeds × 8 variants = 480 episodes
-# 6 component ablations + 2 special (OracleGate, ShuffledKnowledge)
+# 7 component ablations + OracleGate (upper bound)
 # Uses hardest sub-population: tech_tree + failure_recovery + interaction_stress
 # ════════════════════════════════════════════════════════════════════
 if $RUN_E4; then
-    for variant in C-ACT-NoContract C-ACT-NoAdaptiveTau C-ACT-NoActiveCalib \
+    for variant in C-ACT-NoContract C-ACT-NoActiveCalib C-ACT-NoDecay \
                    C-ACT-NoInteraction C-ACT-NoLevelPrior C-ACT-NoSanitizer \
-                   C-ACT-NoLifecycle C-ACT-NoThompson; do
+                   C-ACT-NoLifecycle OracleGate; do
         echo "--- E4: $variant ---"
         $PYTHON experiments/parallel_runner.py \
             --benchmark cact_ablation \

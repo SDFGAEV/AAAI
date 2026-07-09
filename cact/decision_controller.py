@@ -113,7 +113,8 @@ class DecisionController:
             return result
 
         # ── Step 2: Lazy decay ──
-        self.store.decay_all()
+        if getattr(self.store, 'abl_decay', True):
+            self.store.decay_all()
 
         # ── Step 3: Evidence computation ──
         scored = []

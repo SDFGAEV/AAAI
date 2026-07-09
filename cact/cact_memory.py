@@ -58,6 +58,7 @@ class CactMemory:
         self._use_lifecycle = True
         self._use_thompson = True
         self._use_sanitizer = True
+        self._use_decay = True
 
         # Parse method name for ablation variants
         if "NoContract" in method or "no_Contract" in method:
@@ -76,6 +77,8 @@ class CactMemory:
             self._use_thompson = False
         if "NoSanitizer" in method or "no_Sanitizer" in method:
             self._use_sanitizer = False
+        if "NoDecay" in method or "NoTemporalDecay" in method or "no_Decay" in method:
+            self._use_decay = False
 
         # Core C-ACT components
         self._store = TrustStore(store_path or "cact_ckpt/trust_store")
@@ -162,6 +165,7 @@ class CactMemory:
         c.abl_thompson = self._use_thompson
         self._store.abl_lifecycle = self._use_lifecycle
         self._store.abl_level_prior = self._use_level_prior
+        self._store.abl_decay = self._use_decay
         self._gate.abl_adaptive = self._use_adaptive_tau
 
         # Sync per-group TrustGate thresholds to TrustStore for lifecycle transitions
@@ -389,11 +393,12 @@ class CactMemory:
             self._generated_cnt += 1
 
         # Drift tracking + periodic decay
-        pred_err = abs(sv - self._store.mean(kid, ctx, "use"))
-        self._store.adapt_decay(pred_err)
-        self._drift_counter += 1
-        if self._drift_counter % 20 == 0:
-            self._store.decay_all()
+        if self._use_decay:
+            pred_err = abs(sv - self._store.mean(kid, ctx, "use"))
+            self._store.adapt_decay(pred_err)
+            self._drift_counter += 1
+            if self._drift_counter % 20 == 0:
+                self._store.decay_all()
 
         # Reset supervised flag — no longer in supervised context after recording
         self._last_was_supervised = False
