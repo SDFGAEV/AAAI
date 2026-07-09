@@ -85,7 +85,7 @@ class LifecycleManager:
                         data = json.load(f)
                     self._states = data.get("states", {})
                     self._history = data.get("history", {})
-                except Exception:
+                except (json.JSONDecodeError, OSError):
                     pass
 
     def _save(self):

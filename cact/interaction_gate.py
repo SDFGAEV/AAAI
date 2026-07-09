@@ -110,7 +110,8 @@ class InteractionGate:
         pi_syn, pi_conf = self._compute_interaction_probs(
             stats_i, stats_j, a_j, b_j, ucb_base, up_i, up_j)
 
-        return self._result(delta_mean, delta_lcb, state, recommendation, "")
+        return self._result(delta_mean, delta_lcb, state, recommendation, "",
+                          pi_syn=pi_syn, pi_conf=pi_conf)
 
     # ── Chain-level interaction check ──
     def check_chain(self, chain: List[Dict],
@@ -218,13 +219,14 @@ class InteractionGate:
 
     @staticmethod
     def _result(delta_mean: float, delta_lcb: float, state: str,
-                recommendation: str, detail: str = "") -> Dict:
+                recommendation: str, detail: str = "",
+                pi_syn: float = 0.5, pi_conf: float = 0.5) -> Dict:
         return {
             "delta_mean": round(delta_mean, 4),
             "delta_lcb": round(delta_lcb, 4),
             "state": state,
-            "pi_syn": 1.0 if state == SYNERGY else (0.0 if state == CONFLICT else 0.5),
-            "pi_conf": 1.0 if state == CONFLICT else (0.0 if state == SYNERGY else 0.5),
+            "pi_syn": pi_syn,
+            "pi_conf": pi_conf,
             "recommendation": recommendation,
             "detail": detail,
         }

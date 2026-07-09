@@ -321,7 +321,7 @@ class TrustStore:
                 pi = self.uplift_probability(kid, ctx)
                 ul = self.uplift_lcb(kid, ctx)
                 hu = self.harm_upper_bound(kid, ctx)
-            except Exception:
+            except (ValueError, TypeError, RuntimeError, ZeroDivisionError):
                 continue
             entry = {"pi_uplift": round(pi, 4), "uplift": round(ul, 4),
                      "harm_ucb": round(hu, 4), "is_harmful": 0}
