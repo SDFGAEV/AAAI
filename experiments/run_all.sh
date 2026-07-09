@@ -119,22 +119,23 @@ if $RUN_E2; then
         --workers "$WORKERS" --vlm_port "$VLM_PORT" --plan_model "$PLAN_MODEL"
 
     echo "=== E2: Running calibration optimization ==="
-    $PYTHON -c "
+    $PYTHON <<'PYEOF'
 from cact.trust_store import TrustStore
 from cact.trust_gate import TrustGate
 import json, os
 
-store = TrustStore(store_path='cact_ckpt/trust_store')
+store = TrustStore(store_path="cact_ckpt/trust_store")
 gate = TrustGate()
 calib = store.get_calibration_data()
 if calib:
     results = gate.calibrate_all_groups(calib)
-    gate.save_calibration('exp_results/calibration.json')
-    print(f'Calibration done. Groups: {list(calib.keys())}')
+    gate.save_calibration("exp_results/calibration.json")
+    print(f"Calibration done. Groups: {list(calib.keys())}")
     for g, r in results.items():
-        print(f'  {g}: tau={r.get(\"tau\",\"?\")} delta={r.get(\"delta\",\"?\")} harm={r.get(\"harm\",\"?\")} n={r.get(\"n_calib\",\"?\")}')
+        print(f"  {g}: tau={r.get('tau','?')} delta={r.get('delta','?')} harm={r.get('harm','?')} n={r.get('n_calib','?')}")
 else:
-    print('WARNING: No calibration data collected — using fixed defaults')
+    print("WARNING: No calibration data collected — using fixed defaults")
+PYEOF
     echo "[E2] PASSED"
 fi
 
