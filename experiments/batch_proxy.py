@@ -65,12 +65,14 @@ class BatchProxy:
                 rh["response"] = responses[i] if i < len(responses) else {"error": "missing"}
                 rh["ready"] = True
 
-        # Restart timer if new requests arrived during flush
+        # Restart timer if new requests arrived during flush.
+        # Set _timer_running BEFORE checking queue to avoid TOCTOU race
+        # with submit() starting its own timer.
         with self._lock:
+            self._timer_running = False
             if self._queue:
+                self._timer_running = True
                 threading.Timer(self.batch_window, self._flush).start()
-            else:
-                self._timer_running = False
 
     def _post_single(self, data: dict) -> dict:
         """Forward a single request to /chat."""

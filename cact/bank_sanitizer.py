@@ -24,8 +24,14 @@ MAX_DEDUP_GROUP_SIZE = 5
 
 # ── Quarantine: fields that must be present ──
 REQUIRED_CONTRACT_FIELDS = [
-    "gene", "type", "claimed_context", "preconditions", "non_applicable_contexts"
+    "gene", "type", "preconditions",
+    # Scope or legacy claimed_context (at least one must be present)
+    # Safety boundaries — check both v2 and legacy field names
 ]
+
+# Fields checked with dual key support (v2 + legacy fallback)
+REQUIRED_SCOPE_KEYS = ["scope", "claimed_context"]
+REQUIRED_SAFETY_KEYS = ["hard_non_applicable_contexts", "non_applicable_contexts"]
 
 # ── Merge: knowledge types eligible for merging ──
 MERGEABLE_TYPES = {"action_correction", "dependency_correction", "remedy"}
@@ -104,11 +110,18 @@ class BankSanitizer:
 
     @staticmethod
     def _is_complete(item: Dict) -> bool:
-        """A knowledge item is complete if all required contract fields are present."""
+        """A knowledge item is complete if all required contract fields are present.
+        Supports both v2 and legacy field names for scope and safety boundaries."""
         for field in REQUIRED_CONTRACT_FIELDS:
             val = item.get(field)
             if val is None or (isinstance(val, (list, dict, str)) and len(val) == 0):
                 return False
+        # Scope: at least one of scope or claimed_context must be present
+        if not any(item.get(k) for k in REQUIRED_SCOPE_KEYS):
+            return False
+        # Safety: at least one of hard_non_applicable_contexts or non_applicable_contexts
+        if not any(item.get(k) for k in REQUIRED_SAFETY_KEYS):
+            return False
         return True
 
     # ── Deduplication ──

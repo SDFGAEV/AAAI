@@ -189,7 +189,6 @@ class TrustGate:
         Returns:
             (allow, info_dict)
         """
-        CANDIDATE = "candidate"
         key = task_group or "_global"
         if getattr(self, 'abl_adaptive', True) and self.tau:
             tau = self.tau.get(key, 0.90)
@@ -277,18 +276,6 @@ class TrustGate:
         uncertainty = 4.0 * pi_uplift * (1.0 - pi_uplift) if pi_uplift else 1.0
         q = 0.05 + 0.20 * uncertainty * rw + 0.10 * sample_imbalance
         return max(0.05, min(0.30, q))
-
-    @staticmethod
-    def thompson_probe_rate(ess: float, pi_uplift: float,
-                            risk_level: str = "medium") -> float:
-        """Adaptive Thompson exploration rate (DEPRECATED: use thompson_probe.py)."""
-        if risk_level == "high": return 0.0
-        risk_weights = {"low": 1.5, "medium": 0.8}
-        rw = risk_weights.get(risk_level, 0.3)
-        uncertainty = 4.0 * pi_uplift * (1.0 - pi_uplift) if pi_uplift else 1.0
-        n_min = {"low": 5, "medium": 8, "high": 10}.get(risk_level, 8)
-        if ess >= n_min: return 0.0
-        return max(0.0, min(0.10, 0.15 * uncertainty * rw))
 
     # ── Persistence ──
     def get_config(self) -> Dict:

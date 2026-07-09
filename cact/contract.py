@@ -145,7 +145,7 @@ def infer_level_from_xenon(content: str, task_tier: str = "stone") -> str:
     if any(kw in content.lower() for kw in ["craft", "smelt", "equip", "build"]):
         if len(content.split()) > 30:
             return "functional"
-        return "atomic"
+        return "atomic_correction"
 
     # Dependency: item-to-item requirement corrections
     if any(kw in content.lower() for kw in ["requires", "prerequisite", "depends on",
@@ -156,7 +156,7 @@ def infer_level_from_xenon(content: str, task_tier: str = "stone") -> str:
     if any(kw in content.lower() for kw in ["retry", "failed", "do not", "avoid"]):
         return "failure_memory"
 
-    # Default by tier
+    # Default by tier — use "atomic_correction" to match KNOWLEDGE_LEVELS
     return "atomic_correction" if tier <= 2 else "functional"
 
 

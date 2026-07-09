@@ -231,7 +231,7 @@ class ParallelRunner:
         import yaml
         bench_path = os.path.join(_PROJ, "src", "optimus1", "conf",
                                   "benchmark", f"{benchmark}.yaml")
-        with open(bench_path) as f:
+        with open(bench_path, encoding='utf-8') as f:
             bench_cfg = yaml.safe_load(f)
 
         tasks = bench_cfg.get("all_task", [])

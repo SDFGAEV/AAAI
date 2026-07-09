@@ -91,12 +91,10 @@ class SafeThompsonProber:
         if risk_level == "high":
             return False, 0.0
 
-        q = self.probe_probability(
-            uncertainty=4.0 * (use_alpha / max(use_alpha + use_beta, 1e-8)) *
-                        (1.0 - use_alpha / max(use_alpha + use_beta, 1e-8)),
-            ess=ess,
-            risk_level=risk_level,
-        )
+        mean_use = use_alpha / max(use_alpha + use_beta, 1e-8)
+        uncertainty = 4.0 * mean_use * (1.0 - mean_use)
+        q = self.probe_probability(uncertainty=uncertainty, ess=ess,
+                                   risk_level=risk_level)
 
         if q <= 0.0 and not force_allow:
             return False, 0.0

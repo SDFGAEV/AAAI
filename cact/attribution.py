@@ -89,12 +89,9 @@ class OutcomeAttributor:
                 return AttributionLabel.EXECUTION_FAILURE
             return AttributionLabel.ENVIRONMENT_FAILURE
 
-        # Postcondition violated — knowledge didn't deliver
+        # Postcondition violated — contract breach regardless of base outcome
         if postcondition_satisfied is False:
-            # Check if base would have succeeded
-            if base_would_have_succeeded is True:
-                return AttributionLabel.CONTRACT_VIOLATION
-            return AttributionLabel.KNOWLEDGE_CAUSED_SUCCESS  # knowledge was the diff
+            return AttributionLabel.CONTRACT_VIOLATION
 
         # Ambiguous: cannot determine cause
         return AttributionLabel.UNCERTAIN

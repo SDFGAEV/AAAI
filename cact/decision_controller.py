@@ -266,9 +266,9 @@ class DecisionController:
                           scored: List[Dict],
                           state: Dict, context: Dict,
                           mode: str) -> DecisionResult:
-        """Apply active base logging and Thompson probing (only in non-eval modes)."""
-        if mode == "evaluation":
-            return result
+        """Apply active base logging and Thompson probing (only in non-eval modes).
+        Caller gates on mode — this method assumes mode != 'evaluation'."""
+        # Active base logging: possibly override reuse → force_base
 
         # Active base logging: possibly override reuse → force_base (skip if ablated)
         if self.abl_active_calib and result.decision == "reuse" and result.chosen_knowledge_id:

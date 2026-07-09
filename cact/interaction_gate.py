@@ -65,12 +65,6 @@ class InteractionGate:
         a_j, b_j = joint_stats.get("alpha", 1.0), joint_stats.get("beta", 1.0)
         n_joint = a_j + b_j - 2.0
 
-        # Individual uplift LCBs (for reference, not used directly in delta)
-        up_i = self._lcb(stats_i["use_alpha"], stats_i["use_beta"]) - \
-               self._ucb(stats_i.get("base_alpha", 1.0), stats_i.get("base_beta", 1.0))
-        up_j = self._lcb(stats_j["use_alpha"], stats_j["use_beta"]) - \
-               self._ucb(stats_j.get("base_alpha", 1.0), stats_j.get("base_beta", 1.0))
-
         if n_joint < 2:
             return self._result(0.0, 0.0, UNKNOWN, "pair_probe",
                                "insufficient_joint_data")
@@ -118,7 +112,7 @@ class InteractionGate:
 
         # Compute posterior probabilities via Monte Carlo from Beta posteriors
         pi_syn, pi_conf = self._compute_interaction_probs(
-            stats_i, stats_j, a_j, b_j, ucb_base, up_i, up_j)
+            stats_i, stats_j, a_j, b_j)
 
         return self._result(delta_mean, delta_lcb, state, recommendation, "",
                           pi_syn=pi_syn, pi_conf=pi_conf)
@@ -199,11 +193,10 @@ class InteractionGate:
     @staticmethod
     def _compute_interaction_probs(stats_i: Dict, stats_j: Dict,
                                     a_joint: float, b_joint: float,
-                                    ucb_base: float, up_i: float, up_j: float,
                                     n_samples: int = 5000) -> Tuple[float, float]:
         """Compute P(synergy) and P(conflict) via Monte Carlo from Beta posteriors.
 
-        Samples from the three independent Beta posteriors (use_i, use_j, joint)
+        Samples from independent Beta posteriors (use_i, use_j, joint, base)
         and computes the empirical probability that Δ_int exceeds the synergy
         threshold or falls below the conflict threshold.
         """

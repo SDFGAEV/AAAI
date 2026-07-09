@@ -26,7 +26,7 @@ Knowledge lifecycle: Candidate → Quarantined → Probation → Certified → D
 No RL rollback — only knowledge-level governance.
 """
 
-import logging, numpy as np, json, os, copy, time
+import logging, numpy as np, json, os, copy, time, random
 from typing import Dict, List, Optional, Tuple
 
 from .trust_store import TrustStore, CANDIDATE, QUARANTINED, PROBATION, CERTIFIED, DEPRECATED, DISABLED
@@ -400,13 +400,14 @@ class CactMemory:
         candidates = [{
             "knowledge_id": kid,
             "type": contract.get("type", "skill"),
-            "level": contract.get("level", "atomic"),
+            "level": contract.get("level", "atomic_correction"),
             "gene": contract.get("gene", waypoint),
             "full_text": contract.get("full_text", ""),
-            "claimed_context": contract.get("claimed_context", {}),
+            "claimed_context": contract.get("scope", contract.get("claimed_context", {})),
             "preconditions": contract.get("preconditions", []),
             "postconditions": contract.get("postconditions", []),
-            "non_applicable_contexts": contract.get("non_applicable_contexts", []),
+            "non_applicable_contexts": contract.get(
+                "hard_non_applicable_contexts", contract.get("non_applicable_contexts", [])),
         }]
 
         # Build state from observation for contract precondition checking.

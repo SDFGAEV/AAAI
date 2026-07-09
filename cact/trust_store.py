@@ -320,7 +320,9 @@ class TrustStore:
             stat = parts[-1]
             if stat != "use": continue
             contract = self.get_contract(kid)
-            group = contract.get("group", "crafting") if contract else "crafting"
+            # Group is stored at scope.task_group in v2 contracts, with legacy fallback
+            group = (contract.get("scope", {}).get("task_group") or
+                     contract.get("group", "crafting")) if contract else "crafting"
             try:
                 pi = self.uplift_probability(kid, ctx)
                 ul = self.uplift_lcb(kid, ctx)
