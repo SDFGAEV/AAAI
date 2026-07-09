@@ -63,7 +63,7 @@ def compute_ece(data: List[Dict], n_bins: int = 5) -> float:
     """Expected Calibration Error."""
     pairs = [(x.get("pi_uplift", x.get("trust_score", 0.5)),
               1.0 if x.get("outcome_success") else 0.0)
-             for x in data if x.get("pi_uplift") or x.get("trust_score")]
+             for x in data if "pi_uplift" in x or "trust_score" in x]
     if len(pairs) < n_bins: return 0.0
     scores = np.array([p[0] for p in pairs])
     outcomes = np.array([p[1] for p in pairs])

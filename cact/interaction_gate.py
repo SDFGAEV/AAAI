@@ -65,7 +65,7 @@ class InteractionGate:
         a_j, b_j = joint_stats.get("alpha", 1.0), joint_stats.get("beta", 1.0)
         n_joint = a_j + b_j - 2.0
 
-        # Individual uplifts
+        # Individual uplift LCBs (for reference, not used directly in delta)
         up_i = self._lcb(stats_i["use_alpha"], stats_i["use_beta"]) - \
                self._ucb(stats_i.get("base_alpha", 1.0), stats_i.get("base_beta", 1.0))
         up_j = self._lcb(stats_j["use_alpha"], stats_j["use_beta"]) - \
@@ -75,16 +75,26 @@ class InteractionGate:
             return self._result(0.0, 0.0, UNKNOWN, "pair_probe",
                                "insufficient_joint_data")
 
-        # Joint uplift LCB minus individual uplifts
-        lcb_joint = float(beta_dist.ppf(0.05, a_j, b_j))
-        ucb_base = self._ucb(stats_i.get("base_alpha", 1.0),
-                            stats_i.get("base_beta", 1.0))
-        up_ij = lcb_joint - ucb_base
-        delta_mean = up_ij - up_i - up_j
+        # Interaction effect: δ = p_joint - p_use_i - p_use_j + p_base
+        # Consistent with Monte Carlo formula at _compute_interaction_probs
+        ai, bi = stats_i["use_alpha"], stats_i["use_beta"]
+        aj, bj = stats_j["use_alpha"], stats_j["use_beta"]
+        a_base = stats_i.get("base_alpha", 1.0)
+        b_base = stats_i.get("base_beta", 1.0)
 
-        # Confidence bounds on interaction effect
-        lcb_half = float(beta_dist.ppf(0.025, a_j, b_j))
-        delta_lcb = (lcb_half - ucb_base) - up_i - up_j
+        # Posterior mean estimates
+        mean_joint = a_j / (a_j + b_j)
+        mean_use_i = ai / (ai + bi)
+        mean_use_j = aj / (aj + bj)
+        mean_base = a_base / (a_base + b_base)
+        delta_mean = mean_joint - mean_use_i - mean_use_j + mean_base
+
+        # Conservative LCB: lcb(joint) - ucb(use_i) - ucb(use_j) + lcb(base)
+        lcb_joint = float(beta_dist.ppf(0.05, a_j, b_j))
+        ucb_use_i = self._ucb(ai, bi)
+        ucb_use_j = self._ucb(aj, bj)
+        lcb_base = self._lcb(a_base, b_base)
+        delta_lcb = lcb_joint - ucb_use_i - ucb_use_j + lcb_base
 
         # State classification
         if delta_lcb > DELTA_INT:

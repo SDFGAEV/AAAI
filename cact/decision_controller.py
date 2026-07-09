@@ -282,11 +282,11 @@ class DecisionController:
 
             should_force, q = self.al.should_force_base(
                 uncertainty, imbalance, danger, context.get("risk_level", "medium"))
-            result.propensity_base = q
-            result.propensity_reuse = 1.0 - q
 
             if should_force:
                 result.decision = "force_base"
+                result.propensity_base = q
+                result.propensity_reuse = 1.0 - q
                 return result
 
         # Thompson probing: possibly allow reuse for uncertain knowledge (skip if ablated)

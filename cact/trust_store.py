@@ -127,32 +127,32 @@ class TrustStore:
         return d["alpha"], d["beta"]
 
     # ── Recording ──
-    def record_use(self, kid: str, context: str, success: float):
+    def record_use(self, kid: str, context: str, success: float, save: bool = True):
         d = self._get(kid, context, "use")
         d["alpha"] += success
         d["beta"] += (1.0 - success)
-        self._save()
+        if save: self._save()
 
-    def record_base(self, kid: str, context: str, success: float):
+    def record_base(self, kid: str, context: str, success: float, save: bool = True):
         d = self._get(kid, context, "base")
         d["alpha"] += success
         d["beta"] += (1.0 - success)
-        self._save()
+        if save: self._save()
 
-    def record_harm(self, kid: str, context: str, harmful: float):
+    def record_harm(self, kid: str, context: str, harmful: float, save: bool = True):
         d = self._get(kid, context, "harm")
         d["alpha"] += harmful
         d["beta"] += (1.0 - harmful)
-        self._save()
+        if save: self._save()
 
     def record_episode(self, kid: str, context: str, used: bool = True,
                        success: float = 0.0, is_harmful: float = 0.0):
         """Main recording method called after each knowledge use/fallback decision."""
         if used:
-            self.record_use(kid, context, success)
-            self.record_harm(kid, context, is_harmful)
+            self.record_use(kid, context, success, save=False)
+            self.record_harm(kid, context, is_harmful, save=False)
         else:
-            self.record_base(kid, context, success)
+            self.record_base(kid, context, success, save=False)
 
         # Auto lifecycle transitions (use TrustGate calibrated thresholds when available)
         if getattr(self, 'abl_lifecycle', True):
@@ -175,6 +175,7 @@ class TrustStore:
             if new_state:
                 self.lifecycle.transition(kid, new_state, "auto_after_observation")
 
+        self._save()
     def sync_calibration(self, thresholds: Dict[str, Dict[str, float]]):
         """Sync per-group calibrated thresholds from TrustGate.
 
@@ -202,7 +203,7 @@ class TrustStore:
     def total_count(self, kid: str, context: str, stat: str = "use") -> float:
         a, b = self.get_stats(kid, context, stat)
         a0, b0 = self._effective_prior(stat, kid)
-        return a + b - a0 - b0
+        return max(0.0, a + b - a0 - b0)
 
     def ess(self, kid: str, context: str) -> float:
         return (self.total_count(kid, context, "use") +
@@ -259,8 +260,12 @@ class TrustStore:
         self._decay_events += 1
         for k in list(self._data.keys()):
             stat = k.rsplit("|", 1)[-1]
-            kid = k.split("|")[0] if "|" in k else ""
-            a0, b0 = self._effective_prior(stat, kid)
+            kid_raw = k.split("|")[0] if "|" in k else ""
+            # Pair keys like "pair:kid_i:kid_j|ctx|joint" have invalid kid
+            if kid_raw.startswith("pair:"):
+                a0, b0 = self.DEFAULT_PRIORS.get(stat, (1.0, 1.0))
+            else:
+                a0, b0 = self._effective_prior(stat, kid_raw)
             d = self._data[k]
             d["alpha"], d["beta"] = self.decay.decay_params(
                 d["alpha"], d["beta"], a0, b0)

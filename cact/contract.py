@@ -207,7 +207,8 @@ class ContractChecker:
         """Evaluate a safety context flag."""
         flag_map = {
             "lava_nearby": lambda s: s.get("near_lava", False),
-            "low_health": lambda s: s.get("health", 20) < 5,
+            "low_health": lambda s: s.get("low_health",
+                                          s.get("health", 20) < 5),
             "combat": lambda s: s.get("in_combat", False),
             "near_cliff": lambda s: s.get("near_cliff", False),
             "irreversible_resource_constraint": lambda s:
