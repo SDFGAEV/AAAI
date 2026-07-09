@@ -215,9 +215,10 @@ class TrustStore:
         """π_u(c) = P(p_use > p_base | data) — exact posterior probability."""
         a1, b1 = self.get_stats(kid, context, "use")
         a2, b2 = self.get_stats(kid, context, "base")
-        # Edge case: when a2 < 1 (weak prior), use Monte Carlo approximation
-        if int(a2) < 1:
-            n_samples = 2000
+        # Use Monte Carlo when exact formula is impractical:
+        # a2 < 1 (weak prior) or a2 > 500 (large loops → slow, numerical underflow)
+        if int(a2) < 1 or int(a2) > 500:
+            n_samples = 5000
             samples_use = np.random.beta(a1, b1, size=n_samples)
             samples_base = np.random.beta(max(0.1, a2), b2, size=n_samples)
             return float(np.mean(samples_use > samples_base))
@@ -226,7 +227,6 @@ class TrustStore:
             term = (betaln(a1 + i, b1 + b2) - math.log(b2 + i)
                     - betaln(1 + i, b2) - betaln(a1, b1))
             total += math.exp(term)
-        # Additionally clamp extremely small values to avoid underflow
         if total < 1e-15:
             return 0.0
         return min(total, 1.0 - 1e-8)
@@ -236,8 +236,7 @@ class TrustStore:
         return self.lcb(kid, context, "use", delta) - \
                self.ucb(kid, context, "base", delta)
 
-    def harm_upper_bound(self, kid: str, context: str, q: float = 0.95,
-                          delta: float = 0.05) -> float:
+    def harm_upper_bound(self, kid: str, context: str, q: float = 0.95) -> float:
         """h⁺(c) = Q_{0.95}[p_harm] — 95% posterior upper bound."""
         return self.ucb(kid, context, "harm", 1 - q)
 

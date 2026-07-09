@@ -101,13 +101,16 @@ class CactMemory:
         # State tracking
         self._prev_kid = None
         self._last_was_supervised = False
-        self._knowledge_cnt = 0
+        self._registered_cnt = 0    # counter for register_knowledge
+        self._generated_cnt = 0     # counter for knowledge generated in save_success_failure
         self._current_difficulty = "medium"
         self._current_group = "crafting"
         self._current_observation: Dict = {}
         self._current_info: Dict = {}
         self._pairwise_harm: Dict[Tuple[str, str], Tuple[int, int]] = {}
         self._drift_counter = 0
+        self._logs_dumped = False   # track whether dump_logs has been called
+        self._last_sync_hash = 0    # cache key for _sync_ablation_flags
 
     # ── Pass-through to XENON DecomposedMemory ──
     @property
@@ -130,20 +133,29 @@ class CactMemory:
     def current_environment(self, v): pass
 
     def _sync_ablation_flags(self):
-        """Pass ablation flags to all affected components."""
+        """Pass ablation flags to all affected components. Cached per state hash."""
+        # Build a hash of current ablation + threshold state to skip redundant syncs
+        tg = self._gate
+        state_key = hash((
+            self._use_contract, self._use_active_calib, self._use_interaction,
+            self._use_thompson, self._use_lifecycle, self._use_level_prior,
+            self._use_adaptive_tau,
+            tuple(sorted(tg.tau.items())), tuple(sorted(tg.harm.items())),
+        ))
+        if state_key == self._last_sync_hash:
+            return
+        self._last_sync_hash = state_key
+
         c = self._controller
-        # Decision controller flags
         c.abl_contract = self._use_contract
         c.abl_active_calib = self._use_active_calib
         c.abl_interaction = self._use_interaction
         c.abl_thompson = self._use_thompson
-        # TrustStore flags
         self._store.abl_lifecycle = self._use_lifecycle
         self._store.abl_level_prior = self._use_level_prior
-        # TrustGate flags
         self._gate.abl_adaptive = self._use_adaptive_tau
+
         # Sync per-group TrustGate thresholds to TrustStore for lifecycle transitions
-        tg = self._gate
         per_group = {}
         for grp in ["crafting", "mining", "exploration", "tech_tree",
                      "failure_recovery", "interaction_stress"]:
@@ -203,11 +215,14 @@ class CactMemory:
             "interaction/interaction.jsonl": self.interaction_logs,
             "lifecycle/lifecycle.jsonl": self.lifecycle_logs,
         }
+        # Truncate on first call to avoid mixing with previous run data
+        mode = "w" if not self._logs_dumped else "a"
+        self._logs_dumped = True
         for fname, data in log_files.items():
             if data:
                 path = os.path.join(self.log_dir, fname)
                 os.makedirs(os.path.dirname(path), exist_ok=True)
-                with open(path, "a") as f:
+                with open(path, mode) as f:
                     for e in data:
                         f.write(json.dumps(e, ensure_ascii=False) + "\n")
         # Clear buffers
@@ -234,7 +249,7 @@ class CactMemory:
         contract = self._extractor.extract(knowledge_dict)
         kid = contract.knowledge_id
         self._store.register_contract(kid, contract.to_dict())
-        self._knowledge_cnt += 1
+        self._registered_cnt += 1
 
         # Log contract
         self.contract_logs.append({
@@ -309,8 +324,8 @@ class CactMemory:
 
         # Knowledge generation
         if is_success and ess >= 2:
-            self.episode_logs[-1]["knowledge_generated"] = f"s_{waypoint}_{self._knowledge_cnt:02d}"
-            self._knowledge_cnt += 1
+            self.episode_logs[-1]["knowledge_generated"] = f"gen_{waypoint}_{self._generated_cnt:02d}"
+            self._generated_cnt += 1
 
         # Drift tracking + periodic decay
         pred_err = abs(sv - self._store.mean(kid, ctx, "use"))
@@ -318,6 +333,9 @@ class CactMemory:
         self._drift_counter += 1
         if self._drift_counter % 20 == 0:
             self._store.decay_all()
+
+        # Reset supervised flag — no longer in supervised context after recording
+        self._last_was_supervised = False
 
     # ── is_succeeded_waypoint (MAIN GATE) ──
     def is_succeeded_waypoint(self, waypoint):

@@ -134,9 +134,9 @@ def compute_cfr(interaction_logs: List[Dict]) -> float:
 
 
 def compute_kpr(lifecycle_logs: List[Dict]) -> float:
-    """Knowledge Pollution Rate — certified knowledge later deprecated for harm."""
+    """Knowledge Pollution Rate — unique certified knowledge later deprecated for harm."""
     ever_certified = set()
-    deprecated_from_certified = 0
+    deprecated_kids = set()
     for event in lifecycle_logs:
         kid = event.get("knowledge_id", "")
         old_s = event.get("old_status", "")
@@ -144,8 +144,8 @@ def compute_kpr(lifecycle_logs: List[Dict]) -> float:
         if new_s == "certified":
             ever_certified.add(kid)
         if old_s == "certified" and new_s in ("deprecated", "disabled"):
-            deprecated_from_certified += 1
-    return deprecated_from_certified / max(len(ever_certified), 1)
+            deprecated_kids.add(kid)
+    return len(deprecated_kids) / max(len(ever_certified), 1)
 
 
 def compute_csr(reuse_logs: List[Dict]) -> float:
