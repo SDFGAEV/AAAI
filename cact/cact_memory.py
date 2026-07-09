@@ -119,6 +119,7 @@ class CactMemory:
         self._logs_dumped = False   # track whether dump_logs has been called
         self._last_sync_hash = 0    # cache key for _sync_ablation_flags
         self._waypoint_to_kid: Dict[str, str] = {}  # waypoint → registered knowledge_id
+        self._inventory_snapshot: Dict[str, int] = {}  # item→count when knowledge was used
 
     # ── Pass-through to XENON DecomposedMemory ──
     @property
@@ -329,13 +330,25 @@ class CactMemory:
 
         # ── Attribution-aware lifecycle update ──
         if not self.frozen:
+            # Compute progress delta from inventory snapshot
+            progress_delta = 0.0
+            if self._inventory_snapshot and self._current_observation:
+                obs_inv = self._current_observation.get("inventory", {})
+                if isinstance(obs_inv, dict):
+                    for item, snap_count in self._inventory_snapshot.items():
+                        cur = int(obs_inv.get(item, 0))
+                        if cur > snap_count:
+                            progress_delta = 1.0
+                            break
+            self._inventory_snapshot = {}  # Clear for next decision
+
             attribution = self._attributor.attribute(
                 success=is_success,
                 is_harmful=bool(is_harmful),
                 contract_violated=contract_violated,
                 interaction_conflict=interaction_conflict,
                 used_knowledge=was_used,
-                progress_delta=0.0,  # Updated by caller if available
+                progress_delta=progress_delta,
             )
             # Apply attribution-aware update
             attr_result = apply_attribution_to_lifecycle(
@@ -494,6 +507,16 @@ class CactMemory:
         trusted = result.decision in ("reuse", "probe")
         self._last_was_supervised = getattr(result, "supervised", False)
 
+        # Snapshot inventory when knowledge is used, for progress_delta computation
+        if trusted and obs:
+            inv = obs.get("inventory", {})
+            self._inventory_snapshot = {}
+            if isinstance(inv, dict):
+                for k, v in inv.items():
+                    try:
+                        self._inventory_snapshot[k] = v.item() if hasattr(v, 'item') else int(v)
+                    except (TypeError, ValueError):
+                        pass
         if trusted:
             is_ok, sg = self._mem.is_succeeded_waypoint(waypoint)
             final = (True, sg) if is_ok else (False, None)

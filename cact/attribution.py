@@ -69,12 +69,15 @@ class OutcomeAttributor:
             # Base planner failed on its own — knowledge wasn't the differentiator
             return AttributionLabel.BASE_ALSO_FAILED
 
-        # Knowledge was used and task failed
-        if is_harmful:
-            return AttributionLabel.HARMFUL_REUSE
-
+        # Knowledge was used and task failed.
+        # Check contract_violated first: when a contract exists and its safety
+        # bounds are breached, that's more specific and actionable than generic
+        # "harmful reuse" — the contract itself needs revision.
         if contract_violated:
             return AttributionLabel.CONTRACT_VIOLATION
+
+        if is_harmful:
+            return AttributionLabel.HARMFUL_REUSE
 
         if interaction_conflict:
             return AttributionLabel.CHAIN_FAILURE
