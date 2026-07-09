@@ -22,7 +22,8 @@ from enum import Enum
 class AttributionLabel(str, Enum):
     """Outcome attribution for lifecycle updates."""
     KNOWLEDGE_CAUSED_SUCCESS = "knowledge_caused_success"
-    BASE_WOULD_SUCCEED      = "base_would_succeed"
+    BASE_WOULD_SUCCEED      = "base_would_succeed"       # base succeeded without knowledge
+    BASE_ALSO_FAILED        = "base_also_failed"         # base also failed (knowledge not the diff)
     ENVIRONMENT_FAILURE     = "environment_failure"
     NAVIGATION_FAILURE      = "navigation_failure"
     EXECUTION_FAILURE       = "execution_failure"
@@ -65,8 +66,8 @@ class OutcomeAttributor:
 
         # ── Failure cases ──
         if not used_knowledge:
-            # Base planner failed on its own — not knowledge fault
-            return AttributionLabel.BASE_WOULD_SUCCEED  # counterfactual: base also fails
+            # Base planner failed on its own — knowledge wasn't the differentiator
+            return AttributionLabel.BASE_ALSO_FAILED
 
         # Knowledge was used and task failed
         if is_harmful:
@@ -115,7 +116,9 @@ class OutcomeAttributor:
         return label in REWARD
 
     def should_count_base(self, label: AttributionLabel) -> bool:
-        """Whether this attribution provides base (counterfactual) signal."""
+        """Whether this attribution provides positive base (counterfactual) signal.
+        Only BASE_WOULD_SUCCEED (base succeeded without knowledge) counts.
+        BASE_ALSO_FAILED means knowledge wasn't the differentiator — not counted."""
         COUNT_BASE = {
             AttributionLabel.BASE_WOULD_SUCCEED,
         }
@@ -128,6 +131,7 @@ class OutcomeAttributor:
             AttributionLabel.NAVIGATION_FAILURE,
             AttributionLabel.EXECUTION_FAILURE,
             AttributionLabel.RESOURCE_CONFLICT,
+            AttributionLabel.BASE_ALSO_FAILED,
         }
         return label in NO_FAULT
 

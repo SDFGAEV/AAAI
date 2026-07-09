@@ -118,6 +118,7 @@ class CactMemory:
         self._drift_counter = 0
         self._logs_dumped = False   # track whether dump_logs has been called
         self._last_sync_hash = 0    # cache key for _sync_ablation_flags
+        self._waypoint_to_kid: Dict[str, str] = {}  # waypoint → registered knowledge_id
 
     # ── Pass-through to XENON DecomposedMemory ──
     @property
@@ -268,6 +269,15 @@ class CactMemory:
         self._store.register_contract(kid, contract.to_dict())
         self._registered_cnt += 1
 
+        # Record waypoint→kid mapping for later lookup in save_success_failure
+        wp = knowledge_dict.get("subgoal", knowledge_dict.get("waypoint", ""))
+        if not wp:
+            # Infer from gene: first substantive words typically contain the waypoint
+            gene = contract.gene or ""
+            wp = gene.split()[0] if gene else ""
+        if wp:
+            self._waypoint_to_kid[wp] = kid
+
         # Log contract
         self.contract_logs.append({
             "knowledge_id": kid,
@@ -287,7 +297,8 @@ class CactMemory:
         """Record outcome after a knowledge use/failure with attribution."""
         self._mem.save_success_failure(waypoint, language_action_str, is_success)
         sv = 1.0 if is_success else 0.0
-        kid = f"skill:{waypoint}"
+        # Look up the registered knowledge_id for this waypoint
+        kid = self._waypoint_to_kid.get(waypoint, f"skill:{waypoint}")
         ctx = self._bucket.encode(knowledge_type="skill",
                                   subgoal_type=self._infer_subgoal_type(waypoint),
                                   task_tier=self._infer_tier(waypoint))
@@ -305,7 +316,12 @@ class CactMemory:
 
         # Contract / interaction status
         contract = self._store.get_contract(kid)
-        contract_violated = (not is_success and hu >= 0.10) if contract else False
+        # Contract violation: prefer explicit postcondition check from decision result,
+        # fall back to harm_ucb proxy (high harm rate suggests contract not protective)
+        contract_violated = (
+            last.contract_violation_after if last and last.contract_violation_after
+            else ((not is_success and hu >= 0.10) if contract else False)
+        )
         interaction_conflict = not last.interaction_safe if last else False
         csr_before = last.contract_satisfied_before if last else True
         is_harmful = 1 if (not is_success and hu >= 0.10) else 0
@@ -374,7 +390,7 @@ class CactMemory:
         ctx = self._bucket.encode(knowledge_type="skill",
                                   subgoal_type=self._infer_subgoal_type(waypoint),
                                   task_tier=self._infer_tier(waypoint))
-        kid = f"skill:{waypoint}"
+        kid = self._waypoint_to_kid.get(waypoint, f"skill:{waypoint}")
         task_grp = self._infer_group(waypoint)
         lc = self._store.get_lifecycle_state(kid)
         ess = self._store.ess(kid, ctx)
