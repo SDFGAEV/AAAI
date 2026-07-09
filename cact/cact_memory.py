@@ -518,12 +518,12 @@ class CactMemory:
             result.decision = "reuse"
         elif self.method == "BankCuration" or self.method == "Online-BankCuration":
             result.decision = "reuse" if self._store.mean(kid, ctx, "use") >= 0.3 else "fallback"
-        elif self.method == "LifecycleSuccessGate":
+        elif self.method == "LifecycleSuccessGate" or self.method == "Online-SuccessLifecycle":
             if lc in (QUARANTINED, DEPRECATED, DISABLED):
                 result.decision = "fallback"
             else:
                 result.decision = "reuse" if self._store.mean(kid, ctx, "use") >= 0.5 else "fallback"
-        elif self.method == "FixedBayes":
+        elif self.method == "FixedBayes" or self.method == "Online-FixedBayes":
             if self._store.total_count(kid, ctx, "use") < 1:
                 result.decision = "reuse"
             else:

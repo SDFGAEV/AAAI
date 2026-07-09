@@ -80,8 +80,13 @@ class KnowledgeContract:
     status: str = CANDIDATE
 
     def to_dict(self) -> Dict:
+        # Mirror legacy fields to v2 before serialization
+        if not self.scope and self.claimed_context:
+            self.scope = dict(self.claimed_context)
+        if not self.hard_non_applicable_contexts and self.non_applicable_contexts:
+            self.hard_non_applicable_contexts = list(self.non_applicable_contexts)
         d = asdict(self)
-        # Remove backward-compat alias from serialization
+        # Remove backward-compat alias from serialization (data is now in v2 fields)
         d.pop("non_applicable_contexts", None)
         d.pop("claimed_context", None)
         return d
@@ -406,8 +411,8 @@ class ContractExtractor:
             if "lava_nearby" not in safety:
                 safety.append("lava_nearby")
         if any(w in content_lower for w in ["combat", "mob", "zombie", "skeleton"]):
-            if "combat" not in safety:
-                safety.append("combat")
+            if "combat_active" not in safety:
+                safety.append("combat_active")
         if any(w in content_lower for w in ["diamond", "rare", "precious"]):
             if "irreversible_resource_constraint" not in safety:
                 safety.append("irreversible_resource_constraint")

@@ -81,15 +81,14 @@ class BankSanitizer:
         # Step 4: Filter already-registered
         clean = [m for m in merged if m.get("knowledge_id") not in existing]
 
-        # Quarantined items are returned as candidates but with quarantine status;
-        # they can be registered but only in Quarantined lifecycle state.
-        quarantined_marked = []
+        # Quarantined items: mark status but do NOT include in clean candidates.
+        # They are logged and can be manually reviewed, but are NOT passed to
+        # ContractExtractor for active admission.
         for q in quarantined:
             q["_sanitizer_action"] = "quarantine"
             q["status"] = "quarantined"
-            quarantined_marked.append(q)
 
-        return clean + quarantined_marked, self._action_log
+        return clean, self._action_log
 
     # ── Completeness check ──
     def _partition_by_completeness(self, candidates: List[Dict]) -> Tuple[List[Dict], List[Dict]]:

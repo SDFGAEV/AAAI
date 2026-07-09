@@ -143,6 +143,7 @@ def apply_attribution_to_lifecycle(
 ) -> Dict:
     """Apply attribution-aware update to lifecycle and trust store.
 
+    Records data and triggers lifecycle transitions, then persists.
     Returns dict with update summary for logging.
     """
     if attributor is None:
@@ -154,28 +155,49 @@ def apply_attribution_to_lifecycle(
         "action": "none",
     }
 
+    used = False
     if attributor.should_reward(attribution):
-        # Knowledge caused success → record use + promote
         trust_store.record_use(kid, context, success, save=False)
         trust_store.record_harm(kid, context, is_harmful, save=False)
+        used = True
         result["action"] = "reward"
 
     elif attributor.should_penalize(attribution):
-        # Knowledge caused harm → record harm + demote
+        trust_store.record_use(kid, context, success, save=False)
         trust_store.record_harm(kid, context, is_harmful, save=False)
+        used = True
         result["action"] = "penalize"
 
     elif attributor.should_count_base(attribution):
-        # Base outcome → record base counterfactual
         trust_store.record_base(kid, context, success, save=False)
         result["action"] = "count_base"
 
     elif attributor.is_no_fault(attribution):
-        # External factor → no penalty, no reward
         result["action"] = "no_fault"
 
     else:
-        # Uncertain → log for audit, no action
         result["action"] = "uncertain"
+
+    # Trigger lifecycle transitions (same logic as record_episode)
+    if used and getattr(trust_store, 'abl_lifecycle', True):
+        n = trust_store.total_count(kid, context, "use")
+        pi = trust_store.uplift_probability(kid, context)
+        hu = trust_store.harm_upper_bound(kid, context)
+
+        tau, h_star = 0.88, 0.10
+        if hasattr(trust_store, '_synced_thresholds') and trust_store._synced_thresholds:
+            contract = trust_store.get_contract(kid)
+            group = contract.get("group", "crafting") if contract else "crafting"
+            thresholds = trust_store._synced_thresholds
+            tau = thresholds.get(group, {}).get("tau", 0.88)
+            h_star = thresholds.get(group, {}).get("harm", 0.10)
+
+        new_state = trust_store.lifecycle.evaluate_auto_transition(
+            kid, pi, hu, tau, h_star, int(n))
+        if new_state:
+            trust_store.lifecycle.transition(kid, new_state, "auto_after_observation")
+
+    # Persist all changes
+    trust_store._save()
 
     return result
