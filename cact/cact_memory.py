@@ -37,6 +37,7 @@ from .decision_controller import DecisionController
 from .interaction_gate import InteractionGate
 from .active_logging import ActiveBaseLogger
 from .thompson_probe import SafeThompsonProber
+from .bank_sanitizer import BankSanitizer
 
 
 class CactMemory:
@@ -55,6 +56,7 @@ class CactMemory:
         self._use_level_prior = True
         self._use_lifecycle = True
         self._use_thompson = True
+        self._use_sanitizer = True
 
         # Parse method name for ablation variants
         if "NoContract" in method or "no_Contract" in method:
@@ -71,6 +73,8 @@ class CactMemory:
             self._use_lifecycle = False
         if "NoThompson" in method or "no_Thompson" in method:
             self._use_thompson = False
+        if "NoSanitizer" in method or "no_Sanitizer" in method:
+            self._use_sanitizer = False
 
         # Core C-ACT components
         self._store = TrustStore(store_path or "cact_ckpt/trust_store")
@@ -82,6 +86,7 @@ class CactMemory:
         self._al = ActiveBaseLogger(
             log_path=os.path.join(log_dir, "base", "propensity.jsonl") if log_dir else None)
         self._tp = SafeThompsonProber()
+        self._sanitizer = BankSanitizer()
         self._controller = DecisionController(
             self._store, self._gate, self._ig, self._al, self._tp, self._checker)
 
@@ -244,8 +249,18 @@ class CactMemory:
             e["tokens"] = e.get("tokens", 0) + input_tokens + output_tokens
 
     # ── Knowledge contract registration ──
-    def register_knowledge(self, knowledge_dict: Dict) -> str:
-        """Extract contract from raw knowledge and register in TrustStore."""
+    def register_knowledge(self, knowledge_dict: Dict) -> Optional[str]:
+        """Extract contract from raw knowledge, sanitize, and register in TrustStore.
+
+        Returns None if the knowledge is deduplicated or quarantined without contract.
+        """
+        # Pass through Bank Sanitizer before contract extraction
+        if self._use_sanitizer:
+            clean_list, actions = self._sanitizer.sanitize([knowledge_dict])
+            if not clean_list:
+                return None  # Deduplicated or discarded
+            knowledge_dict = clean_list[0]
+
         contract = self._extractor.extract(knowledge_dict)
         kid = contract.knowledge_id
         self._store.register_contract(kid, contract.to_dict())
@@ -260,7 +275,7 @@ class CactMemory:
             "claimed_context": contract.claimed_context,
             "expected_uplift": contract.expected_uplift,
             "risk_bound": contract.risk_bound,
-            "status": CANDIDATE,
+            "status": knowledge_dict.get("status", CANDIDATE),
             "source_episode": contract.source_episode,
         })
         return kid

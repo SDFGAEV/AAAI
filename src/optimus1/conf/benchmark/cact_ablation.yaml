@@ -1,0 +1,32 @@
+# @package _global_
+defaults:
+  - _self_
+# C-ACT E4: Ablation Study — 12 tasks x 5 seeds x 8 variants = 480 episodes
+# Hardest sub-population from E3: tech_tree(4) + failure_recovery(4) + interaction_stress(4)
+env:
+  name: CACTTaskEnv-v0
+  max_minutes: 3
+  times: 1
+  prefer_biome: forest
+  initial_inventory: []
+
+all_task:
+# ── Tech Tree (4): long-chain dependency ──
+- {id: 0,  type: craft,  instruction: "Tech tree: stone pickaxe → mine iron ore → furnace → smelt → iron pickaxe.", goal: iron_pickaxe,  group: tech_tree,     difficulty: hard}
+- {id: 1,  type: craft,  instruction: "Tech tree: iron pickaxe → mine diamond → craft diamond pickaxe.",        goal: diamond_pickaxe,  group: tech_tree,     difficulty: hard}
+- {id: 2,  type: craft,  instruction: "Tech tree: stone pickaxe → iron ore → smelt → iron ingot → iron sword.", goal: iron_sword,       group: tech_tree,     difficulty: hard}
+- {id: 3,  type: mine,   instruction: "Tech tree: iron pickaxe → diamond → diamond pickaxe → obsidian.",        goal: obsidian,         group: tech_tree,     difficulty: hard}
+
+# ── Failure Recovery (4): remedy effectiveness ──
+- {id: 4,  type: mine,   instruction: "Mine iron ore with wooden pickaxe → fails → switch to stone → obtain ore.", goal: iron_ore,       group: failure_recovery, difficulty: hard}
+- {id: 5,  type: mine,   instruction: "Mine diamond with stone pickaxe → fails → switch to iron → obtain diamond.", goal: diamond,     group: failure_recovery, difficulty: hard}
+- {id: 6,  type: smelt,  instruction: "Smelt iron ore without fuel → fails → gather coal → smelt into ingot.",     goal: iron_ingot,      group: failure_recovery, difficulty: hard}
+- {id: 7,  type: craft,  instruction: "Craft stone pickaxe without table → fails → craft table first → then pickaxe.", goal: stone_pickaxe, group: failure_recovery, difficulty: hard}
+
+# ── Interaction Stress (4): resource conflict ──
+- {id: 8,  type: craft,  instruction: "8 cobblestone only. Choose: furnace OR stone pickaxe. Craft furnace.",     goal: furnace,          group: interaction_stress, difficulty: hard}
+- {id: 9,  type: craft,  instruction: "Limited coal. Choose: torches for lighting OR save for furnace fuel. Craft torches.", goal: torch, group: interaction_stress, difficulty: hard}
+- {id: 10, type: craft,  instruction: "1 iron ingot only. Choose: iron pickaxe for mining OR iron sword. Craft the pickaxe.", goal: iron_pickaxe, group: interaction_stress, difficulty: hard}
+- {id: 11, type: craft,  instruction: "2 diamonds only. Choose: diamond pickaxe OR diamond sword. Craft pickaxe.", goal: diamond_pickaxe,  group: interaction_stress, difficulty: hard}
+
+evaluate: []
