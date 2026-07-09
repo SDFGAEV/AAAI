@@ -224,7 +224,8 @@ class CactMemory:
         self._mem.save_success_failure(waypoint, language_action_str, is_success)
         sv = 1.0 if is_success else 0.0
         kid = f"skill:{waypoint}"
-        ctx = self._bucket.encode(knowledge_type="skill", subgoal_type="craft",
+        ctx = self._bucket.encode(knowledge_type="skill",
+                                  subgoal_type=self._infer_subgoal_type(waypoint),
                                   task_tier=self._infer_tier(waypoint))
         task_grp = self._infer_group(waypoint)
 
@@ -287,7 +288,8 @@ class CactMemory:
     # ── is_succeeded_waypoint (MAIN GATE) ──
     def is_succeeded_waypoint(self, waypoint):
         """C-ACT admission gate for knowledge reuse."""
-        ctx = self._bucket.encode(knowledge_type="skill", subgoal_type="craft",
+        ctx = self._bucket.encode(knowledge_type="skill",
+                                  subgoal_type=self._infer_subgoal_type(waypoint),
                                   task_tier=self._infer_tier(waypoint))
         kid = f"skill:{waypoint}"
         task_grp = self._infer_group(waypoint)
@@ -408,6 +410,15 @@ class CactMemory:
         return result
 
     # ── Helpers (inference from waypoint text) ──
+    def _infer_subgoal_type(self, item):
+        """Infer subgoal type from waypoint text."""
+        il = str(item).lower()
+        if any(t in il for t in ["craft", "make", "build", "smelt"]): return "craft"
+        if any(t in il for t in ["mine", "collect", "dig", "chop"]): return "mine"
+        if any(t in il for t in ["find", "explore", "locate", "village"]): return "explore"
+        if any(t in il for t in ["kill", "combat", "hunt", "shoot"]): return "combat"
+        return "craft"
+
     def _infer_tier(self, item):
         il = str(item).lower()
         if any(t in il for t in ["diamond", "netherite", "ender"]): return "diamond"
