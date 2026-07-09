@@ -163,8 +163,8 @@ fi
 # ════════════════════════════════════════════════════════════════════
 if $RUN_E4; then
     for variant in C-ACT-NoContract C-ACT-NoActiveCalib C-ACT-NoDecay \
-                   C-ACT-NoInteraction C-ACT-NoLevelPrior C-ACT-NoSanitizer \
-                   C-ACT-NoLifecycle OracleGate; do
+                   C-ACT-NoAttribution C-ACT-NoInteraction C-ACT-NoLevelPrior \
+                   C-ACT-NoSanitizer OracleGate; do
         echo "--- E4: $variant ---"
         $PYTHON experiments/parallel_runner.py \
             --benchmark cact_ablation \

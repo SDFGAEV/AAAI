@@ -56,6 +56,7 @@ class CactMemory:
         self._use_interaction = True
         self._use_level_prior = True
         self._use_lifecycle = True
+        self._use_attribution = True  # w/o Attribution Lifecycle ablation (doc §14)
         self._use_thompson = True
         self._use_sanitizer = True
         self._use_decay = True
@@ -73,6 +74,9 @@ class CactMemory:
             self._use_level_prior = False
         if "NoLifecycle" in method or "no_Lifecycle" in method:
             self._use_lifecycle = False
+            self._use_attribution = False  # Full lifecycle removal implies no attribution
+        if "NoAttribution" in method or "no_Attribution" in method:
+            self._use_attribution = False  # Only remove attribution, keep state machine
         if "NoThompson" in method or "no_Thompson" in method:
             self._use_thompson = False
         if "NoSanitizer" in method or "no_Sanitizer" in method:
@@ -332,32 +336,40 @@ class CactMemory:
         csr_before = last.contract_satisfied_before if last else True
         is_harmful = 1 if (not is_success and hu >= 0.10) else 0
 
-        # ── Attribution-aware lifecycle update ──
+        # ── Lifecycle update ──
         if not self.frozen:
-            # Compute progress delta from inventory snapshot
-            progress_delta = 0.0
-            if self._inventory_snapshot and self._current_observation:
-                obs_inv = self._current_observation.get("inventory", {})
-                if isinstance(obs_inv, dict):
-                    for item, snap_count in self._inventory_snapshot.items():
-                        cur = int(obs_inv.get(item, 0))
-                        if cur > snap_count:
-                            progress_delta = 1.0
-                            break
-            self._inventory_snapshot = {}  # Clear for next decision
+            if self._use_attribution:
+                # Full attribution-aware path (doc §14): classify outcome,
+                # avoid penalizing knowledge for navigation/execution failures
+                progress_delta = 0.0
+                if self._inventory_snapshot and self._current_observation:
+                    obs_inv = self._current_observation.get("inventory", {})
+                    if isinstance(obs_inv, dict):
+                        for item, snap_count in self._inventory_snapshot.items():
+                            cur = int(obs_inv.get(item, 0))
+                            if cur > snap_count:
+                                progress_delta = 1.0
+                                break
+                self._inventory_snapshot = {}
 
-            attribution = self._attributor.attribute(
-                success=is_success,
-                is_harmful=bool(is_harmful),
-                contract_violated=contract_violated,
-                interaction_conflict=interaction_conflict,
-                used_knowledge=was_used,
-                progress_delta=progress_delta,
-            )
-            # Apply attribution-aware update
-            attr_result = apply_attribution_to_lifecycle(
-                kid, attribution, sv, float(is_harmful),
-                self._store, ctx, self._attributor)
+                attribution = self._attributor.attribute(
+                    success=is_success,
+                    is_harmful=bool(is_harmful),
+                    contract_violated=contract_violated,
+                    interaction_conflict=interaction_conflict,
+                    used_knowledge=was_used,
+                    progress_delta=progress_delta,
+                )
+                attr_result = apply_attribution_to_lifecycle(
+                    kid, attribution, sv, float(is_harmful),
+                    self._store, ctx, self._attributor)
+            else:
+                # w/o Attribution Lifecycle: simple use/harm recording,
+                # ALL failures penalize knowledge (no navigation/execution distinction)
+                self._store.record_episode(kid, ctx, used=was_used, success=sv,
+                                           is_harmful=float(is_harmful))
+                attribution = None
+                attr_result = {"action": "simple_record", "attribution": "none"}
         else:
             attribution = None
             attr_result = {"action": "frozen", "attribution": "none"}
