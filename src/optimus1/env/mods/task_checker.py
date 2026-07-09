@@ -176,8 +176,8 @@ class TaskCheckerMod(Mod):
                 "birch_planks",
                 "dark_oak_planks",
                 "jungle_planks",
-                "oak_planks",
                 "dark_oak_planks",
+                "oak_planks",
                 "spruce_planks",
             ]
         # elif "redstone" in item:

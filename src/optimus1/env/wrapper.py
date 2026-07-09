@@ -260,7 +260,7 @@ class CustomEnvWrapper(gym.Wrapper):
 
         as_it_is = self.task_checker_mod.step(current_inventory, [item_str, item_num], check_original_goal=True)
         with_underbar = self.task_checker_mod.step(current_inventory, [item_str.replace(" ", "_"), item_num], check_original_goal=True)
-        without_ore = self.task_checker_mod.step(current_inventory, [item_str.replace("_ore", ""), 1], check_original_goal=True)
+        without_ore = self.task_checker_mod.step(current_inventory, [item_str.replace("_ore", ""), item_num], check_original_goal=True)
 
         return as_it_is or with_underbar or without_ore
 

@@ -1,4 +1,6 @@
 # @package _global_
+defaults:
+  - _self_
 # C-ACT E1: Knowledge Accumulation — 32 tasks x 8 seeds = 256 episodes
 # All 6 groups at mix of difficulty levels
 env:

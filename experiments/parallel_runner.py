@@ -164,7 +164,7 @@ class ParallelRunner:
     # ── Single episode execution ──
     def _run_one(self, cfg: ExperimentConfig) -> Dict:
         """Run a single (task, seed, method) episode via subprocess."""
-        key = (cfg.task, cfg.seed, cfg.method)
+        key = (cfg.task, cfg.seed, cfg.method, cfg.frozen)
         if key in self._completed:
             return {"key": key, "status": "skipped", "reason": "already_completed"}
 

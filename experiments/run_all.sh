@@ -157,7 +157,7 @@ if $RUN_E4; then
         $PYTHON experiments/parallel_runner.py \
             --benchmark cact_p3 \
             --seeds 4001-4005 \
-            --methods "C-ACT-$variant" \
+            --methods "$variant" \
             --workers "$WORKERS" --vlm_port "$VLM_PORT"
     done
 fi

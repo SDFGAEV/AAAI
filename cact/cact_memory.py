@@ -161,6 +161,23 @@ class CactMemory:
         if info is not None:
             self._current_info = info
 
+    def update_inventory(self, item: str, count: int = 1):
+        """Incrementally update inventory after craft/smelt where env.step() is not called.
+
+        The craft/smelt helper uses direct inventory manipulation, bypassing
+        env.step(), so no new observation is generated. This method manually
+        patches the cached inventory to keep contract precondition checking
+        accurate.
+        """
+        obs = self._current_observation
+        if not obs:
+            return
+        inv = obs.get("inventory", {})
+        if not isinstance(inv, dict):
+            return
+        current = int(inv.get(item, 0))
+        inv[item] = current + count
+
     def set_task_info(self, difficulty: str = "medium", group: str = "crafting"):
         """Set current task metadata for episode logging."""
         self._current_difficulty = difficulty

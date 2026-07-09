@@ -1,4 +1,6 @@
 # @package _global_
+defaults:
+  - _self_
 # C-ACT E2: Adaptive Calibration — 12 tasks x 8 seeds = 96 episodes
 # 2 tasks per group, covering easy/medium/hard for threshold learning
 env:

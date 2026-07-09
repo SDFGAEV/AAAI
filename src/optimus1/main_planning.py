@@ -309,6 +309,7 @@ def new_agent_do(
     subgoal = None
     language_action_str = ""
     subgoal_done = False
+    _waypoint_recorded = False
     topK = cfg["memory"]["topK"]
     waypoint_generator = OracleGraph() # OracleGraph knows all recipes accurately.
 
@@ -361,6 +362,7 @@ def new_agent_do(
                     break
 
                 subgoal_done = False
+                _waypoint_recorded = False
                 logger.info(f"After make_plan()")
                 logger.info(f"[yellow]Waypoint: {waypoint}, Subgoal: {subgoal}[/yellow]")
 
@@ -397,6 +399,8 @@ def new_agent_do(
                     progress += 1
                     completed_subgoals.append(current_sg)
                     subgoal_done = True
+                    # Update C-ACT inventory cache since craft/smelt bypasses env.step()
+                    action_memory.update_inventory(waypoint)
 
                     if "pickaxe" in waypoint:
                         env.can_change_hotbar = True
@@ -538,6 +542,7 @@ def new_agent_do(
                 waypoint_success = env.check_waypoint_finish([waypoint, 1])
 
                 action_memory.save_success_failure(waypoint, language_action_str, is_success=waypoint_success)
+                _waypoint_recorded = True
                 if waypoint_success:
                     logger.info(f"[green]Achieved waypoint {waypoint}[/green]")
                     completed_waypoints.append(waypoint)
@@ -557,7 +562,7 @@ def new_agent_do(
             return "env_malmo_logger_error", None, None, None, None
 
         # end of while loop. game is done.
-        if not original_final_goal_success:
+        if not original_final_goal_success and not _waypoint_recorded:
             action_memory.save_success_failure(waypoint, language_action_str, is_success=False)
 
         if env.api_thread is not None and env.api_thread_is_alive():

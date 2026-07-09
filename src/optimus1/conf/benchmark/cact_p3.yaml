@@ -1,4 +1,6 @@
 # @package _global_
+defaults:
+  - _self_
 # C-ACT E3: Strict Frozen Main Evaluation — 50 tasks x 8 seeds x 7 methods = 2800 episodes
 # Groups: crafting(10) mining(9) exploration(6) tech_tree(10) failure_recovery(8) interaction_stress(7)
 env:
