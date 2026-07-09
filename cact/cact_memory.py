@@ -140,6 +140,11 @@ class CactMemory:
         self._store.abl_level_prior = self._use_level_prior
         # TrustGate flags
         self._gate.abl_adaptive = self._use_adaptive_tau
+        # Sync TrustGate thresholds to TrustStore for lifecycle transitions
+        tg = self._gate
+        gt_tau = tg.tau.get("_global", tg.tau.get("crafting", 0.88))
+        gt_h = tg.harm.get("_global", tg.harm.get("crafting", 0.10))
+        self._store.sync_calibration(tau=gt_tau, h_star=gt_h)
 
     def set_task_info(self, difficulty: str = "medium", group: str = "crafting"):
         """Set current task metadata for episode logging."""

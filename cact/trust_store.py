@@ -154,18 +154,28 @@ class TrustStore:
         else:
             self.record_base(kid, context, success)
 
-        # Auto lifecycle transitions
+        # Auto lifecycle transitions (use TrustGate calibrated thresholds when available)
         if getattr(self, 'abl_lifecycle', True):
             n = self.total_count(kid, context, "use")
             pi = self.uplift_probability(kid, context)
             hu = self.harm_upper_bound(kid, context)
-            tau = getattr(self, 'abl_tau_override', 0.88)
-            h_star = getattr(self, 'abl_harm_override', 0.10)
+
+            # Use calibrated thresholds from TrustGate if synced, else hardcoded defaults
+            if hasattr(self, '_synced_tau') and hasattr(self, '_synced_h'):
+                tau = self._synced_tau
+                h_star = self._synced_h
+            else:
+                tau, h_star = 0.88, 0.10
 
             new_state = self.lifecycle.evaluate_auto_transition(
                 kid, pi, hu, tau, h_star, int(n))
             if new_state:
                 self.lifecycle.transition(kid, new_state, "auto_after_observation")
+
+    def sync_calibration(self, tau: float, h_star: float):
+        """Sync calibrated thresholds from TrustGate for lifecycle transitions."""
+        self._synced_tau = tau
+        self._synced_h = h_star
 
     # ── Queries ──
     def mean(self, kid: str, context: str, stat: str = "use") -> float:

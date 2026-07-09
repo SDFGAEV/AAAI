@@ -129,7 +129,9 @@ class DecisionController:
             hu = self.store.harm_upper_bound(kid, ctx_key)
             lc = self.store.get_lifecycle_state(kid)
 
-            # Contract pre-check
+            # Contract pre-check (limited: state dict does not contain full game state.
+            # Only waypoint/task_group available. Full precondition checking requires
+            # deeper integration with XENON's observation pipeline.)
             contract = self.store.get_contract(kid)
             contract_ok = True
             if contract:
