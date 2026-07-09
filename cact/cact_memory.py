@@ -245,7 +245,9 @@ class CactMemory:
         task_grp = self._infer_group(waypoint)
 
         if not self.frozen:
-            self._store.record_episode(kid, ctx, used=True, success=sv,
+            last = getattr(self, '_last_decision_result', None)
+            was_used = last.decision in ("reuse", "probe") if last else True
+            self._store.record_episode(kid, ctx, used=was_used, success=sv,
                                        is_harmful=0.0 if is_success else 0.5)
 
         ess = self._store.ess(kid, ctx)
@@ -272,7 +274,7 @@ class CactMemory:
             "success": is_success, "task_group": task_grp,
             "pi_uplift": round(pi, 4), "uplift_lcb": round(ul, 4),
             "harm_ucb": round(hu, 4), "ess": round(ess, 1),
-            "lifecycle": lc, "decision": "reuse",
+            "lifecycle": lc, "decision": last.decision if last else "reuse",
             "contract_satisfied_before": csr_before,
             "contract_violation_after": contract_violated,
             "is_harmful": is_harmful,
@@ -290,7 +292,7 @@ class CactMemory:
 
         # Knowledge generation
         if is_success and ess >= 2:
-            self.episode_logs[-1]["knowledge_generated"] = f"s_{waypoint}_{int(n):02d}"
+            self.episode_logs[-1]["knowledge_generated"] = f"s_{waypoint}_{self._knowledge_cnt:02d}"
             self._knowledge_cnt += 1
 
         # Drift tracking + periodic decay
@@ -381,8 +383,14 @@ class CactMemory:
         context = {"bucket": ctx, "subgoal_type": self._infer_subgoal_type(waypoint),
                    "risk_level": self._infer_risk(waypoint)}
 
-        mode = "calibration" if self.active_calib_rate > 0 else (
-            "evaluation" if self.frozen else "accumulation")
+        if self.method.startswith("Online-"):
+            mode = "online"
+        elif self.active_calib_rate > 0:
+            mode = "calibration"
+        elif self.frozen:
+            mode = "evaluation"
+        else:
+            mode = "accumulation"
 
         # C-ACT decision
         if self.method in ("C-ACT-Full", "Online-C-ACT") or "C-ACT-" in self.method:

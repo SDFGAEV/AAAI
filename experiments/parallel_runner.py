@@ -53,6 +53,9 @@ class ExperimentConfig:
     timeout: int = 300
     env_times: int = 1
     prefix: str = "cact"
+    store_path: str = ""
+    frozen: bool = False
+    active_calib_rate: float = 0.0
 
 
 class ParallelRunner:
@@ -177,6 +180,12 @@ class ParallelRunner:
             f"+cact_method={cfg.method}",
             f"plan_model={cfg.plan_model}",
         ]
+        if cfg.store_path:
+            cmd.append(f"+cact_store_path={cfg.store_path}")
+        if cfg.frozen:
+            cmd.append("+cact_frozen=true")
+        if cfg.active_calib_rate:
+            cmd.append(f"+cact_active_calib_rate={cfg.active_calib_rate}")
 
         t0 = time.perf_counter()
         try:
@@ -216,7 +225,8 @@ class ParallelRunner:
 
     # ── Build experiment grid ──
     def _build_grid(self, benchmark: str, seeds: List[int],
-                    methods: List[str]) -> List[ExperimentConfig]:
+                    methods: List[str],
+                    plan_model: str = "Qwen/Qwen2.5-VL-7B-Instruct") -> List[ExperimentConfig]:
         """Build the full experiment grid from benchmark YAML config."""
         import yaml
         bench_path = os.path.join(_PROJ, "src", "optimus1", "conf",
@@ -240,17 +250,28 @@ class ParallelRunner:
     # ── Main entry ──
     def run(self, benchmark: str, seeds: List[int] = None,
             methods: List[str] = None, plan_model: str = None,
-            resume: bool = False):
-        """Execute the full experiment grid in parallel."""
-        seeds = seeds or DEFAULT_SEEDS
-        methods = methods or DEFAULT_METHODS
-        plan_model = plan_model or "Qwen/Qwen2.5-VL-7B-Instruct"
+            resume: bool = False, grid: List[ExperimentConfig] = None):
+        """Execute the full experiment grid in parallel.
+
+        Args:
+            grid: Optional pre-built grid (with custom store_path, frozen, etc.).
+                  If provided, benchmark/seeds/methods are ignored for grid construction.
+        """
+        if grid is not None:
+            seeds = seeds or DEFAULT_SEEDS
+            methods = methods or DEFAULT_METHODS
+            plan_model = plan_model or "Qwen/Qwen2.5-VL-7B-Instruct"
+        else:
+            seeds = seeds or DEFAULT_SEEDS
+            methods = methods or DEFAULT_METHODS
+            plan_model = plan_model or "Qwen/Qwen2.5-VL-7B-Instruct"
 
         if resume:
             self._load_checkpoint()
 
-        # Build grid
-        grid = self._build_grid(benchmark, seeds, methods)
+        # Build grid (unless caller provided pre-built grid)
+        if grid is None:
+            grid = self._build_grid(benchmark, seeds, methods)
         print(f"\n{'='*60}")
         print(f"  C-ACT Parallel Runner")
         print(f"  Benchmark: {benchmark}")

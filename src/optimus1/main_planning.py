@@ -629,13 +629,16 @@ def main(cfg: DictConfig):
     # C-ACT: wrap with Contracted Adaptive Counterfactual Trust gate
     cact_method = cfg.get("cact_method", "C-ACT-Full")
     cact_frozen = cfg.get("cact_frozen", False)
+    cact_store_path = cfg.get("cact_store_path", "")
     cact_cf = cfg.get("cact_cf_branching", False)
     cact_log_dir = os.path.join(_PROJ, "exp_results", "cact_logs")
-    ac_rate = 0.15 if cact_cf else 0.0
+    ac_rate = cfg.get("cact_active_calib_rate", 0.15 if cact_cf else 0.0)
 
-    logger.info(f"[C-ACT] method={cact_method} log_dir={cact_log_dir}")
+    logger.info(f"[C-ACT] method={cact_method} store={cact_store_path or 'default'} "
+                f"frozen={cact_frozen} log_dir={cact_log_dir}")
     action_memory = CactMemory(action_memory, method=cact_method,
                                frozen=cact_frozen,
+                               store_path=cact_store_path or None,
                                active_calib_rate=ac_rate,
                                log_dir=cact_log_dir)
 

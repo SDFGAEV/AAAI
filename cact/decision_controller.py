@@ -77,13 +77,11 @@ class DecisionController:
         self.tp = thompson_prober or SafeThompsonProber()
         self.cc = contract_checker or ContractChecker()
 
-        # Ablation flags
+        # Ablation flags (synced from CactMemory via _sync_ablation_flags)
+        # Note: adaptive_tau is controlled by TrustGate.abl_adaptive, synced separately
         self.abl_contract = True
-        self.abl_adaptive_tau = True
         self.abl_interaction = True
         self.abl_active_calib = True
-        self.abl_level_prior = True
-        self.abl_lifecycle = True
         self.abl_thompson = True
 
     def decide(self, candidate_knowledge: List[Dict],

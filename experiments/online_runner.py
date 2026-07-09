@@ -64,7 +64,8 @@ class OnlineRunner:
     def _run_episodes(self, benchmark: str, seeds: List[int],
                       method: str, phase: str,
                       trust_store_path: str = None,
-                      frozen: bool = False) -> List[Dict]:
+                      frozen: bool = False,
+                      active_calib_rate: float = 0.0) -> List[Dict]:
         """Run a batch of episodes via parallel_runner."""
         from experiments.parallel_runner import ParallelRunner
 
@@ -80,12 +81,23 @@ class OnlineRunner:
         # Build methods list
         methods = [method]
 
+        # Build grid and inject trust_store_path / frozen / active_calib_rate
+        grid = runner._build_grid(benchmark, seeds, methods,
+                                  plan_model="Qwen/Qwen2.5-VL-7B-Instruct")
+        for cfg in grid:
+            if trust_store_path:
+                cfg.store_path = trust_store_path
+            cfg.frozen = frozen
+            if active_calib_rate:
+                cfg.active_calib_rate = active_calib_rate
+
         results = runner.run(
             benchmark=benchmark,
             seeds=seeds,
             methods=methods,
             plan_model="Qwen/Qwen2.5-VL-7B-Instruct",
             resume=False,
+            grid=grid,
         )
 
         runner.print_summary()
