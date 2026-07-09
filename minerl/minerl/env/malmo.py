@@ -93,7 +93,7 @@ class InstanceManager:
     Note: In future versions of MineRL the instance manager will become its own daemon process which provides
     instance allocation capability using remote procedure calls.
     """
-    MINECRAFT_DIR = os.path.join(os.path.dirname(__file__), '..', 'MCP-Reborn')
+    MINECRAFT_DIR = os.path.join(os.path.dirname(__file__), '..', 'Malmo', 'Minecraft')
     SCHEMAS_DIR = os.path.join(os.path.dirname(__file__), '..', 'Malmo', 'Schemas')
     STATUS_DIR = os.path.join(os.path.abspath(os.path.dirname(sys.argv[0])), 'performance')
     MAXINSTANCES = None
@@ -387,7 +387,7 @@ class MinecraftInstance(object):
                 self.instance_tempdir = tempfile.TemporaryDirectory()
                 self.instance_dir = self.instance_tempdir.name
 
-                self.minecraft_dir = os.path.join(self.instance_dir, "MCP-Reborn")
+                self.minecraft_dir = os.path.join(self.instance_dir, "MCP-Reborn")  # internal temp name, not path
                 os.makedirs(os.path.join(self.minecraft_dir, "build"), exist_ok=True)
                 shutil.copytree(
                     os.path.join(InstanceManager.MINECRAFT_DIR, "build", "libs"),
