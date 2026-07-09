@@ -636,7 +636,8 @@ def main(cfg: DictConfig):
     cact_frozen = cfg.get("cact_frozen", False)
     cact_store_path = cfg.get("cact_store_path", "")
     cact_cf = cfg.get("cact_cf_branching", False)
-    cact_log_dir = os.path.join(_PROJ, "exp_results", "cact_logs")
+    cact_log_dir = os.path.join(_PROJ, "exp_results", "cact_logs",
+                                 f"{cact_method}_seed{seed}")
     ac_rate = cfg.get("cact_active_calib_rate", 0.15 if cact_cf else 0.0)
 
     logger.info(f"[C-ACT] method={cact_method} store={cact_store_path or 'default'} "

@@ -232,8 +232,9 @@ class CactMemory:
             "interaction/interaction.jsonl": self.interaction_logs,
             "lifecycle/lifecycle.jsonl": self.lifecycle_logs,
         }
-        # Truncate on first call to avoid mixing with previous run data
-        mode = "w" if not self._logs_dumped else "a"
+        # Always append — each worker has its own log_dir (seed+method unique),
+        # and within a worker, episodes accumulate. Parallel workers don't conflict.
+        mode = "a"
         self._logs_dumped = True
         for fname, data in log_files.items():
             if data:
