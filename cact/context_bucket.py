@@ -121,3 +121,57 @@ class ContextBucket:
     def _approx_kl(m1: float, m2: float) -> float:
         m1 = max(0.001, min(0.999, m1)); m2 = max(0.001, min(0.999, m2))
         return m1 * math.log(m1 / m2) + (1 - m1) * math.log((1 - m1) / (1 - m2))
+
+    # ── Adaptive maintenance (doc §6.3) ──
+
+    def accumulate(self, bucket_key: str, confidence: float, outcome: float):
+        """Record one observation for a bucket. Used to build stats for split/merge."""
+        if bucket_key not in self._bucket_stats:
+            self._bucket_stats[bucket_key] = {"conf": [], "out": []}
+        self._bucket_stats[bucket_key]["conf"].append(confidence)
+        self._bucket_stats[bucket_key]["out"].append(outcome)
+
+    def maintain(self, allowed: bool = True) -> Dict:
+        """Run adaptive split/merge on all buckets.
+
+        Args:
+            allowed: If False (E3 frozen), no maintenance is performed.
+
+        Returns:
+            {"splits": [...], "merges": [[...]], ...}
+        """
+        result = {"splits": [], "merges": [], "actions": []}
+        if not allowed or not self._bucket_stats:
+            return result
+
+        # Split: check each bucket for high ECE
+        for key, stats in list(self._bucket_stats.items()):
+            conf = stats["conf"]
+            out = stats["out"]
+            if len(conf) < self.n_split_min:
+                continue
+            ece = self._compute_ece(conf, out)
+            if ece > self.ece_threshold:
+                new_field = self.maybe_split(key, conf, out)
+                if new_field:
+                    result["splits"].append({"bucket": key, "new_field": new_field,
+                                              "ece": round(ece, 3), "n": len(conf)})
+                    result["actions"].append(f"split:{key}→+{new_field}")
+
+        # Merge: check for low-support similar buckets
+        buckets = list(self._bucket_stats.keys())
+        if len(buckets) >= 2:
+            bucket_stats_tuples = {}
+            for b in buckets:
+                s = self._bucket_stats[b]
+                total = max(len(s["conf"]), 1)
+                succ = sum(s["out"])
+                alpha = 1.0 + succ
+                beta_param = 1.0 + total - succ
+                bucket_stats_tuples[b] = (alpha, beta_param, total)
+            merge_groups = self.maybe_merge(buckets, bucket_stats_tuples)
+            for group in merge_groups:
+                result["merges"].append(group)
+                result["actions"].append(f"merge:{'|'.join(group)}")
+
+        return result

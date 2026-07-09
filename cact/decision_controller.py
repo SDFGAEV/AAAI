@@ -300,9 +300,14 @@ class DecisionController:
                 a3, b3 = self.store.get_stats(kid, ctx_key, "harm")
                 ess = self.store.ess(kid, ctx_key)
 
+                n_base = self.store.total_count(kid, ctx_key, "base")
                 should_probe, q = self.tp.should_probe(
                     a1, b1, a2, b2, a3, b3, ess,
-                    context.get("risk_level", "medium"))
+                    risk_level=context.get("risk_level", "medium"),
+                    pi_uplift=c.get("pi_uplift", 0.5),
+                    tau_threshold=c.get("gate_info", {}).get("tau", 0.90),
+                    n_base=n_base,
+                    interaction_state=result.interaction_state)
                 if should_probe:
                     result.decision = "probe"
                     result.chosen_knowledge_id = kid

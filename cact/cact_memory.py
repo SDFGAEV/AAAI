@@ -403,6 +403,13 @@ class CactMemory:
         # Reset supervised flag — no longer in supervised context after recording
         self._last_was_supervised = False
 
+        # Context bucket adaptive maintenance (doc §6.3)
+        # Only in non-frozen modes (E1/E2/E5 calibration)
+        if not self.frozen:
+            self._bucket.accumulate(ctx, pi, sv)
+            if self._drift_counter % 30 == 0:  # Check every 30 episodes
+                self._bucket.maintain(allowed=True)
+
     # ── is_succeeded_waypoint (MAIN GATE) ──
     def is_succeeded_waypoint(self, waypoint):
         """C-ACT admission gate for knowledge reuse."""

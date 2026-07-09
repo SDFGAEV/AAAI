@@ -72,18 +72,65 @@ class SafeThompsonProber:
         q = Q_PROBE_BASE * uncertainty
         return max(0.0, min(self.q_max, q))
 
+    # ── Pre-registered probe triggers (doc §11.2, TABLE 92) ──
+    @staticmethod
+    def is_triggered(pi_uplift: float, tau_threshold: float,
+                     harm_alpha: float, harm_beta: float,
+                     n_base: float, min_base: int = 3,
+                     ece: float = 0.0, precond_fail_rate: float = 0.0,
+                     interaction_state: str = "safe") -> Tuple[bool, str]:
+        """Check pre-registered trigger conditions for targeted admission probing.
+
+        Returns (triggered, trigger_reason).
+        Only one trigger needs to fire for probing to be considered.
+        """
+        # Trigger 1: π_u near threshold (within 0.05 of τ)
+        if abs(pi_uplift - tau_threshold) < 0.05:
+            return True, "pi_near_threshold"
+
+        # Trigger 2: harm_ucb high uncertainty
+        # Harm posterior Beta variance = αβ/((α+β)²(α+β+1))
+        harm_total = harm_alpha + harm_beta
+        if harm_total > 0:
+            harm_var = (harm_alpha * harm_beta) / (harm_total * harm_total * (harm_total + 1))
+            if harm_var > 0.01:  # High uncertainty threshold
+                return True, "harm_uncertainty_high"
+
+        # Trigger 3: base sample too sparse
+        if n_base < min_base:
+            return True, "base_sparse"
+
+        # Trigger 4: context bucket ECE high
+        if ece > 0.15:
+            return True, "bucket_ece_high"
+
+        # Trigger 5: contract precondition often fails
+        if precond_fail_rate > 0.3:
+            return True, "precond_fail_rate_high"
+
+        # Trigger 6: interaction pair unknown
+        if interaction_state == "unknown":
+            return True, "interaction_unknown"
+
+        return False, "none"
+
     def should_probe(self, use_alpha: float, use_beta: float,
                      base_alpha: float, base_beta: float,
                      harm_alpha: float, harm_beta: float,
                      ess: float, risk_level: str = "medium",
-                     force_allow: bool = False) -> Tuple[bool, float]:
+                     force_allow: bool = False,
+                     pi_uplift: float = 0.5, tau_threshold: float = 0.90,
+                     n_base: float = 0, ece: float = 0.0,
+                     precond_fail_rate: float = 0.0,
+                     interaction_state: str = "safe") -> Tuple[bool, float]:
         """Decide whether to Thompson-probe this knowledge.
 
-        Checks 4 conditions:
-          1. Thompson sample: p_use > p_base + δ_probe
-          2. Thompson sample: p_harm < ε_probe
-          3. Context is low/medium risk
-          4. Global exploration budget not exceeded
+        Checks:
+          1. Pre-registered trigger fired (new — doc §11.2)
+          2. Thompson sample: p_use > p_base + δ_probe
+          3. Thompson sample: p_harm < ε_probe
+          4. Context is low/medium risk
+          5. Global exploration budget not exceeded
 
         Returns:
             (should_probe, probe_probability)
@@ -98,6 +145,15 @@ class SafeThompsonProber:
 
         if q <= 0.0 and not force_allow:
             return False, 0.0
+
+        # Pre-registered trigger check (doc §11.2): at least one trigger must fire
+        if not force_allow:
+            triggered, reason = self.is_triggered(
+                pi_uplift, tau_threshold, harm_alpha, harm_beta,
+                n_base, ece=ece, precond_fail_rate=precond_fail_rate,
+                interaction_state=interaction_state)
+            if not triggered:
+                return False, q
 
         # Thompson sample check
         p_use = float(np.random.beta(use_alpha, use_beta))
