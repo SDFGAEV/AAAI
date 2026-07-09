@@ -104,6 +104,8 @@ class CactMemory:
         self._knowledge_cnt = 0
         self._current_difficulty = "medium"
         self._current_group = "crafting"
+        self._current_observation: Dict = {}
+        self._current_info: Dict = {}
         self._pairwise_harm: Dict[Tuple[str, str], Tuple[int, int]] = {}
         self._drift_counter = 0
 
@@ -145,6 +147,13 @@ class CactMemory:
         gt_tau = tg.tau.get("_global", tg.tau.get("crafting", 0.88))
         gt_h = tg.harm.get("_global", tg.harm.get("crafting", 0.10))
         self._store.sync_calibration(tau=gt_tau, h_star=gt_h)
+
+    def set_observation(self, observation: Dict = None, info: Dict = None):
+        """Store current game state for contract precondition checking."""
+        if observation is not None:
+            self._current_observation = observation
+        if info is not None:
+            self._current_info = info
 
     def set_task_info(self, difficulty: str = "medium", group: str = "crafting"):
         """Set current task metadata for episode logging."""
@@ -310,9 +319,28 @@ class CactMemory:
             "non_applicable_contexts": contract.get("non_applicable_contexts", []),
         }]
 
-        state = {"waypoint": waypoint, "task_group": task_grp}
+        # Build state from observation for contract precondition checking
+        obs = self._current_observation
+        state = {
+            "waypoint": waypoint,
+            "task_group": task_grp,
+            # Inventory items → contract preconditions like "has_iron_pickaxe"
+            "inventory": obs.get("inventory", {}) if obs else {},
+            "equipped_item": obs.get("equipped_item", "") if obs else "",
+            # Safety flags inferred from info
+            "near_lava": self._current_info.get("is_near_lava", False),
+            "low_health": obs.get("health", 20) < 5 if obs else False,
+            "in_combat": self._current_info.get("is_in_combat", False),
+            "resource_critical": any(
+                item in str(obs.get("inventory", {})) for item in
+                ["diamond", "obsidian", "netherite"]) if obs else False,
+            "near_cliff": self._current_info.get("is_near_cliff", False),
+            # Waypoint-level context
+            **({k: v for k, v in obs.items()
+                if isinstance(v, (str, int, float, bool))} if obs else {}),
+        }
         task = {"task_id": waypoint, "group": task_grp}
-        context = {"bucket": ctx, "subgoal_type": "craft",
+        context = {"bucket": ctx, "subgoal_type": self._infer_subgoal_type(waypoint),
                    "risk_level": self._infer_risk(waypoint)}
 
         mode = "calibration" if self.active_calib_rate > 0 else (

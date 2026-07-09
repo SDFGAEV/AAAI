@@ -465,6 +465,7 @@ def new_agent_do(
                         hydra_path=hydra_path, run_uuid=run_uuid
                     )
                     obs, reward, game_over, info = env.step(action, current_sg_target)
+                    action_memory.set_observation(obs, info)
                     pbar.update(num_step, advance=1)
                     monitors.update(f"{temp_sg_prompt}_{progress}", env.current_subgoal_finish)
 
