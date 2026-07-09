@@ -2,6 +2,8 @@
 # ============================================================================
 # C-ACT Full Experiment Pipeline (E0 → E5)
 #
+# Episode budget: E0(24) + E1(192) + E2(144) + E3(2016) + E4(480) + E5(1600) = 4456
+#
 # Usage:
 #   bash experiments/run_all.sh                    # Full pipeline
 #   bash experiments/run_all.sh --from E2          # Resume from E2
@@ -84,24 +86,22 @@ $PYTHON experiments/health_check.py || {
 # ── Stage execution ──
 STAGE_START=$(date +%s)
 
-# E0: Sanity Check (~24 episodes, < 5 min)
+# ════════════════════════════════════════════════════════════════════
+# E0: Sanity Check — 6 tasks × 2 seeds × 2 methods = 24 episodes
+# Verify system runs: reset, success detection, contract extraction, logging
+# ════════════════════════════════════════════════════════════════════
 if $RUN_E0; then
-    echo "============================================================"
-    echo "  STAGE E0: Sanity Check (cact_calib, 2 methods x 2 seeds)"
-    echo "============================================================"
-    if $PYTHON experiments/parallel_runner.py \
+    run_stage "E0" \
         --benchmark cact_calib \
         --seeds 1001-1002 \
-        --methods NoKnowledge XENON-Original \
-        --workers 2 --vlm_port "$VLM_PORT" --plan_model "$PLAN_MODEL"; then
-        echo "[E0] PASSED"
-    else
-        echo "[E0] FAILED — pipeline stopped"
-        exit 1
-    fi
+        --methods NoKnowledge XENON-Original
 fi
 
-# E1: Knowledge Accumulation (~192 episodes, ~1.5h @ 4 workers)
+# ════════════════════════════════════════════════════════════════════
+# E1: Knowledge Accumulation — 24 tasks × 8 seeds = 192 episodes
+# Run with NoGate policy + active base logging (mixed logging)
+# Output: knowledge contracts, initial use/base/harm stats, propensity logs
+# ════════════════════════════════════════════════════════════════════
 if $RUN_E1; then
     run_stage "E1" \
         --benchmark cact_train \
@@ -109,7 +109,10 @@ if $RUN_E1; then
         --methods XENON-Original
 fi
 
-# E2: Adaptive Calibration — run ACT to collect trust data, then calibrate
+# ════════════════════════════════════════════════════════════════════
+# E2: Adaptive Calibration — 12 tasks × 8 seeds + 48 probes = 144 episodes
+# Learn per-group thresholds τ*, δ*, h*, interaction thresholds
+# ════════════════════════════════════════════════════════════════════
 if $RUN_E2; then
     echo "=== E2: Collecting calibration data ==="
     $PYTHON experiments/parallel_runner.py \
@@ -129,6 +132,7 @@ gate = TrustGate()
 calib = store.get_calibration_data()
 if calib:
     results = gate.calibrate_all_groups(calib)
+    os.makedirs("exp_results", exist_ok=True)
     gate.save_calibration("exp_results/calibration.json")
     print(f"Calibration done. Groups: {list(calib.keys())}")
     for g, r in results.items():
@@ -139,7 +143,11 @@ PYEOF
     echo "[E2] PASSED"
 fi
 
-# E3: Main Evaluation (~2016 episodes, ~4-5h @ 4 workers)
+# ════════════════════════════════════════════════════════════════════
+# E3: Strict Frozen Main Evaluation
+# 36 tasks × 8 seeds × 7 methods = 2016 episodes
+# Frozen: no learning, no posterior updates, no probes, no new knowledge
+# ════════════════════════════════════════════════════════════════════
 if $RUN_E3; then
     run_stage "E3" \
         --benchmark cact_p3 \
@@ -148,31 +156,36 @@ if $RUN_E3; then
                   LifecycleSuccessGate FixedBayes ACT C-ACT-Full
 fi
 
-# E4: Ablation — non-evolutionary, same knowledge as E1
-# 6 variants: each removes one component from C-ACT-Full
-# 50 tasks x 5 seeds = 250 eps per variant, 1500 total (~1h @ 4 workers)
+# ════════════════════════════════════════════════════════════════════
+# E4: Ablation Study — 12 tasks × 5 seeds × 8 variants = 480 episodes
+# 6 component ablations + 2 special (OracleGate, ShuffledKnowledge)
+# Uses hardest sub-population: tech_tree + failure_recovery + interaction_stress
+# ════════════════════════════════════════════════════════════════════
 if $RUN_E4; then
-    for variant in C-ACT-NoContract C-ACT-NoAdaptiveTau C-ACT-NoActiveCalib C-ACT-NoInteraction C-ACT-NoLevelPrior C-ACT-NoLifecycle; do
+    for variant in C-ACT-NoContract C-ACT-NoAdaptiveTau C-ACT-NoActiveCalib \
+                   C-ACT-NoInteraction C-ACT-NoLevelPrior C-ACT-NoSanitizer \
+                   C-ACT-NoLifecycle C-ACT-NoThompson; do
         echo "--- E4: $variant ---"
         $PYTHON experiments/parallel_runner.py \
-            --benchmark cact_p3 \
+            --benchmark cact_ablation \
             --seeds 4001-4005 \
             --methods "$variant" \
             --workers "$WORKERS" --vlm_port "$VLM_PORT"
     done
 fi
 
-# E5: Online Evolution — 6 methods x 3 seeds x 10 rounds
-# 4 main + 2 evolutionary-only ablations (lifecycle, Thompson)
+# ════════════════════════════════════════════════════════════════════
+# E5: Online Knowledge-Growth Evaluation
+# 10 rounds × 40 episodes × 4 methods = 1600 episodes
+# Per round: 20 accumulation + 8 calibration + 12 frozen evaluation
+#            (6 retention + 6 hard-transfer)
+# ════════════════════════════════════════════════════════════════════
 if $RUN_E5; then
     echo "=== E5: Online Evolution (10 rounds) ==="
     $PYTHON experiments/online_runner.py \
-        --benchmark_accum cact_train \
-        --benchmark_test cact_p3 \
-        --seeds 5001-5003 \
         --rounds 10 \
-        --methods Online-NoGate Online-BankCuration Online-ACT Online-C-ACT \
-                 Online-C-ACT-NoLifecycle Online-C-ACT-NoThompson \
+        --methods Online-SuccessLifecycle Online-FixedBayes Online-ACT Online-C-ACT \
+        --seed 5001 \
         --workers "$WORKERS" --vlm_port "$VLM_PORT"
 fi
 
@@ -182,6 +195,7 @@ ELAPSED=$((STAGE_END - STAGE_START))
 echo ""
 echo "============================================================"
 echo "  PIPELINE COMPLETE"
+echo "  Episode budget: 24 + 192 + 144 + 2016 + 480 + 1600 = 4456"
 echo "  Total wall time: $((ELAPSED / 3600))h $(((ELAPSED % 3600) / 60))m"
 echo "  Results: $PROJ/exp_results/"
 echo "============================================================"
