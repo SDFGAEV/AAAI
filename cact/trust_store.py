@@ -56,13 +56,13 @@ class TrustStore:
             try:
                 with open(self._db_file) as f:
                     self._data = json.load(f)
-            except: self._data = {}
+            except (json.JSONDecodeError, OSError): self._data = {}
         contract_file = os.path.join(self.store_path, "contracts.json")
         if os.path.exists(contract_file):
             try:
                 with open(contract_file) as f:
                     self._contracts = json.load(f)
-            except: self._contracts = {}
+            except (json.JSONDecodeError, OSError): self._contracts = {}
 
     def _save(self):
         with open(self._db_file, "w") as f:

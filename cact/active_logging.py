@@ -71,7 +71,7 @@ class ActiveBaseLogger:
         # Instead of slow drift (±5pp deadband, 0.7/1.3 multipliers),
         # use direct ratio correction: q_new = q_old * target / current
         # This converges to the target rate within ~50 decisions, not ~500.
-        if self._total_decisions > 10:
+        if self._total_decisions > 10:  # Minimum warmup before correction
             current_rate = self._force_base_count / self._total_decisions
             if current_rate > 0.001 and abs(current_rate - self.target_avg) > 0.02:
                 ratio = self.target_avg / current_rate
