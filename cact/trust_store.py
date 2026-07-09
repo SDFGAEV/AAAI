@@ -161,9 +161,12 @@ class TrustStore:
             hu = self.harm_upper_bound(kid, context)
 
             # Use calibrated thresholds from TrustGate if synced, else hardcoded defaults
-            if hasattr(self, '_synced_tau') and hasattr(self, '_synced_h'):
-                tau = self._synced_tau
-                h_star = self._synced_h
+            if hasattr(self, '_synced_thresholds') and self._synced_thresholds:
+                contract = self.get_contract(kid)
+                group = contract.get("group", "crafting") if contract else "crafting"
+                thresholds = self._synced_thresholds
+                tau = thresholds.get(group, {}).get("tau", 0.88)
+                h_star = thresholds.get(group, {}).get("harm", 0.10)
             else:
                 tau, h_star = 0.88, 0.10
 
@@ -172,10 +175,13 @@ class TrustStore:
             if new_state:
                 self.lifecycle.transition(kid, new_state, "auto_after_observation")
 
-    def sync_calibration(self, tau: float, h_star: float):
-        """Sync calibrated thresholds from TrustGate for lifecycle transitions."""
-        self._synced_tau = tau
-        self._synced_h = h_star
+    def sync_calibration(self, thresholds: Dict[str, Dict[str, float]]):
+        """Sync per-group calibrated thresholds from TrustGate.
+
+        Args:
+            thresholds: {group_name: {"tau": 0.88, "delta": 0.05, "harm": 0.10}, ...}
+        """
+        self._synced_thresholds = thresholds
 
     # ── Queries ──
     def mean(self, kid: str, context: str, stat: str = "use") -> float:

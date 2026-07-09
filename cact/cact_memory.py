@@ -142,11 +142,17 @@ class CactMemory:
         self._store.abl_level_prior = self._use_level_prior
         # TrustGate flags
         self._gate.abl_adaptive = self._use_adaptive_tau
-        # Sync TrustGate thresholds to TrustStore for lifecycle transitions
+        # Sync per-group TrustGate thresholds to TrustStore for lifecycle transitions
         tg = self._gate
-        gt_tau = tg.tau.get("_global", tg.tau.get("crafting", 0.88))
-        gt_h = tg.harm.get("_global", tg.harm.get("crafting", 0.10))
-        self._store.sync_calibration(tau=gt_tau, h_star=gt_h)
+        per_group = {}
+        for grp in ["crafting", "mining", "exploration", "tech_tree",
+                     "failure_recovery", "interaction_stress"]:
+            per_group[grp] = {
+                "tau": tg.tau.get(grp, 0.88),
+                "delta": tg.delta.get(grp, 0.05),
+                "harm": tg.harm.get(grp, 0.10),
+            }
+        self._store.sync_calibration(per_group)
 
     def set_observation(self, observation: Dict = None, info: Dict = None):
         """Store current game state for contract precondition checking."""
@@ -319,26 +325,58 @@ class CactMemory:
             "non_applicable_contexts": contract.get("non_applicable_contexts", []),
         }]
 
-        # Build state from observation for contract precondition checking
+        # Build state from observation for contract precondition checking.
+        # Safety flags are computed from available mineRL data (inventory +
+        # equipment) because mineRL does not expose health/near_lava/combat
+        # as direct observation fields.
         obs = self._current_observation
+        info = self._current_info
         state = {
             "waypoint": waypoint,
             "task_group": task_grp,
-            # Inventory items → contract preconditions like "has_iron_pickaxe"
-            "inventory": obs.get("inventory", {}) if obs else {},
-            "equipped_item": obs.get("equipped_item", "") if obs else "",
-            # Safety flags inferred from info
-            "near_lava": self._current_info.get("is_near_lava", False),
-            "low_health": obs.get("health", 20) < 5 if obs else False,
-            "in_combat": self._current_info.get("is_in_combat", False),
-            "resource_critical": any(
-                item in str(obs.get("inventory", {})) for item in
-                ["diamond", "obsidian", "netherite"]) if obs else False,
-            "near_cliff": self._current_info.get("is_near_cliff", False),
-            # Waypoint-level context
-            **({k: v for k, v in obs.items()
-                if isinstance(v, (str, int, float, bool))} if obs else {}),
         }
+        if obs:
+            inv = obs.get("inventory", {})
+            # Build flat inventory: item_name -> count for precondition matching
+            inv_flat = {}
+            if isinstance(inv, dict):
+                for k, v in inv.items():
+                    try:
+                        inv_flat[k] = v.item() if hasattr(v, 'item') else int(v)
+                    except (TypeError, ValueError):
+                        pass
+            state.update(inv_flat)
+
+            # Equipment: what tool/weapon is currently equipped
+            eq = obs.get("equipped_items", {})
+            if isinstance(eq, dict):
+                for k, v in eq.items():
+                    if isinstance(v, str) and v != "none":
+                        state[k] = v
+
+            # Compute safety flags from available data
+            inv_items = set(inv_flat.keys())
+            state["has_iron_pickaxe"] = "iron_pickaxe" in inv_items
+            state["has_diamond_pickaxe"] = "diamond_pickaxe" in inv_items
+            state["has_stone_pickaxe"] = "stone_pickaxe" in inv_items
+            state["has_furnace"] = "furnace" in inv_items
+            state["has_crafting_table"] = "crafting_table" in inv_items
+            state["has_fuel"] = bool({"coal", "charcoal"} & inv_items)
+            state["has_bucket"] = "bucket" in inv_items or "lava_bucket" in inv_items
+            state["near_lava"] = "lava_bucket" in inv_items
+            state["in_combat"] = bool({"iron_sword", "diamond_sword", "stone_sword",
+                "wooden_sword", "shield", "bow"} & inv_items) and eq.get("mainhand", {}).get(
+                "type", "") in ("sword", "axe", "bow")
+            state["low_health"] = False  # Not directly observable from mineRL
+            state["near_cliff"] = False  # Not directly observable
+            state["irreversible_resource_constraint"] = bool(
+                {"diamond", "diamond_pickaxe", "obsidian", "diamond_sword"} & inv_items)
+            state["resource_critical"] = state["irreversible_resource_constraint"]
+
+            # Scalar observation fields
+            for k in ("location_stats", "life_stats"):
+                if k in obs and isinstance(obs[k], dict):
+                    state[k] = obs[k]
         task = {"task_id": waypoint, "group": task_grp}
         context = {"bucket": ctx, "subgoal_type": self._infer_subgoal_type(waypoint),
                    "risk_level": self._infer_risk(waypoint)}
