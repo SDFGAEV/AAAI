@@ -1,3 +1,4 @@
+# @package _global_
 # C-ACT E0 substrate validation: six detector/window sanity tasks.
 defaults:
   - _self_

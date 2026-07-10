@@ -14,7 +14,7 @@ Usage:
   # E3 main evaluation (36 tasks × 8 seeds × 7 methods = 2016 episodes)
   python experiments/parallel_runner.py \\
     --benchmark cact_p3 --seeds 4001-4008 --methods \\
-    NoKnowledge XENON-Original BankCuration LifecycleSuccessGate FixedBayes ACT C-ACT-Full \\
+    NoKnowledge NoGate FixedBayes PairwisePreferenceGate C-ACT-Pointwise C-ACT \\
     --workers 4 --vlm_port 12345 --mc_base_port 15000
 
   # Resume interrupted run
@@ -34,8 +34,8 @@ _PROJ = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, _PROJ)
 
 # ── Defaults ──
-DEFAULT_METHODS = ["NoKnowledge", "XENON-Original", "BankCuration",
-                   "LifecycleSuccessGate", "FixedBayes", "ACT", "C-ACT-Full"]
+DEFAULT_METHODS = ["NoKnowledge", "NoGate", "FixedBayes",
+                   "PairwisePreferenceGate", "C-ACT-Pointwise", "C-ACT"]
 DEFAULT_SEEDS = [4001, 4002, 4003, 4004, 4005, 4006, 4007, 4008]
 
 
@@ -137,7 +137,14 @@ class ParallelRunner:
         ]
         os.makedirs(os.path.join(_PROJ, "exp_results"), exist_ok=True)
         vlm_log = open(os.path.join(_PROJ, "exp_results", "vlm_server.log"), "a")
-        proc = subprocess.Popen(cmd, stdout=vlm_log, stderr=vlm_log)
+        env = {
+            **os.environ,
+            "PYTHONUNBUFFERED": "1",
+            "PYTHONPATH": os.pathsep.join([
+                _PROJ, os.path.join(_PROJ, "src"), os.path.join(_PROJ, "minerl")
+            ]),
+        }
+        proc = subprocess.Popen(cmd, stdout=vlm_log, stderr=vlm_log, env=env)
         self._server_procs[self.vlm_port] = proc
         print(f"[VLM] Started planning server on port {self.vlm_port} (PID {proc.pid})")
         time.sleep(8)  # Wait for model to load into GPU
@@ -177,7 +184,7 @@ class ParallelRunner:
             f"server.port={cfg.vlm_port}",
             f"server.url=http://127.0.0.1",
             f"benchmark={cfg.benchmark}",
-            f"evaluate=[{cfg.task_idx}]",
+            f"+evaluate=[{cfg.task_idx}]",
             f"env.times={cfg.env_times}",
             f"seed={cfg.seed}",
             f"prefix={cfg.prefix}",

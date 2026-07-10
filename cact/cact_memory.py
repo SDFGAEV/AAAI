@@ -3,14 +3,16 @@ C-ACT Memory: Contracted Adaptive Counterfactual Trust governance layer.
 
 Wraps XENON DecomposedMemory with the C-ACT decision-time admission gate.
 
-9 methods compared:
+6 preregistered main methods:
   NoKnowledge             — Pure LLM, no knowledge base (E3 baseline)
-  XENON-Original          — Retrieve-and-reuse without gate
-  BankCuration            — Relevance-based + merge/prune curation
-  LifecycleSuccessGate    — Lifecycle + success rate gate
+  NoGate                  — Retrieve-and-reuse without gate
   FixedBayes              — Fixed-threshold Bayesian gate (no adaptive)
-  ACT                     — Counterfactual uplift gate (no contract)
-  C-ACT-Full              — Full C-ACT: contract + adaptive + interaction
+  PairwisePreferenceGate  — Trained pairwise preference gate; fail-fast if absent
+  C-ACT-Pointwise         — v2 certificate without episode ledger
+  C-ACT                   — v2 certificate with no-credit episode ledger
+
+Legacy/appendix methods remain for compatibility:
+  XENON-Original, BankCuration, LifecycleSuccessGate, ACT, C-ACT-Full,
   OracleGate              — Exhaustive ON/OFF oracle (upper bound, E4)
   ShuffledKnowledge       — Random knowledge mapping (sanity check, E4)
 
@@ -40,18 +42,21 @@ from .thompson_probe import SafeThompsonProber
 from .bank_sanitizer import BankSanitizer
 from .attribution import OutcomeAttributor, apply_attribution_to_lifecycle
 from .protocol_v2 import (Opportunity, OpportunityLogger, RandomizedAssignment,
-                          AdmissionPolicyV2, ApplicabilitySpec, SCHEMA_VERSION)
+                          AdmissionPolicyV2, ApplicabilitySpec, SCHEMA_VERSION,
+                          validate_method_name)
 
 
 class CactMemory:
     """C-ACT decision-time admission layer wrapping XENON DecomposedMemory."""
 
-    def __init__(self, xenon_memory, method="C-ACT-Full",
+    def __init__(self, xenon_memory, method="C-ACT",
                  store_path: str = None, frozen: bool = False,
                  active_calib_rate: float = 0.0, log_dir: str = None,
                  calibration_path: str = None, protocol_path: str = None,
                  protocol_seed: int = 0):
         self._mem = xenon_memory
+        requested_method = method
+        method = validate_method_name(method, allow_legacy=True)
 
         # Component flags (for ablation)
         self._use_contract = True
@@ -97,7 +102,8 @@ class CactMemory:
         self._v2_assigner = RandomizedAssignment(probability=0.5, seed=protocol_seed)
         self._v2_pending = None
         if protocol_path and os.path.exists(protocol_path):
-            self._v2_policy = AdmissionPolicyV2.load(protocol_path)
+            self._v2_policy = AdmissionPolicyV2.load(
+                protocol_path, use_ledger=(method not in ("C-ACT-Pointwise", "Online-C-ACT-Pointwise")))
         calibration_path = calibration_path or os.environ.get("CACT_CALIBRATION_PATH")
         if calibration_path:
             self._gate.load_calibration(calibration_path)
@@ -114,6 +120,7 @@ class CactMemory:
             self._store, self._gate, self._ig, self._al, self._tp, self._checker)
 
         self.method = method
+        self.requested_method = requested_method
         self.frozen = frozen
         self.active_calib_rate = active_calib_rate
         self.log_dir = log_dir
@@ -379,7 +386,8 @@ class CactMemory:
                              harmful_reuse=None, postcondition_satisfied=None,
                              resource_conflict=False, chain_success=True):
         """Record outcome after a knowledge use/failure with attribution."""
-        self._mem.save_success_failure(waypoint, language_action_str, is_success)
+        if not self.frozen:
+            self._mem.save_success_failure(waypoint, language_action_str, is_success)
         sv = 1.0 if is_success else 0.0
         # Look up the registered knowledge_id for this waypoint
         kid = self._waypoint_to_kid.get(waypoint, f"skill:{waypoint}")
@@ -561,12 +569,12 @@ class CactMemory:
         })
 
         # Knowledge generation
-        if is_success and ess >= 2:
+        if not self.frozen and is_success and ess >= 2:
             self.episode_logs[-1]["knowledge_generated"] = f"gen_{waypoint}_{self._generated_cnt:02d}"
             self._generated_cnt += 1
 
         # Drift tracking + periodic decay
-        if self._use_decay:
+        if not self.frozen and self._use_decay:
             pred_err = abs(sv - self._store.mean(kid, ctx, "use"))
             self._store.adapt_decay(pred_err)
             self._drift_counter += 1
@@ -614,11 +622,21 @@ class CactMemory:
             task_group=task_grp, failure_type=str(self._current_info.get("failure_type", "none")),
             risk_tier=self._infer_risk(waypoint), resource_scarcity=str(self._current_info.get("resource_scarcity", "ordinary")),
             boundary_status="blocked" if blocked else "applicable", inventory_signature=inv_sig,
+            episode_phase=str(self._current_info.get("episode_phase", "early")),
+            prior_admission_bin=str(self._current_info.get("prior_admission_bin", "0")),
+            prior_fallback_bin=str(self._current_info.get("prior_fallback_bin", "0")),
+            prior_harm_flag=int(bool(self._harmful_count)),
+            remaining_critical_resource_ratio=float(self._current_info.get("remaining_critical_resource_ratio", 1.0) or 1.0),
+            time_since_last_window=int(self._current_info.get("time_since_last_window", 0) or 0),
+            collection_exposure_count=int(self._current_info.get("collection_exposure_count", 0) or 0),
             assignment=int(assignment), propensity_reuse=float(propensity),
             propensity_base=float(1.0 - propensity), randomization_seed=int(random_seed),
             start_step=0, end_step=0, censor_flag=bool(self._current_info.get("censor_flag", False)),
+            window_type=str(self._current_info.get("window_type", "fixed")),
             second_intervention_flag=bool(self._current_info.get("second_intervention", False)), eligible=eligible,
             eligibility_reason="eligible" if eligible else blocked[0],
+            annotator_status=str(self._current_info.get("annotator_status", "not_applicable")),
+            snapshot_hash=str(self._current_info.get("snapshot_hash", "")),
         )
 
     # ── is_succeeded_waypoint (MAIN GATE) ──
@@ -635,6 +653,9 @@ class CactMemory:
 
         # Build candidate list
         contract = self._store.get_contract(kid) or {}
+        if not contract and self.method in ("NoKnowledge", "Base-Only"):
+            self._last_decision_result = None
+            return False, None
         if not contract:
             if self.frozen:
                 # Frozen evaluation cannot create or mutate knowledge.
@@ -733,8 +754,12 @@ class CactMemory:
         # Protocol v2 decision: randomized D_fit/D_select logging or frozen
         # calibrated policy. The legacy controller remains a compatibility path
         # only when no v2 protocol artifact is supplied.
-        use_v2 = self._protocol_enabled and self._v2_logger is not None and self.method in ("C-ACT-Full", "Online-C-ACT", "C-ACT")
+        use_v2 = self._protocol_enabled and self._v2_logger is not None and self.method in (
+            "C-ACT", "C-ACT-Pointwise", "Online-C-ACT", "Online-C-ACT-Pointwise")
         if use_v2:
+            if self.frozen and self._v2_policy is None:
+                raise FileNotFoundError(
+                    f"frozen {self.method} requires a readable v2 policy artifact: {self.requested_method}")
             applicable = True
             if contract:
                 contract_obj = self._controller._dict_to_contract(contract)
@@ -763,7 +788,7 @@ class CactMemory:
             self._v2_pending = self._make_v2_opportunity(
                 waypoint, kid, ctx, task_grp, assignment, propensity, random_seed)
         # C-ACT decision
-        elif self.method in ("C-ACT-Full", "Online-C-ACT") or "C-ACT-" in self.method:
+        elif self.method in ("C-ACT", "Online-C-ACT") or self.method.startswith("C-ACT-"):
             self._sync_ablation_flags()
             result = self._controller.decide(
                 candidates, state, task, context, mode)
@@ -830,7 +855,7 @@ class CactMemory:
 
     # ── Legacy decision methods (for baselines) ──
     def _legacy_decide(self, kid, ctx, candidates, state, task, context):
-        """Decision logic for non-C-ACT-Full methods."""
+        """Decision logic for non-v2 and legacy methods."""
         from .decision_controller import DecisionResult
         result = DecisionResult()
         pi = self._store.uplift_probability(kid, ctx)
@@ -863,14 +888,18 @@ class CactMemory:
                 result.decision = "reuse"
             else:
                 result.decision = "reuse" if (pi >= 0.90 and hu <= 0.10) else "fallback"
-        elif self.method == "C-ACT-Full" or self.method == "Online-C-ACT":
+        elif self.method == "PairwisePreferenceGate":
+            raise NotImplementedError(
+                "PairwisePreferenceGate requires a trained D_pair-train artifact; "
+                "no fallback baseline is allowed.")
+        elif self.method == "C-ACT" or self.method == "Online-C-ACT":
             result.decision = "reuse"  # Full C-ACT handled by decision_controller
         elif self.method == "OracleGate":
             result.decision = "reuse" if bool(task.get("oracle_reuse", False)) else "fallback"
         elif self.method == "ShuffledKnowledge":
             result.decision = "reuse" if np.random.random() < 0.5 else "fallback"
         else:
-            result.decision = "reuse"
+            raise ValueError(f"unsupported C-ACT method: {self.method}")
 
         result.pi_uplift = pi
         result.harm_ucb = hu

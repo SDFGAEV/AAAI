@@ -12,12 +12,38 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 import numpy as np
 
 SCHEMA_VERSION = "cact.v2"
+MAIN_METHODS = ("NoKnowledge", "NoGate", "FixedBayes",
+                "PairwisePreferenceGate", "C-ACT-Pointwise", "C-ACT")
+LEGACY_METHODS = ("XENON-Original", "BankCuration", "LifecycleSuccessGate",
+                  "SuccessLifecycle", "ACT", "C-ACT-Full", "OracleGate",
+                  "ShuffledKnowledge", "Online-NoGate", "Online-FixedBayes",
+                  "Online-C-ACT-Pointwise", "Online-C-ACT")
+METHOD_ALIASES = {
+    "C-ACT-Full": "C-ACT",
+    "SuccessLifecycle": "LifecycleSuccessGate",
+}
 DEFAULT_EPS_ABS = 0.10
 DEFAULT_EPS_INC = 0.02
 DEFAULT_DELTA = 0.05
+DEFAULT_BUDGET = 0.05
 DEFAULT_KAPPAS = (0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0)
 MIN_ARM_SUPPORT = 12
 MIN_ESS = 24.0
+
+def canonical_method_name(method: str) -> str:
+    return METHOD_ALIASES.get(str(method), str(method))
+
+def validate_method_name(method: str, allow_legacy: bool = True) -> str:
+    canonical = canonical_method_name(method)
+    allowed = set(MAIN_METHODS)
+    if allow_legacy:
+        allowed.update(LEGACY_METHODS)
+        allowed.update(METHOD_ALIASES)
+        if canonical.startswith("C-ACT-") or canonical.startswith("Online-C-ACT-"):
+            return canonical
+    if canonical not in allowed and method not in allowed:
+        raise ValueError(f"unsupported C-ACT method: {method}")
+    return canonical
 
 def _stable_hash(value: str) -> int:
     return int.from_bytes(hashlib.sha256(value.encode("utf-8")).digest()[:8], "big")
@@ -112,12 +138,20 @@ class Opportunity:
     resource_scarcity: str
     boundary_status: str
     inventory_signature: str
-    assignment: int
-    propensity_reuse: float
-    propensity_base: float
-    randomization_seed: int
-    start_step: int
-    end_step: int
+    episode_phase: str = "early"
+    prior_admission_bin: str = "0"
+    prior_fallback_bin: str = "0"
+    prior_harm_flag: int = 0
+    remaining_critical_resource_ratio: float = 1.0
+    time_since_last_window: int = 0
+    collection_exposure_count: int = 0
+    assignment: int = 0
+    propensity_reuse: float = 0.5
+    propensity_base: float = 0.5
+    randomization_seed: int = 0
+    start_step: int = 0
+    end_step: int = 0
+    window_type: str = "fixed"
     censor_flag: bool = False
     second_intervention_flag: bool = False
     eligible: bool = True
@@ -135,7 +169,9 @@ class Opportunity:
     token_cost: Optional[int] = None
     call_cost: Optional[int] = None
     label_source: str = "environment"
+    annotator_status: str = "not_applicable"
     exclusion_reason: str = ""
+    snapshot_hash: str = ""
 
     @property
     def harm(self) -> Optional[int]:
@@ -161,6 +197,15 @@ class OpportunityLogger:
         "schema_version", "episode_id", "opportunity_id", "task_id", "world_seed",
         "knowledge_id", "assignment", "propensity_reuse", "propensity_base",
         "randomization_seed", "eligible", "eligibility_reason",
+        "round", "stream_seed", "source", "type", "retrieval_rank",
+        "retrieval_score", "raw_text_hash", "task_group", "failure_type",
+        "risk_tier", "resource_scarcity", "episode_phase",
+        "prior_admission_bin", "prior_fallback_bin", "prior_harm_flag",
+        "remaining_critical_resource_ratio", "time_since_last_window",
+        "collection_exposure_count", "boundary_status", "inventory_signature",
+        "start_step", "end_step", "censor_flag", "second_intervention_flag",
+        "window_type", "label_source", "annotator_status", "exclusion_reason",
+        "snapshot_hash",
     }
     def __init__(self, path: os.PathLike[str] | str):
         self.path = Path(path)
@@ -374,14 +419,27 @@ class PolicyCalibrator:
         return policy
 
 class AdmissionPolicyV2:
-    def __init__(self, policy: CalibratedPolicy):
+    def __init__(self, policy: CalibratedPolicy,
+                 use_ledger: bool = True,
+                 initial_budget: float = DEFAULT_BUDGET):
         self.policy, self._est = policy, policy.estimates
+        self.use_ledger = bool(use_ledger)
+        self.initial_budget = float(initial_budget)
+        self._budget_by_episode: Dict[str, float] = {}
     @classmethod
-    def load(cls, path):
-        with open(path, encoding="utf-8") as handle: return cls(CalibratedPolicy.from_dict(json.load(handle)))
+    def load(cls, path, use_ledger: bool = True,
+             initial_budget: float = DEFAULT_BUDGET):
+        with open(path, encoding="utf-8") as handle:
+            return cls(CalibratedPolicy.from_dict(json.load(handle)),
+                       use_ledger=use_ledger, initial_budget=initial_budget)
+    def _budget_before(self, episode_id: str) -> float:
+        return self._budget_by_episode.setdefault(episode_id, self.initial_budget)
     def decide(self, opportunity: Opportunity, applicable: bool = True) -> Dict[str, Any]:
+        budget_before = self._budget_before(opportunity.episode_id)
         if not opportunity.eligible or not applicable:
-            return {"decision":"FALLBACK", "reason":"ineligible_or_inapplicable", "depth":None}
+            return {"decision":"FALLBACK", "reason":"ineligible_or_inapplicable", "depth":None,
+                    "budget_before": budget_before, "budget_after": budget_before,
+                    "risk_charge": 0.0}
         candidates = [
             ("g0", f"{opportunity.source}|{opportunity.type}|{opportunity.task_group}|{opportunity.failure_type}|{opportunity.risk_tier}|{opportunity.resource_scarcity}|{opportunity.boundary_status}"),
             ("g1", f"{opportunity.source}|{opportunity.type}|{opportunity.task_group}|{opportunity.failure_type}|{opportunity.risk_tier}"),
@@ -393,8 +451,28 @@ class AdmissionPolicyV2:
             benefit = float(row["delta_y"]) - self.policy.kappa*float(row["se_y"])
             abs_risk = float(row["risk_abs"]) + self.policy.kappa*float(row["se_abs"])
             inc_risk = float(row["risk_inc"]) + self.policy.kappa*float(row["se_inc"])
+            charge = max(0.0, inc_risk)
+            if benefit < self.policy.delta:
+                reason = "benefit_too_low"
+            elif abs_risk > self.policy.eps_abs:
+                reason = "absolute_risk"
+            elif inc_risk > self.policy.eps_inc:
+                reason = "incremental_risk"
+            elif self.use_ledger and charge > budget_before:
+                reason = "budget_exhausted"
+            else:
+                budget_after = budget_before - charge if self.use_ledger else budget_before
+                self._budget_by_episode[opportunity.episode_id] = budget_after
+                return {"decision":"ADMIT", "reason":"admit", "depth":depth, "key":key,
+                        "benefit_lcb":benefit, "risk_abs_ucb":abs_risk,
+                        "risk_inc_ucb":inc_risk, "risk_charge": charge,
+                        "budget_before": budget_before, "budget_after": budget_after}
             if benefit >= self.policy.delta and abs_risk <= self.policy.eps_abs and inc_risk <= self.policy.eps_inc:
-                return {"decision":"ADMIT", "reason":"supported_policy", "depth":depth, "key":key,
-                        "benefit_lcb":benefit, "risk_abs_ucb":abs_risk, "risk_inc_ucb":inc_risk}
-        return {"decision":"FALLBACK", "reason":"unsupported_or_risk", "depth":None}
+                return {"decision":"FALLBACK", "reason":reason, "depth":depth, "key":key,
+                        "benefit_lcb":benefit, "risk_abs_ucb":abs_risk,
+                        "risk_inc_ucb":inc_risk, "risk_charge": charge,
+                        "budget_before": budget_before, "budget_after": budget_before}
+        return {"decision":"FALLBACK", "reason":"unsupported", "depth":None,
+                "budget_before": budget_before, "budget_after": budget_before,
+                "risk_charge": 0.0}
 

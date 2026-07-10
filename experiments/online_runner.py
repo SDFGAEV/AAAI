@@ -28,8 +28,8 @@ from pathlib import Path
 _PROJ = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, _PROJ)
 
-DEFAULT_METHODS = ["Online-SuccessLifecycle", "Online-FixedBayes",
-                   "Online-ACT", "Online-C-ACT"]
+DEFAULT_METHODS = ["Online-NoGate", "Online-FixedBayes",
+                   "Online-C-ACT-Pointwise", "Online-C-ACT"]
 DEFAULT_ROUNDS = 10
 DEFAULT_SEED = 5001
 
