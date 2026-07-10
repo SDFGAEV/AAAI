@@ -1,0 +1,293 @@
+{
+  "benchmark": "cact_p3",
+  "tasks": [
+    {
+      "id": "0",
+      "type": "craft",
+      "instruction": "Craft oak planks from oak logs.",
+      "goal": "oak_planks",
+      "group": "crafting",
+      "difficulty": "easy"
+    },
+    {
+      "id": "1",
+      "type": "craft",
+      "instruction": "Craft a crafting table from planks.",
+      "goal": "crafting_table",
+      "group": "crafting",
+      "difficulty": "easy"
+    },
+    {
+      "id": "2",
+      "type": "craft",
+      "instruction": "Craft a ladder using sticks.",
+      "goal": "ladder",
+      "group": "crafting",
+      "difficulty": "easy"
+    },
+    {
+      "id": "3",
+      "type": "craft",
+      "instruction": "Craft a furnace using 8 cobblestone.",
+      "goal": "furnace",
+      "group": "crafting",
+      "difficulty": "medium"
+    },
+    {
+      "id": "4",
+      "type": "smelt",
+      "instruction": "Smelt raw beef in a furnace to get cooked beef.",
+      "goal": "cooked_beef",
+      "group": "crafting",
+      "difficulty": "medium"
+    },
+    {
+      "id": "5",
+      "type": "craft",
+      "instruction": "Craft a shield using planks and an iron ingot.",
+      "goal": "shield",
+      "group": "crafting",
+      "difficulty": "medium"
+    },
+    {
+      "id": "6",
+      "type": "craft",
+      "instruction": "Craft a bow using sticks and string.",
+      "goal": "bow",
+      "group": "crafting",
+      "difficulty": "medium"
+    },
+    {
+      "id": "7",
+      "type": "craft",
+      "instruction": "Craft a stonecutter using iron ingot and stone.",
+      "goal": "stonecutter",
+      "group": "crafting",
+      "difficulty": "medium"
+    },
+    {
+      "id": "8",
+      "type": "collect",
+      "instruction": "Collect 8 wood logs by chopping trees.",
+      "goal": "log",
+      "group": "mining",
+      "difficulty": "easy"
+    },
+    {
+      "id": "9",
+      "type": "collect",
+      "instruction": "Collect 8 blocks of dirt.",
+      "goal": "dirt",
+      "group": "mining",
+      "difficulty": "easy"
+    },
+    {
+      "id": "10",
+      "type": "mine",
+      "instruction": "Mine 8 cobblestone using a wooden pickaxe or better.",
+      "goal": "cobblestone",
+      "group": "mining",
+      "difficulty": "easy"
+    },
+    {
+      "id": "11",
+      "type": "mine",
+      "instruction": "Mine 3 iron ore using a stone pickaxe or better.",
+      "goal": "iron_ore",
+      "group": "mining",
+      "difficulty": "medium"
+    },
+    {
+      "id": "12",
+      "type": "mine",
+      "instruction": "Mine 3 coal ore using a wooden pickaxe or better.",
+      "goal": "coal",
+      "group": "mining",
+      "difficulty": "medium"
+    },
+    {
+      "id": "13",
+      "type": "mine",
+      "instruction": "Mine diamond ore using an iron pickaxe or better.",
+      "goal": "diamond",
+      "group": "mining",
+      "difficulty": "hard"
+    },
+    {
+      "id": "14",
+      "type": "mine",
+      "instruction": "Mine obsidian using a diamond pickaxe.",
+      "goal": "obsidian",
+      "group": "mining",
+      "difficulty": "hard"
+    },
+    {
+      "id": "15",
+      "type": "mine",
+      "instruction": "Find and mine diamond ore underground.",
+      "goal": "diamond",
+      "group": "exploration",
+      "difficulty": "hard"
+    },
+    {
+      "id": "16",
+      "type": "collect",
+      "instruction": "Find lava and collect it in a bucket.",
+      "goal": "lava_bucket",
+      "group": "exploration",
+      "difficulty": "hard"
+    },
+    {
+      "id": "17",
+      "type": "collect",
+      "instruction": "Find a village and obtain an emerald.",
+      "goal": "emerald",
+      "group": "exploration",
+      "difficulty": "hard"
+    },
+    {
+      "id": "18",
+      "type": "mine",
+      "instruction": "Explore underground and mine a gold ore.",
+      "goal": "gold_ore",
+      "group": "exploration",
+      "difficulty": "hard"
+    },
+    {
+      "id": "19",
+      "type": "collect",
+      "instruction": "Explore to find a dungeon chest and obtain an iron ingot.",
+      "goal": "iron_ingot",
+      "group": "exploration",
+      "difficulty": "hard"
+    },
+    {
+      "id": "20",
+      "type": "collect",
+      "instruction": "Find a forest and collect an oak sapling.",
+      "goal": "oak_sapling",
+      "group": "exploration",
+      "difficulty": "hard"
+    },
+    {
+      "id": "21",
+      "type": "craft",
+      "instruction": "Tech tree: bare hands → chop trees → planks → sticks → wooden pickaxe.",
+      "goal": "wooden_pickaxe",
+      "group": "tech_tree",
+      "difficulty": "medium"
+    },
+    {
+      "id": "22",
+      "type": "craft",
+      "instruction": "Tech tree: wooden pickaxe → mine cobblestone → craft stone pickaxe.",
+      "goal": "stone_pickaxe",
+      "group": "tech_tree",
+      "difficulty": "medium"
+    },
+    {
+      "id": "23",
+      "type": "craft",
+      "instruction": "Tech tree: bare hands → logs → planks → sticks → table → wooden sword.",
+      "goal": "wooden_sword",
+      "group": "tech_tree",
+      "difficulty": "medium"
+    },
+    {
+      "id": "24",
+      "type": "craft",
+      "instruction": "Tech tree: stone pickaxe → mine iron ore → furnace → smelt → iron pickaxe.",
+      "goal": "iron_pickaxe",
+      "group": "tech_tree",
+      "difficulty": "hard"
+    },
+    {
+      "id": "25",
+      "type": "craft",
+      "instruction": "Tech tree: iron pickaxe → mine diamond → craft diamond pickaxe.",
+      "goal": "diamond_pickaxe",
+      "group": "tech_tree",
+      "difficulty": "hard"
+    },
+    {
+      "id": "26",
+      "type": "craft",
+      "instruction": "Tech tree: stone pickaxe → iron ore → smelt → iron ingot → iron sword.",
+      "goal": "iron_sword",
+      "group": "tech_tree",
+      "difficulty": "hard"
+    },
+    {
+      "id": "27",
+      "type": "mine",
+      "instruction": "Tech tree: iron pickaxe → diamond → diamond pickaxe → obsidian.",
+      "goal": "obsidian",
+      "group": "tech_tree",
+      "difficulty": "hard"
+    },
+    {
+      "id": "28",
+      "type": "mine",
+      "instruction": "Mine iron ore with wooden pickaxe → fails → switch to stone → obtain ore.",
+      "goal": "iron_ore",
+      "group": "failure_recovery",
+      "difficulty": "hard"
+    },
+    {
+      "id": "29",
+      "type": "mine",
+      "instruction": "Mine diamond with stone pickaxe → fails → switch to iron → obtain diamond.",
+      "goal": "diamond",
+      "group": "failure_recovery",
+      "difficulty": "hard"
+    },
+    {
+      "id": "30",
+      "type": "smelt",
+      "instruction": "Smelt iron ore without fuel → fails → gather coal → smelt into ingot.",
+      "goal": "iron_ingot",
+      "group": "failure_recovery",
+      "difficulty": "hard"
+    },
+    {
+      "id": "31",
+      "type": "craft",
+      "instruction": "Craft stone pickaxe without table → fails → craft table first → then pickaxe.",
+      "goal": "stone_pickaxe",
+      "group": "failure_recovery",
+      "difficulty": "hard"
+    },
+    {
+      "id": "32",
+      "type": "craft",
+      "instruction": "8 cobblestone only. Choose: furnace OR stone pickaxe. Craft furnace.",
+      "goal": "furnace",
+      "group": "interaction_stress",
+      "difficulty": "hard"
+    },
+    {
+      "id": "33",
+      "type": "craft",
+      "instruction": "Limited coal. Choose: torches for lighting OR save for furnace fuel. Craft torches.",
+      "goal": "torch",
+      "group": "interaction_stress",
+      "difficulty": "hard"
+    },
+    {
+      "id": "34",
+      "type": "craft",
+      "instruction": "1 iron ingot only. Choose: iron pickaxe for mining OR iron sword. Craft the pickaxe.",
+      "goal": "iron_pickaxe",
+      "group": "interaction_stress",
+      "difficulty": "hard"
+    },
+    {
+      "id": "35",
+      "type": "craft",
+      "instruction": "2 diamonds only. Choose: diamond pickaxe OR diamond sword. Craft pickaxe.",
+      "goal": "diamond_pickaxe",
+      "group": "interaction_stress",
+      "difficulty": "hard"
+    }
+  ]
+}

@@ -59,6 +59,7 @@ class ExperimentConfig:
     calibration_path: str = ""
     run_id: str = ""
     snapshot_path: str = ""
+    protocol_path: str = ""
 
 
 class ParallelRunner:
@@ -193,6 +194,8 @@ class ParallelRunner:
             cmd.append(f"+cact_store_path={cfg.store_path}")
         if cfg.calibration_path:
             cmd.append(f"+cact_calibration_path={cfg.calibration_path}")
+        if cfg.protocol_path:
+            cmd.append(f"+cact_protocol_path={cfg.protocol_path}")
         if cfg.run_id:
             cmd.append(f"+cact_run_id={cfg.run_id}")
         if cfg.frozen:
@@ -212,6 +215,7 @@ class ParallelRunner:
             return h.hexdigest()
 
         frozen_hash_before = store_hash(cfg.store_path) if cfg.frozen else None
+        protocol_hash_before = store_hash(cfg.protocol_path) if (cfg.frozen and cfg.protocol_path and os.path.isfile(cfg.protocol_path)) else None
         t0 = time.perf_counter()
         try:
             result = subprocess.run(
@@ -226,9 +230,13 @@ class ParallelRunner:
             elapsed = time.perf_counter() - t0
             success = result.returncode == 0
             frozen_hash_after = store_hash(cfg.store_path) if cfg.frozen else None
+            protocol_hash_after = store_hash(cfg.protocol_path) if (cfg.frozen and cfg.protocol_path and os.path.isfile(cfg.protocol_path)) else None
             if cfg.frozen and frozen_hash_before != frozen_hash_after:
                 success = False
                 frozen_error = "frozen store mutated"
+            elif cfg.frozen and protocol_hash_before != protocol_hash_after:
+                success = False
+                frozen_error = "frozen policy artifact mutated"
             else:
                 frozen_error = ""
             task_success = None
@@ -255,6 +263,7 @@ class ParallelRunner:
                 "stderr_tail": result.stderr[-500:] if result.stderr else "",
                 "task_success": task_success,
                 "frozen_store_hash": frozen_hash_after if cfg.frozen else None,
+                "frozen_policy_hash": protocol_hash_after if cfg.frozen else None,
                 "frozen_error": frozen_error,
             }
         except subprocess.TimeoutExpired:
@@ -470,6 +479,7 @@ def main():
     parser.add_argument("--active_calib_rate", type=float, default=0.0)
     parser.add_argument("--store_path", default="")
     parser.add_argument("--snapshot_path", default="")
+    parser.add_argument("--protocol_path", default="")
     parser.add_argument("--print_grid", action="store_true",
                        help="Print experiment grid without running")
 
@@ -509,6 +519,7 @@ def main():
             cfg.store_path = args.store_path
         if args.snapshot_path:
             cfg.snapshot_path = args.snapshot_path
+        cfg.protocol_path = args.protocol_path
     runner._t_start = time.perf_counter()
     runner.run(
         benchmark=args.benchmark,

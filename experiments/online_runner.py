@@ -12,7 +12,7 @@ Methods:
   Online-ACT               — counterfactual uplift, no contract
   Online-C-ACT             — full C-ACT pipeline
 
-Per-round: 8 accumulation + 4 calibration + 8 frozen eval = 20 episodes
+Per-round: 16 shared update + 4 calibration + 8 frozen eval = 28 episodes
 Total per stream: 10 rounds × 20 episodes × 4 methods = 800 episodes
 
 Usage:
@@ -34,7 +34,7 @@ DEFAULT_ROUNDS = 10
 DEFAULT_SEED = 5001
 
 # Per-round episodes
-N_ACCUM = 8    # accumulation episodes
+N_ACCUM = 16   # shared candidate/evidence update episodes
 N_CALIB = 4     # calibration/check episodes
 N_EVAL  = 8    # frozen evaluation (6 retention + 6 hard-transfer)
 
@@ -43,10 +43,11 @@ class OnlineRunner:
     """Multi-round online self-evolution with retention + hard-transfer."""
 
     def __init__(self, workers: int = 4, vlm_port: int = 12345,
-                 rounds: int = DEFAULT_ROUNDS):
+                 rounds: int = DEFAULT_ROUNDS, protocol_path: str = ""):
         self.workers = workers
         self.vlm_port = vlm_port
         self.rounds = rounds
+        self.protocol_path = protocol_path
         self._store_root = os.path.join(_PROJ, "exp_results", "online_stores")
         self._results_root = os.path.join(_PROJ, "exp_results", "online_results")
         self._vlm_proc = None
@@ -95,7 +96,7 @@ class OnlineRunner:
         runner._load_checkpoint()
 
         methods = [method]
-        n_tasks = {"cact_online_stream": 8, "cact_calib": 4,
+        n_tasks = {"cact_online_stream": 16, "cact_calib": 4,
                    "cact_online_retention": 4,
                    "cact_online_hard_transfer": 4}.get(benchmark, 8)
         grid = runner._build_grid(benchmark, seeds, methods,
@@ -108,6 +109,7 @@ class OnlineRunner:
             if active_calib_rate:
                 cfg.active_calib_rate = active_calib_rate
             cfg.calibration_path = calibration_path or ""
+            cfg.protocol_path = self.protocol_path
             cfg.run_id = f"{method}_{phase}_seed{seeds[0]}_task{cfg.task_idx}"
 
         label_str = f" [{label}]" if label else ""
@@ -121,10 +123,31 @@ class OnlineRunner:
         runner.print_summary()
         return results
 
+    def _run_round_update(self, seed: int, round_num: int, store_path: str,
+                          prev_store_path: str = None) -> str:
+        """Run the shared 16-update + 4-calibration stream phase once."""
+        if prev_store_path and os.path.exists(prev_store_path):
+            if os.path.exists(store_path):
+                shutil.rmtree(store_path, ignore_errors=True)
+            shutil.copytree(prev_store_path, store_path)
+        self._run_phase("cact_online_stream", [seed], "Online-C-ACT",
+                        f"R{round_num:02d}_shared_accum", store_path,
+                        frozen=False, active_calib_rate=0.15, label=f"shared_accum({N_ACCUM})")
+        self._run_phase("cact_calib", [seed], "Online-C-ACT",
+                        f"R{round_num:02d}_shared_calib", store_path,
+                        frozen=False, active_calib_rate=0.10, label=f"shared_calib({N_CALIB})")
+        from cact.trust_store import TrustStore
+        from cact.trust_gate import TrustGate
+        calibration_path = os.path.join(store_path, "calibration.json")
+        gate = TrustGate(); gate.calibrate_all_groups(TrustStore(store_path=store_path).get_calibration_data())
+        gate.save_calibration(calibration_path)
+        return store_path
+
     # ── Run one round for one method ──
     def _run_round_for_method(self, method: str, seed: int,
                                round_num: int,
-                               prev_store_path: str = None) -> Dict:
+                               prev_store_path: str = None,
+                               shared_update_store: str = None) -> Dict:
         """Execute accumulation → calibration → evaluation for one (method, seed, round)."""
         store_path = self._trust_store_path(method, seed, round_num)
 
@@ -136,32 +159,41 @@ class OnlineRunner:
                 if os.path.exists(src):
                     shutil.copy(src, os.path.join(store_path, fname))
 
-        # Phase 1: Accumulation (8 episodes, updates trust store)
-        self._run_phase(
-            benchmark="cact_online_stream",
-            seeds=[seed], method=method,
-            phase=f"R{round_num:02d}_accum",
-            trust_store_path=store_path,
-            frozen=False, active_calib_rate=0.15,
-            label=f"accum({N_ACCUM})"
-        )
+        if shared_update_store is None:
+            # Phase 1: Accumulation (8 episodes, updates trust store)
+            self._run_phase(
+                benchmark="cact_online_stream",
+                seeds=[seed], method=method,
+                phase=f"R{round_num:02d}_accum",
+                trust_store_path=store_path,
+                frozen=False, active_calib_rate=0.15,
+                label=f"accum({N_ACCUM})"
+            )
 
-        # Phase 2: Calibration (4 episodes, updates thresholds)
-        self._run_phase(
-            benchmark="cact_calib",
-            seeds=[seed], method=method,
-            phase=f"R{round_num:02d}_calib",
-            trust_store_path=store_path,
-            frozen=False, active_calib_rate=0.10,
-            label=f"calib({N_CALIB})"
-        )
-        from cact.trust_store import TrustStore
-        from cact.trust_gate import TrustGate
-        calibration_path = os.path.join(store_path, "calibration.json")
-        ts_cal = TrustStore(store_path=store_path)
-        tg_cal = TrustGate()
-        tg_cal.calibrate_all_groups(ts_cal.get_calibration_data())
-        tg_cal.save_calibration(calibration_path)
+            # Phase 2: Calibration (4 episodes, updates thresholds)
+            self._run_phase(
+                benchmark="cact_calib",
+                seeds=[seed], method=method,
+                phase=f"R{round_num:02d}_calib",
+                trust_store_path=store_path,
+                frozen=False, active_calib_rate=0.10,
+                label=f"calib({N_CALIB})"
+            )
+            from cact.trust_store import TrustStore
+            from cact.trust_gate import TrustGate
+            calibration_path = os.path.join(store_path, "calibration.json")
+            ts_cal = TrustStore(store_path=store_path)
+            tg_cal = TrustGate()
+            tg_cal.calibrate_all_groups(ts_cal.get_calibration_data())
+            tg_cal.save_calibration(calibration_path)
+
+        else:
+            # E5 controlled-stream protocol: all methods receive the same
+            # update/evidence snapshot; only frozen evaluation is method-specific.
+            if os.path.exists(store_path):
+                shutil.rmtree(store_path, ignore_errors=True)
+            shutil.copytree(shared_update_store, store_path)
+            calibration_path = os.path.join(store_path, "calibration.json")
 
         # Phase 3: Frozen Evaluation — Retention (4 episodes)
         ret_results = self._run_phase(
@@ -247,12 +279,14 @@ class OnlineRunner:
                 print(f"{'─'*70}")
 
                 round_data = {}
+                shared_path = self._trust_store_path("SharedStream", seed, r)
+                shared_prev = prev_stores.get("__shared__")
+                self._run_round_update(seed, r, shared_path, shared_prev)
+                prev_stores["__shared__"] = shared_path
                 for method in methods:
                     print(f"\n  [{method}] Round {r}...")
-                    prev_path = prev_stores.get(method)
-
                     metrics = self._run_round_for_method(
-                        method, seed, r, prev_path)
+                        method, seed, r, shared_update_store=shared_path)
                     prev_stores[method] = self._trust_store_path(method, seed, r)
                     round_data[method] = metrics
 
@@ -370,12 +404,13 @@ def main():
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--vlm_port", type=int, default=12345)
+    parser.add_argument("--protocol_path", default="")
 
     args = parser.parse_args()
     methods = args.methods or DEFAULT_METHODS
 
     runner = OnlineRunner(workers=args.workers, vlm_port=args.vlm_port,
-                          rounds=args.rounds)
+                          rounds=args.rounds, protocol_path=args.protocol_path)
     runner.run(methods=methods, seed=args.seed)
 
 

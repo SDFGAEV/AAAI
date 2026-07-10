@@ -39,6 +39,8 @@ from .active_logging import ActiveBaseLogger
 from .thompson_probe import SafeThompsonProber
 from .bank_sanitizer import BankSanitizer
 from .attribution import OutcomeAttributor, apply_attribution_to_lifecycle
+from .protocol_v2 import (Opportunity, OpportunityLogger, RandomizedAssignment,
+                          AdmissionPolicyV2, ApplicabilitySpec, SCHEMA_VERSION)
 
 
 class CactMemory:
@@ -47,7 +49,8 @@ class CactMemory:
     def __init__(self, xenon_memory, method="C-ACT-Full",
                  store_path: str = None, frozen: bool = False,
                  active_calib_rate: float = 0.0, log_dir: str = None,
-                 calibration_path: str = None):
+                 calibration_path: str = None, protocol_path: str = None,
+                 protocol_seed: int = 0):
         self._mem = xenon_memory
 
         # Component flags (for ablation)
@@ -88,6 +91,13 @@ class CactMemory:
         # Core C-ACT components
         self._store = TrustStore(store_path or "cact_ckpt/trust_store")
         self._gate = TrustGate()
+        self._protocol_enabled = bool(protocol_path)
+        self._v2_policy = None
+        self._v2_logger = None
+        self._v2_assigner = RandomizedAssignment(probability=0.5, seed=protocol_seed)
+        self._v2_pending = None
+        if protocol_path and os.path.exists(protocol_path):
+            self._v2_policy = AdmissionPolicyV2.load(protocol_path)
         calibration_path = calibration_path or os.environ.get("CACT_CALIBRATION_PATH")
         if calibration_path:
             self._gate.load_calibration(calibration_path)
@@ -107,6 +117,8 @@ class CactMemory:
         self.frozen = frozen
         self.active_calib_rate = active_calib_rate
         self.log_dir = log_dir
+        if self._protocol_enabled and log_dir:
+            self._v2_logger = OpportunityLogger(os.path.join(log_dir, "opportunities.jsonl"))
 
         # Log buffers
         self.episode_logs: List[Dict] = []
@@ -412,6 +424,23 @@ class CactMemory:
 
         if is_harmful:
             self._harmful_count += 1
+        if self._v2_pending is not None:
+            opp = self._v2_pending
+            opp.y = int(bool(is_success))
+            opp.h1 = int(bool(is_harmful)) if self._current_info.get("harm_code") == "H1" else 0
+            opp.h2 = int(bool(is_harmful)) if self._current_info.get("harm_code") == "H2" else 0
+            opp.h3 = int(bool(is_harmful)) if self._current_info.get("harm_code") == "H3" else 0
+            opp.h4 = int(bool(is_harmful)) if self._current_info.get("harm_code") not in ("H1", "H2", "H3") else 0
+            opp.h5 = int(float(self._current_info.get("resource_cost", 0.0) or 0.0) > float(self._current_info.get("resource_budget", float("inf"))))
+            opp.h6 = int(bool(self._current_info.get("paired_reuse_failed_base_success", False)))
+            opp.censor_flag = bool(self._current_info.get("censor_flag", False))
+            opp.second_intervention_flag = bool(self._current_info.get("second_intervention", False))
+            opp.progress_delta = float(self._current_info.get("progress_delta", 0.0) or 0.0)
+            opp.resource_cost = float(self._current_info.get("resource_cost", 0.0) or 0.0)
+            opp.label_source = "environment"
+            if self._v2_logger:
+                self._v2_logger.append(opp)
+            self._v2_pending = None
 
         # ── Lifecycle update ──
         if not self.frozen:
@@ -554,6 +583,44 @@ class CactMemory:
             if self._drift_counter % 30 == 0:  # Check every 30 episodes
                 self._bucket.maintain(allowed=True)
 
+    def _make_v2_opportunity(self, waypoint, kid, ctx, task_grp, assignment, propensity, random_seed):
+        contract = self._store.get_contract(kid) or {}
+        obs = self._current_observation or {}
+        inv = obs.get("inventory", {}) if isinstance(obs, dict) else {}
+        inv_sig = "|".join(sorted(str(k) for k in inv)[:16])
+        raw = str(contract.get("raw_text", contract.get("full_text", contract.get("gene", waypoint))))
+        import hashlib
+        blocked = []
+        if bool(self._current_info.get("global_safety_block", False)):
+            blocked.append("global_safety_shield")
+        if bool(self._current_info.get("high_risk", False)):
+            blocked.append("high_risk")
+        if bool(self._current_info.get("task_finished", False)):
+            blocked.append("task_finished")
+        if bool(self._current_info.get("duplicate_action", False)):
+            blocked.append("duplicate_action")
+        if self._current_info.get("window_can_mask", True) is False:
+            blocked.append("window_cannot_mask")
+        eligible = not blocked
+        return Opportunity(
+            episode_id=f"ep_{waypoint}_{self._current_seed}_{self.method}",
+            opportunity_id=f"opp_{waypoint}_{self._current_seed}_{self._reuse_count + self._fallback_count + 1}",
+            round=self._current_round, stream_seed=self._current_seed,
+            task_id=str(waypoint), world_seed=int(self._current_info.get("world_seed", self._current_seed) or 0),
+            knowledge_id=kid, source=str(contract.get("source", "FAM")),
+            type=str(contract.get("type", "skill")), retrieval_rank=1,
+            retrieval_score=float(contract.get("retrieval_score", 1.0)),
+            raw_text_hash=hashlib.sha256(raw.encode("utf-8")).hexdigest(),
+            task_group=task_grp, failure_type=str(self._current_info.get("failure_type", "none")),
+            risk_tier=self._infer_risk(waypoint), resource_scarcity=str(self._current_info.get("resource_scarcity", "ordinary")),
+            boundary_status="blocked" if blocked else "applicable", inventory_signature=inv_sig,
+            assignment=int(assignment), propensity_reuse=float(propensity),
+            propensity_base=float(1.0 - propensity), randomization_seed=int(random_seed),
+            start_step=0, end_step=0, censor_flag=bool(self._current_info.get("censor_flag", False)),
+            second_intervention_flag=bool(self._current_info.get("second_intervention", False)), eligible=eligible,
+            eligibility_reason="eligible" if eligible else blocked[0],
+        )
+
     # ── is_succeeded_waypoint (MAIN GATE) ──
     def is_succeeded_waypoint(self, waypoint):
         """C-ACT admission gate for knowledge reuse."""
@@ -663,8 +730,40 @@ class CactMemory:
         if self._supervision_blocked:
             return False, None
 
+        # Protocol v2 decision: randomized D_fit/D_select logging or frozen
+        # calibrated policy. The legacy controller remains a compatibility path
+        # only when no v2 protocol artifact is supplied.
+        use_v2 = self._protocol_enabled and self._v2_logger is not None and self.method in ("C-ACT-Full", "Online-C-ACT", "C-ACT")
+        if use_v2:
+            applicable = True
+            if contract:
+                contract_obj = self._controller._dict_to_contract(contract)
+                scope_ok = self._checker.check_scope_match(contract_obj, context)
+                pre_ok = self._checker.check_preconditions(contract_obj, state)[0]
+                boundary_ok = self._checker.check_hard_boundary(contract_obj, state)[0]
+                applicable = bool(scope_ok and pre_ok and boundary_ok)
+            provisional = self._make_v2_opportunity(waypoint, kid, ctx, task_grp, 1, 0.5, 0)
+            if not provisional.eligible or not applicable:
+                assignment, propensity, random_seed = 0, 0.5, 0
+                gate = {"decision": "FALLBACK", "reason": provisional.eligibility_reason if not provisional.eligible else "inapplicable", "depth": None}
+            elif self.frozen and self._v2_policy is not None:
+                gate = self._v2_policy.decide(provisional, applicable=applicable)
+                assignment, propensity, random_seed = int(gate["decision"] == "ADMIT"), 0.5, 0
+            else:
+                assignment, propensity, random_seed = self._v2_assigner.assign(
+                    f"{waypoint}|{self._current_seed}|{self._reuse_count + self._fallback_count}")
+                gate = {"decision": "ADMIT" if assignment else "FALLBACK",
+                        "reason": "randomized_logging", "depth": None}
+            result = __import__("cact.decision_controller", fromlist=["DecisionResult"]).DecisionResult()
+            result.decision = "reuse" if assignment else "fallback"
+            result.chosen_knowledge_id = kid if assignment else ""
+            result.contract_satisfied_before = bool(applicable)
+            result.propensity_reuse, result.propensity_base = propensity, 1.0 - propensity
+            result.lifecycle_state = lc
+            self._v2_pending = self._make_v2_opportunity(
+                waypoint, kid, ctx, task_grp, assignment, propensity, random_seed)
         # C-ACT decision
-        if self.method in ("C-ACT-Full", "Online-C-ACT") or "C-ACT-" in self.method:
+        elif self.method in ("C-ACT-Full", "Online-C-ACT") or "C-ACT-" in self.method:
             self._sync_ablation_flags()
             result = self._controller.decide(
                 candidates, state, task, context, mode)

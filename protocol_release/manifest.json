@@ -1,0 +1,98 @@
+{
+  "schema_version": "cact.protocol_release.v1",
+  "label": "protocol-candidate",
+  "created_utc": "2026-07-10T15:06:36.913962+00:00",
+  "method": "C-ACT: Contextual Admission via Counterfactual Treatment Effects",
+  "frozen_claims": [
+    "reliable admission",
+    "applicability boundary and adaptive risk-coverage"
+  ],
+  "hashes": {
+    "C-ACT_完整研究协议与论文写作手册.md": "d51c2357b5aa81fe2ded29aa495129705946d622f45308af781bfcc7ece4dc9b",
+    "C-ACT\\cact\\protocol_v2.py": "7d420abc4cadfbec7aeb653f84574d9a962fdf4ab8a1df501c4ecfd8686ef599",
+    "C-ACT\\experiments\\calibrate_v2.py": "3d690818d349edcd28ad10f12e6cc6ebf7d2a77a6639649e15e5dc9ad6081e52",
+    "C-ACT\\experiments\\parallel_runner.py": "a27c05b58ededfcad4fc39156a05bf7b62a2c023d25918426e9137d66fc09e98",
+    "C-ACT\\experiments\\run_all.sh": "9ba4e86ee7983aad19ce3f2d2b395e4cbcafb18a0427e7d37bd7af1a05618357",
+    "C-ACT\\paper\\PAPER_SUBMISSION_DRAFT_V2.md": "654e60c82930cb1124d60953a328ea330e7b6b148ad4372b1d8d16b2ab369698"
+  },
+  "seeds": {
+    "E0": [
+      1001,
+      1002
+    ],
+    "E1a": [
+      2001,
+      2002,
+      2003,
+      2004,
+      2005
+    ],
+    "E1b": [
+      2101,
+      2102,
+      2103,
+      2104,
+      2105
+    ],
+    "D_select": [
+      3001,
+      3002,
+      3003,
+      3004,
+      3005,
+      3006,
+      3007,
+      3008
+    ],
+    "D_audit": [
+      3011,
+      3012,
+      3013,
+      3014,
+      3015,
+      3016,
+      3017,
+      3018
+    ],
+    "E3": [
+      4001,
+      4002,
+      4003,
+      4004,
+      4005,
+      4006,
+      4007,
+      4008
+    ],
+    "E4": [
+      5001,
+      5002,
+      5003,
+      5004,
+      5005
+    ],
+    "E5": [
+      6001,
+      6002,
+      6003,
+      6004,
+      6005
+    ]
+  },
+  "budgets": {
+    "delta": 0.05,
+    "eps_abs": 0.1,
+    "eps_inc": 0.02,
+    "kappas": [
+      0,
+      0.5,
+      1,
+      1.5,
+      2,
+      2.5,
+      3
+    ],
+    "support_n": 12,
+    "ess": 24
+  }
+}

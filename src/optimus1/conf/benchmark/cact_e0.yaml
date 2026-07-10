@@ -1,0 +1,17 @@
+# C-ACT E0 substrate validation: six detector/window sanity tasks.
+defaults:
+  - _self_
+env:
+  name: CACTTaskEnv-v0
+  max_minutes: 3
+  times: 1
+  prefer_biome: forest
+  initial_inventory: []
+all_task:
+- {id: 0, type: craft, instruction: "Craft a crafting table from planks.", goal: crafting_table, group: crafting, difficulty: easy}
+- {id: 1, type: craft, instruction: "Craft a wooden pickaxe from planks and sticks.", goal: wooden_pickaxe, group: crafting, difficulty: easy}
+- {id: 2, type: craft, instruction: "Craft a furnace using cobblestone.", goal: furnace, group: crafting, difficulty: medium}
+- {id: 3, type: mine, instruction: "Mine iron ore using a stone pickaxe or better.", goal: iron_ore, group: mining, difficulty: medium}
+- {id: 4, type: mine, instruction: "Recover iron after a wrong-tool attempt.", goal: iron_ore, group: failure_recovery, difficulty: hard}
+- {id: 5, type: smelt, instruction: "Recover smelting after a missing-fuel attempt.", goal: iron_ingot, group: failure_recovery, difficulty: hard}
+evaluate: []
