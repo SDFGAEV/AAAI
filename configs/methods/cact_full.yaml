@@ -1,9 +1,0 @@
-# C-ACT-Full: Complete Contracted Adaptive Counterfactual Trust
-# All 7 layers active: Contract, Level-aware prior, Bayesian uplift,
-# Adaptive calibration, Active base logging, Thompson probing,
-# Interaction gate, Lifecycle management, Temporal decay.
-
-cact_method: "C-ACT-Full"
-frozen: false
-active_calib_rate: 0.15
-description: "Full C-ACT: contract + adaptive + interaction + lifecycle"

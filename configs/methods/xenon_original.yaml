@@ -1,7 +1,0 @@
-# XENON-Original / NoTrust: Retrieve-and-reuse without gate
-# Every retrieved knowledge item is used unconditionally.
-
-cact_method: "XENON-Original"
-frozen: false
-active_calib_rate: 0.0
-description: "XENON retrieve-and-reuse, no gate, no trust check"
