@@ -1,162 +1,131 @@
-"""
-Metrics for C-ACT trust gate evaluation.
-
-Primary metrics (E3 main table):
-  SR        — Success Rate
-  HardSR    — Hard task Success Rate
-  FailureSR — Failure Recovery Success Rate
-  InteractionSR — Interaction Stress Success Rate
-  KUS       — Knowledge Usage Success
-  HRR       — Harmful Reuse Rate
-  IRR       — Invalid Repair Rate
-  Coverage@Risk<=10% — Risk-calibrated coverage
-
-Diagnostic metrics:
-  CSR       — Contract Satisfaction Rate
-  CVR       — Contract Violation Rate
-
-Online evolution metrics (E5):
-  KPR       — Knowledge Pollution Rate
-"""
-
+"""Schema-aware metrics for the C-ACT evaluation protocol."""
+import math
+from typing import Any, Dict, List, Tuple
 import numpy as np
-from typing import Dict, List, Tuple
 
+def _first(row: Dict, *keys: str, default: Any = None) -> Any:
+    for key in keys:
+        if key in row:
+            return row[key]
+    return default
+
+def validate_schema(records: List[Dict], required: Tuple[str, ...] = None) -> None:
+    required = required or ("decision", "success", "task_group", "harmful_reuse",
+                            "pre_admit_contract_pass",
+                            "postcondition_satisfied", "resource_conflict",
+                            "chain_success")
+    aliases = {
+        "success": ("success", "outcome_success"),
+        "task_group": ("task_group", "group"),
+        "harmful_reuse": ("harmful_reuse", "is_harmful"),
+        "pre_admit_contract_pass": ("pre_admit_contract_pass", "contract_satisfied_before"),
+        "postcondition_satisfied": ("postcondition_satisfied", "postcondition_pass",
+                                     "contract_satisfied_after"),
+        "resource_conflict": ("resource_conflict",),
+        "chain_success": ("chain_success",),
+        "decision": ("decision",),
+    }
+    errors = []
+    for i, row in enumerate(records):
+        for field in required:
+            if not any(k in row for k in aliases.get(field, (field,))):
+                errors.append(f"row {i}: missing {field}")
+    if errors:
+        raise ValueError("Metric schema validation failed: " + "; ".join(errors[:8]))
 
 def compute_sr(data: List[Dict]) -> float:
-    """Success Rate."""
-    if not data: return 0.0
-    return sum(1 for x in data if x.get("success") or x.get("outcome_success")) / len(data)
-
+    return sum(bool(_first(x, "success", "outcome_success", default=False)) for x in data) / len(data) if data else 0.0
 
 def compute_kus(data: List[Dict]) -> float:
-    """Knowledge Usage Success — P(success | reused knowledge)."""
-    reused = [x for x in data if x.get("decision") == "reuse"]
-    if not reused: return 0.0
-    return sum(1 for x in reused if x.get("outcome_success")) / len(reused)
-
+    rows = [x for x in data if x.get("decision") in ("reuse", "probe")]
+    return sum(bool(_first(x, "outcome_success", "success", default=False)) for x in rows) / len(rows) if rows else 0.0
 
 def compute_hrr(data: List[Dict]) -> float:
-    """Harmful Reuse Rate — P(harmful | reused).
-
-    Harmful defined as: (Δprogress ≤ 0 ∧ Cost > B) ∨ unrecoverable failure.
-    """
-    reused = [x for x in data if x.get("decision") == "reuse"]
-    if not reused: return 0.0
-    return sum(1 for x in reused if x.get("is_harmful")) / len(reused)
-
+    rows = [x for x in data if x.get("decision") in ("reuse", "probe")]
+    return sum(bool(_first(x, "harmful_reuse", "is_harmful", default=False)) for x in rows) / len(rows) if rows else 0.0
 
 def compute_irr(data: List[Dict]) -> float:
-    """Invalid Repair Rate — P(f_after=f_before ∨ Δprogress≤0 ∨ new_severe_failure | remedy used)."""
-    remedies = [x for x in data if x.get("type") == "remedy"]
-    if not remedies: return 0.0
-    return sum(1 for x in remedies if not x.get("failure_resolved", False)) / len(remedies)
-
+    rows = [x for x in data if x.get("type") == "remedy"]
+    return sum(not bool(x.get("failure_resolved", False)) for x in rows) / len(rows) if rows else 0.0
 
 def compute_coverage(data: List[Dict]) -> float:
-    """Coverage — fraction of reuse decisions where knowledge was allowed."""
-    if not data: return 0.0
-    return sum(1 for x in data if x.get("decision") == "reuse") / len(data)
-
+    return sum(x.get("decision") in ("reuse", "probe") for x in data) / len(data) if data else 0.0
 
 def compute_ece(data: List[Dict], n_bins: int = 5) -> float:
-    """Expected Calibration Error."""
-    pairs = [(x.get("pi_uplift", x.get("trust_score", 0.5)),
-              1.0 if x.get("outcome_success") else 0.0)
-             for x in data if "pi_uplift" in x or "trust_score" in x]
-    if len(pairs) < n_bins: return 0.0
-    scores = np.array([p[0] for p in pairs])
-    outcomes = np.array([p[1] for p in pairs])
-    idx = np.argsort(scores)
-    scores, outcomes = scores[idx], outcomes[idx]
-    n = len(scores)
-    e = 0.0
+    pairs = []
+    for x in data:
+        score = _first(x, "pi_uplift", "trust_score")
+        target = _first(x, "uplift_beneficial", "counterfactual_beneficial")
+        if score is not None and target is not None:
+            pairs.append((float(score), float(bool(target))))
+    if len(pairs) < n_bins:
+        return math.nan
+    pairs.sort(key=lambda z: z[0])
+    n = len(pairs)
+    error = 0.0
     for i in range(n_bins):
         lo, hi = i * n // n_bins, (i + 1) * n // n_bins
         if hi > lo:
-            e += abs(np.mean(scores[lo:hi]) - np.mean(outcomes[lo:hi])) * (hi - lo) / n
-    return float(e)
+            error += abs(np.mean([p[0] for p in pairs[lo:hi]]) -
+                         np.mean([p[1] for p in pairs[lo:hi]])) * (hi - lo) / n
+    return float(error)
 
-
-def compute_cov_risk(data: List[Dict], eps: float = 0.10) -> Tuple[float, List[float], List[float]]:
-    """Coverage at risk <= eps, plus full (coverage, risk) curves."""
+def compute_cov_risk(data: List[Dict], eps: float = 0.10):
     from scipy.stats import beta as beta_dist
     score_key = "pi_uplift" if any("pi_uplift" in x for x in data) else "trust_score"
-    sc = sorted([x for x in data if score_key in x and x[score_key] is not None],
-                key=lambda x: x[score_key], reverse=True)
-    if not sc: return 0.0, [], []
-    N = len(sc)
-    best_cov, covs, risks = 0.0, [], []
-    for x in sc:
-        t = x[score_key]
-        acc = sum(1 for s in sc if s[score_key] >= t)
-        cov = acc / N
-        harm = sum(1 for s in sc if s[score_key] >= t and s.get("is_harmful"))
-        risk_ub = float(beta_dist.ppf(0.95, harm + 1, acc - harm + 1)) if acc else 1.0
-        covs.append(cov)
-        risks.append(harm / acc if acc else 0)
-        if risk_ub <= eps and cov > best_cov:
-            best_cov = cov
-    return round(best_cov, 3), covs, risks
+    rows = sorted([x for x in data if x.get(score_key) is not None],
+                  key=lambda x: x[score_key], reverse=True)
+    if not rows:
+        return 0.0, [], []
+    n = len(rows); best = 0.0; covs = []; risks = []
+    for row in rows:
+        threshold = row[score_key]
+        accepted = [x for x in rows if x[score_key] >= threshold]
+        k = sum(bool(_first(x, "harmful_reuse", "is_harmful", default=False)) for x in accepted)
+        a = len(accepted)
+        ub = float(beta_dist.ppf(0.95, k + 1, a - k + 1)) if a else 1.0
+        covs.append(a / n); risks.append(k / a if a else 0.0)
+        if ub <= eps:
+            best = max(best, a / n)
+    return round(best, 3), covs, risks
 
+def compute_hardsr(rows: List[Dict]) -> float:
+    return compute_sr([x for x in rows if x.get("difficulty") == "hard"])
 
-def compute_hardsr(task_results: List[Dict]) -> float:
-    """Success rate on tasks labeled difficulty='hard'."""
-    hard = [t for t in task_results if t.get("difficulty") == "hard"]
-    if not hard: return 0.0
-    return sum(1 for t in hard if t.get("success")) / len(hard)
+def compute_failuresr(rows: List[Dict]) -> float:
+    return compute_sr([x for x in rows if _first(x, "task_group", "group") == "failure_recovery"])
 
+def compute_interactionsr(rows: List[Dict]) -> float:
+    return compute_sr([x for x in rows if _first(x, "task_group", "group") == "interaction_stress"])
 
-def compute_failuresr(task_results: List[Dict]) -> float:
-    """Success rate on failure recovery tasks."""
-    fr = [t for t in task_results if t.get("group") == "failure_recovery"]
-    if not fr: return 0.0
-    return sum(1 for t in fr if t.get("success")) / len(fr)
+def compute_rcr(rows: List[Dict]) -> float:
+    return sum(bool(x.get("resource_conflict")) for x in rows) / len(rows) if rows else 0.0
 
-
-def compute_interactionsr(task_results: List[Dict]) -> float:
-    """Success rate on interaction stress tasks."""
-    ist = [t for t in task_results if t.get("group") == "interaction_stress"]
-    if not ist: return 0.0
-    return sum(1 for t in ist if t.get("success")) / len(ist)
-
-
-def compute_rcr(interaction_logs: List[Dict]) -> float:
-    """Resource Conflict Rate."""
-    if not interaction_logs: return 0.0
-    return sum(1 for x in interaction_logs if x.get("resource_conflict")) / len(interaction_logs)
-
-
-def compute_cfr(interaction_logs: List[Dict]) -> float:
-    """Chain Failure Rate."""
-    if not interaction_logs: return 0.0
-    return sum(1 for x in interaction_logs if not x.get("chain_success", True)) / len(interaction_logs)
-
+def compute_cfr(rows: List[Dict]) -> float:
+    return sum(not bool(x.get("chain_success")) for x in rows) / len(rows) if rows else 0.0
 
 def compute_kpr(lifecycle_logs: List[Dict]) -> float:
-    """Knowledge Pollution Rate — unique certified knowledge later deprecated for harm."""
-    ever_certified = set()
-    deprecated_kids = set()
+    certified, deprecated = set(), set()
     for event in lifecycle_logs:
         kid = event.get("knowledge_id", "")
-        old_s = event.get("old_status", "")
-        new_s = event.get("new_status", "")
-        if new_s == "certified":
-            ever_certified.add(kid)
-        if old_s == "certified" and new_s in ("deprecated", "disabled"):
-            deprecated_kids.add(kid)
-    return len(deprecated_kids) / max(len(ever_certified), 1)
+        if event.get("new_status") == "certified":
+            certified.add(kid)
+        if event.get("old_status") == "certified" and event.get("new_status") in ("deprecated", "disabled"):
+            deprecated.add(kid)
+    return len(deprecated) / len(certified) if certified else 0.0
 
+def compute_csr(rows: List[Dict]) -> float:
+    rows = [x for x in rows if x.get("decision") in ("reuse", "probe")]
+    if not rows:
+        return 0.0
+    ok = sum(bool(_first(x, "pre_admit_contract_pass", "contract_satisfied_before", default=False)) and
+             bool(_first(x, "postcondition_satisfied", "postcondition_pass",
+                         "contract_satisfied_after", default=False)) for x in rows)
+    return ok / len(rows)
 
-def compute_csr(reuse_logs: List[Dict]) -> float:
-    """Contract Satisfaction Rate — fraction of reuse decisions satisfying contract."""
-    if not reuse_logs: return 0.0
-    satisfied = sum(1 for x in reuse_logs if x.get("contract_satisfied_before", True)
-                    and not x.get("contract_violation_after", False))
-    return satisfied / len(reuse_logs)
-
-
-def compute_cvr(reuse_logs: List[Dict]) -> float:
-    """Contract Violation Rate — fraction of reuse decisions violating contract."""
-    if not reuse_logs: return 0.0
-    return sum(1 for x in reuse_logs if x.get("contract_violation_after", False)) / len(reuse_logs)
+def compute_cvr(rows: List[Dict]) -> float:
+    rows = [x for x in rows if x.get("decision") in ("reuse", "probe")]
+    if not rows:
+        return 0.0
+    return sum(not bool(_first(x, "postcondition_satisfied", "postcondition_pass",
+                               "contract_satisfied_after", default=False)) for x in rows) / len(rows)

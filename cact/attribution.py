@@ -144,6 +144,7 @@ def apply_attribution_to_lifecycle(
     trust_store,        # TrustStore instance
     context: str,
     attributor: OutcomeAttributor = None,
+    propensity: float = None,
 ) -> Dict:
     """Apply attribution-aware update to lifecycle and trust store.
 
@@ -160,20 +161,22 @@ def apply_attribution_to_lifecycle(
     }
 
     used = False
+    p = min(max(float(propensity) if propensity is not None else 1.0, 0.05), 0.95)
+    weight = min(20.0, 1.0 / (p if attribution not in (AttributionLabel.BASE_WOULD_SUCCEED,) else (1.0 - p)))
     if attributor.should_reward(attribution):
-        trust_store.record_use(kid, context, success, save=False)
-        trust_store.record_harm(kid, context, is_harmful, save=False)
+        trust_store.record_use(kid, context, success, save=False, weight=weight)
+        trust_store.record_harm(kid, context, is_harmful, save=False, weight=weight)
         used = True
         result["action"] = "reward"
 
     elif attributor.should_penalize(attribution):
-        trust_store.record_use(kid, context, success, save=False)
-        trust_store.record_harm(kid, context, is_harmful, save=False)
+        trust_store.record_use(kid, context, success, save=False, weight=weight)
+        trust_store.record_harm(kid, context, is_harmful, save=False, weight=weight)
         used = True
         result["action"] = "penalize"
 
     elif attributor.should_count_base(attribution):
-        trust_store.record_base(kid, context, success, save=False)
+        trust_store.record_base(kid, context, success, save=False, weight=weight)
         result["action"] = "count_base"
 
     elif attributor.is_no_fault(attribution):

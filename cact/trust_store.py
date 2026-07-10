@@ -14,7 +14,7 @@ Enhancements over CASK TrustStore:
   - Pairwise interaction joint tracking
 """
 
-import json, os, math
+import json, os, math, hashlib
 from typing import Dict, List, Tuple, Optional
 from scipy.stats import beta as beta_dist
 from scipy.special import betaln
@@ -31,7 +31,7 @@ class TrustStore:
     """Bayesian counterfactual certificate store with lifecycle governance."""
 
     def __init__(self, store_path: str = None, prior_strength: float = 1.0):
-        self.store_path = store_path or os.path.join(
+        self.store_path = store_path or os.environ.get("CACT_TRUST_STORE_DIR") or os.path.join(
             os.path.dirname(__file__), "..", "ckpt", "cask_cert"
         )
         os.makedirs(self.store_path, exist_ok=True)
@@ -39,6 +39,7 @@ class TrustStore:
         self._lifecycle_file = os.path.join(self.store_path, "lifecycle.json")
 
         self._data: Dict[str, Dict] = {}
+        self._observations: List[Dict] = []
         self._contracts: Dict[str, Dict] = {}          # {kid: contract_dict}
         self._prior_strength = prior_strength
 
@@ -57,6 +58,11 @@ class TrustStore:
                 with open(self._db_file) as f:
                     self._data = json.load(f)
             except (json.JSONDecodeError, OSError): self._data = {}
+        obs_file = os.path.join(self.store_path, "observations.json")
+        if os.path.exists(obs_file):
+            try:
+                with open(obs_file, encoding="utf-8") as f: self._observations = json.load(f)
+            except (json.JSONDecodeError, OSError): self._observations = []
         contract_file = os.path.join(self.store_path, "contracts.json")
         if os.path.exists(contract_file):
             try:
@@ -67,8 +73,11 @@ class TrustStore:
     def _save(self):
         with open(self._db_file, "w") as f:
             json.dump(self._data, f, indent=2)
+        obs_file = os.path.join(self.store_path, "observations.json")
+        with open(obs_file, "w", encoding="utf-8") as f:
+            json.dump(self._observations, f, indent=2)
         contract_file = os.path.join(self.store_path, "contracts.json")
-        with open(contract_file, "w") as f:
+        with open(contract_file, "w", encoding="utf-8") as f:
             json.dump(self._contracts, f, indent=2)
 
     def _make_key(self, kid: str, context: str, stat: str) -> str:
@@ -127,32 +136,42 @@ class TrustStore:
         return d["alpha"], d["beta"]
 
     # ── Recording ──
-    def record_use(self, kid: str, context: str, success: float, save: bool = True):
+    def record_use(self, kid: str, context: str, success: float, save: bool = True, weight: float = 1.0):
         d = self._get(kid, context, "use")
-        d["alpha"] += success
-        d["beta"] += (1.0 - success)
+        d["alpha"] += float(weight) * float(success)
+        d["beta"] += float(weight) * (1.0 - float(success))
         if save: self._save()
 
-    def record_base(self, kid: str, context: str, success: float, save: bool = True):
+    def record_base(self, kid: str, context: str, success: float, save: bool = True, weight: float = 1.0):
         d = self._get(kid, context, "base")
-        d["alpha"] += success
-        d["beta"] += (1.0 - success)
+        d["alpha"] += float(weight) * float(success)
+        d["beta"] += float(weight) * (1.0 - float(success))
         if save: self._save()
 
-    def record_harm(self, kid: str, context: str, harmful: float, save: bool = True):
+    def record_harm(self, kid: str, context: str, harmful: float, save: bool = True, weight: float = 1.0):
         d = self._get(kid, context, "harm")
-        d["alpha"] += harmful
-        d["beta"] += (1.0 - harmful)
+        d["alpha"] += float(weight) * float(harmful)
+        d["beta"] += float(weight) * (1.0 - float(harmful))
         if save: self._save()
 
     def record_episode(self, kid: str, context: str, used: bool = True,
-                       success: float = 0.0, is_harmful: float = 0.0):
+                       success: float = 0.0, is_harmful: float = 0.0,
+                       propensity: float = None, episode_id: str = None,
+                       postcondition_satisfied: bool = None):
         """Main recording method called after each knowledge use/fallback decision."""
+        p = float(propensity) if propensity is not None else (1.0 if used else 0.0)
+        p = min(max(p, 0.05), 0.95)
+        weight = min(20.0, 1.0 / (p if used else (1.0 - p)))
         if used:
-            self.record_use(kid, context, success, save=False)
-            self.record_harm(kid, context, is_harmful, save=False)
+            self.record_use(kid, context, success, save=False, weight=weight)
+            self.record_harm(kid, context, is_harmful, save=False, weight=weight)
         else:
-            self.record_base(kid, context, success, save=False)
+            self.record_base(kid, context, success, save=False, weight=weight)
+
+        self._observations.append({"kid": kid, "context": context, "used": bool(used),
+            "success": float(success), "is_harmful": float(is_harmful),
+            "propensity": propensity, "episode_id": episode_id,
+            "postcondition_satisfied": postcondition_satisfied})
 
         # Auto lifecycle transitions (use TrustGate calibrated thresholds when available)
         if getattr(self, 'abl_lifecycle', True):
@@ -211,25 +230,16 @@ class TrustStore:
                 self.total_count(kid, context, "harm"))
 
     # ── Bayesian counterfactual uplift (C-ACT core) ──
-    def uplift_probability(self, kid: str, context: str) -> float:
-        """π_u(c) = P(p_use > p_base | data) — exact posterior probability."""
+    def uplift_probability(self, kid: str, context: str, delta: float = 0.05) -> float:
+        """Estimate P(p_use > p_base + delta) reproducibly without truncating Beta parameters."""
         a1, b1 = self.get_stats(kid, context, "use")
         a2, b2 = self.get_stats(kid, context, "base")
-        # Use Monte Carlo when exact formula is impractical:
-        # a2 < 1 (weak prior) or a2 > 500 (large loops → slow, numerical underflow)
-        if int(a2) < 1 or int(a2) > 500:
-            n_samples = 5000
-            samples_use = np.random.beta(a1, b1, size=n_samples)
-            samples_base = np.random.beta(max(0.1, a2), b2, size=n_samples)
-            return float(np.mean(samples_use > samples_base))
-        total = 0.0
-        for i in range(int(a2)):
-            term = (betaln(a1 + i, b1 + b2) - math.log(b2 + i)
-                    - betaln(1 + i, b2) - betaln(a1, b1))
-            total += math.exp(term)
-        if total < 1e-15:
-            return 0.0
-        return min(total, 1.0 - 1e-8)
+        seed = int.from_bytes(hashlib.sha256(f"{kid}|{context}|{delta}".encode()).digest()[:8], "big")
+        rng = np.random.default_rng(seed)
+        n = 20000
+        use = rng.beta(max(a1, 1e-6), max(b1, 1e-6), n)
+        base = rng.beta(max(a2, 1e-6), max(b2, 1e-6), n)
+        return float(np.mean(use > (base + float(delta))))
 
     def uplift_lcb(self, kid: str, context: str, delta: float = 0.05) -> float:
         """Conservative uplift: LCB[use] - UCB[base]"""
@@ -309,35 +319,37 @@ class TrustStore:
     def lifecycle_stats(self) -> Dict[str, int]:
         return self.lifecycle.stats()
 
+    def get_observations(self) -> List[Dict]:
+        return list(self._observations)
+
     def get_calibration_data(self) -> Dict[str, list]:
-        """Extract calibration data grouped by task group for TrustGate."""
+        """Return labeled, propensity-recorded observations for calibration."""
         by_group = {}
-        for k, d in self._data.items():
-            parts = k.split("|")
-            if len(parts) < 2: continue
-            kid = parts[0]
-            ctx = "|".join(parts[1:-1]) if len(parts) > 2 else ""
-            stat = parts[-1]
-            if stat != "use": continue
-            contract = self.get_contract(kid)
-            # Group is stored at scope.task_group in v2 contracts, with legacy fallback
-            group = (contract.get("scope", {}).get("task_group") or
-                     contract.get("group", "crafting")) if contract else "crafting"
+        for obs in self._observations:
+            if not obs.get("used") or obs.get("is_harmful") is None:
+                continue
+            kid, ctx = obs.get("kid", ""), obs.get("context", "")
+            contract = self.get_contract(kid) or {}
+            group = contract.get("scope", {}).get("task_group") or contract.get("group", "crafting")
             try:
-                pi = self.uplift_probability(kid, ctx)
-                ul = self.uplift_lcb(kid, ctx)
+                pi = self.uplift_probability(kid, ctx, delta=0.05)
+                ul = self.uplift_lcb(kid, ctx, delta=0.05)
                 hu = self.harm_upper_bound(kid, ctx)
             except (ValueError, TypeError, RuntimeError, ZeroDivisionError):
                 continue
-            entry = {"pi_uplift": round(pi, 4), "uplift": round(ul, 4),
-                     "harm_ucb": round(hu, 4), "is_harmful": 0}
-            by_group.setdefault(group, []).append(entry)
+            by_group.setdefault(group, []).append({
+                "pi_uplift": round(pi, 4), "uplift": round(ul, 4),
+                "harm_ucb": round(hu, 4),
+                "is_harmful": int(bool(obs.get("is_harmful"))),
+                "propensity": obs.get("propensity"),
+                "episode_id": obs.get("episode_id"),
+            })
         return by_group
 
     # ── Persistence helpers ──
     def export_for_calibration(self) -> Dict:
         """Export data needed for E2 calibration."""
-        data = {"_data": self._data, "_contracts": self._contracts}
+        data = {"_data": self._data, "_contracts": self._contracts, "_observations": self._observations}
         return data
 
     def import_from_calibration(self, data: Dict):
@@ -346,4 +358,6 @@ class TrustStore:
             self._data.update(data["_data"])
         if "_contracts" in data:
             self._contracts.update(data["_contracts"])
+        if "_observations" in data:
+            self._observations.extend(data["_observations"])
         self._save()

@@ -130,7 +130,8 @@ class TrustGate:
             hu = d.get("harm_ucb", d.get("harm", 0.05))
             up = d.get("uplift", 0.0)
             ok = pu >= tau and up >= delta and hu <= harm
-            scores.append((ok, d.get("is_harmful", 0)))
+            if "is_harmful" in d:
+                scores.append((ok, int(bool(d["is_harmful"]))))
         accepted = sum(1 for ok, _ in scores if ok)
         N = len(scores)
         coverage = accepted / N if N else 0
@@ -210,6 +211,12 @@ class TrustGate:
                            "tau": tau, "delta": delta, "harm": harm,
                            "supervised": False}
 
+        # Probation thresholds are applied before the certified check.
+        supervised = lifecycle_state == "probation"
+        if supervised:
+            tau = max(0.55, tau - 0.20)
+            harm = min(harm, 0.10)
+
         # Condition 2: Uplift + safety check
         uplift_ok = pi_uplift >= tau and uplift_lcb >= delta
         safety_ok = harm_ucb_val <= harm
@@ -220,18 +227,18 @@ class TrustGate:
                            "pi_uplift": pi_uplift,
                            "uplift_lcb": uplift_lcb,
                            "harm_ucb": harm_ucb_val,
-                           "supervised": False}
+                           "supervised": supervised}
         elif not uplift_ok:
             return False, {"reason": "uplift_fail", "tau": tau,
                            "delta": delta, "harm": harm,
                            "pi_uplift": pi_uplift,
                            "uplift_lcb": uplift_lcb,
-                           "supervised": False}
+                           "supervised": supervised}
         elif not safety_ok:
             return False, {"reason": "safety_fail", "tau": tau,
                            "delta": delta, "harm": harm,
                            "harm_ucb": harm_ucb_val,
-                           "supervised": False}
+                           "supervised": supervised}
 
         # Condition 3: Interaction check
         if not interaction_safe:
@@ -239,19 +246,7 @@ class TrustGate:
                            "tau": tau, "delta": delta, "harm": harm,
                            "pi_uplift": pi_uplift,
                            "harm_ucb": harm_ucb_val,
-                           "supervised": False}
-
-        # Condition 4: Probation knowledge (separate thresholds per TABLE 95-96)
-        # τ_prob = max(0.55, τ_cert - 0.20), h_prob = min(h_cert, 0.10)
-        supervised = lifecycle_state == "probation"
-        if supervised:
-            tau_prob = max(0.55, tau - 0.20)
-            h_prob = min(harm, 0.10)
-            if pi_uplift < tau_prob or harm_ucb_val > h_prob:
-                return False, {"reason": "probation_fail",
-                               "tau": tau_prob, "delta": delta, "harm": h_prob,
-                               "pi_uplift": pi_uplift, "harm_ucb": harm_ucb_val,
-                               "supervised": True}
+                           "supervised": supervised}
 
         return True, {"reason": "gate_pass", "tau": tau,
                       "delta": delta, "harm": harm,

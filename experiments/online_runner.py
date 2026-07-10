@@ -12,8 +12,8 @@ Methods:
   Online-ACT               — counterfactual uplift, no contract
   Online-C-ACT             — full C-ACT pipeline
 
-Per-round: 20 accumulation + 8 calibration + 12 frozen eval = 40 episodes
-Total: 10 rounds × 40 episodes × 4 methods × 1 seed = 1600 episodes
+Per-round: 8 accumulation + 4 calibration + 8 frozen eval = 20 episodes
+Total per stream: 10 rounds × 20 episodes × 4 methods = 800 episodes
 
 Usage:
   python experiments/online_runner.py --rounds 10 --workers 4
@@ -34,9 +34,9 @@ DEFAULT_ROUNDS = 10
 DEFAULT_SEED = 5001
 
 # Per-round episodes
-N_ACCUM = 20    # accumulation episodes
-N_CALIB = 8     # calibration/check episodes
-N_EVAL  = 12    # frozen evaluation (6 retention + 6 hard-transfer)
+N_ACCUM = 8    # accumulation episodes
+N_CALIB = 4     # calibration/check episodes
+N_EVAL  = 8    # frozen evaluation (6 retention + 6 hard-transfer)
 
 
 class OnlineRunner:
@@ -79,13 +79,14 @@ class OnlineRunner:
     def _run_phase(self, benchmark: str, seeds: List[int],
                    method: str, phase: str,
                    trust_store_path: str = None,
+                   calibration_path: str = None,
                    frozen: bool = False,
                    active_calib_rate: float = 0.0,
                    label: str = "") -> List[Dict]:
         """Run one phase (accumulation/calibration/evaluation) via parallel_runner."""
         from experiments.parallel_runner import ParallelRunner
 
-        runner = ParallelRunner(workers=self.workers, vlm_port=self.vlm_port)
+        runner = ParallelRunner(workers=1 if trust_store_path else self.workers, vlm_port=self.vlm_port)
         runner._t_start = time.perf_counter()
 
         ckpt = os.path.join(self._results_root, f"{method}_{phase}")
@@ -94,14 +95,20 @@ class OnlineRunner:
         runner._load_checkpoint()
 
         methods = [method]
+        n_tasks = {"cact_online_stream": 8, "cact_calib": 4,
+                   "cact_online_retention": 4,
+                   "cact_online_hard_transfer": 4}.get(benchmark, 8)
         grid = runner._build_grid(benchmark, seeds, methods,
-                                  plan_model="Qwen/Qwen2.5-VL-7B-Instruct")
+                                  plan_model="Qwen/Qwen2.5-VL-7B-Instruct",
+                                  task_indices=list(range(n_tasks)))
         for cfg in grid:
             if trust_store_path:
                 cfg.store_path = trust_store_path
             cfg.frozen = frozen
             if active_calib_rate:
                 cfg.active_calib_rate = active_calib_rate
+            cfg.calibration_path = calibration_path or ""
+            cfg.run_id = f"{method}_{phase}_seed{seeds[0]}_task{cfg.task_idx}"
 
         label_str = f" [{label}]" if label else ""
         print(f"  {phase}{label_str}: {len(grid)} episodes "
@@ -129,7 +136,7 @@ class OnlineRunner:
                 if os.path.exists(src):
                     shutil.copy(src, os.path.join(store_path, fname))
 
-        # Phase 1: Accumulation (20 episodes, updates trust store)
+        # Phase 1: Accumulation (8 episodes, updates trust store)
         self._run_phase(
             benchmark="cact_online_stream",
             seeds=[seed], method=method,
@@ -139,7 +146,7 @@ class OnlineRunner:
             label=f"accum({N_ACCUM})"
         )
 
-        # Phase 2: Calibration (8 episodes, updates thresholds)
+        # Phase 2: Calibration (4 episodes, updates thresholds)
         self._run_phase(
             benchmark="cact_calib",
             seeds=[seed], method=method,
@@ -148,25 +155,34 @@ class OnlineRunner:
             frozen=False, active_calib_rate=0.10,
             label=f"calib({N_CALIB})"
         )
+        from cact.trust_store import TrustStore
+        from cact.trust_gate import TrustGate
+        calibration_path = os.path.join(store_path, "calibration.json")
+        ts_cal = TrustStore(store_path=store_path)
+        tg_cal = TrustGate()
+        tg_cal.calibrate_all_groups(ts_cal.get_calibration_data())
+        tg_cal.save_calibration(calibration_path)
 
-        # Phase 3: Frozen Evaluation — Retention (6 episodes)
+        # Phase 3: Frozen Evaluation — Retention (4 episodes)
         ret_results = self._run_phase(
             benchmark="cact_online_retention",
             seeds=[seed], method=method,
             phase=f"R{round_num:02d}_retention",
             trust_store_path=store_path,
+            calibration_path=calibration_path,
             frozen=True,
-            label=f"retention(6)"
+            label=f"retention(4)"
         )
 
-        # Phase 3b: Frozen Evaluation — Hard-Transfer (6 episodes)
+        # Phase 3b: Frozen Evaluation — Hard-Transfer (4 episodes)
         ht_results = self._run_phase(
             benchmark="cact_online_hard_transfer",
             seeds=[seed], method=method,
             phase=f"R{round_num:02d}_hard_transfer",
             trust_store_path=store_path,
+            calibration_path=calibration_path,
             frozen=True,
-            label=f"hard_transfer(6)"
+            label=f"hard_transfer(4)"
         )
 
         # Compile round metrics
@@ -175,12 +191,12 @@ class OnlineRunner:
         # Aggregate success rates
         for label, results in [("retention", ret_results), ("hard_transfer", ht_results)]:
             if results:
-                successes = sum(1 for r in results if r.get("status") == "success")
-                total = len(results)
-                metrics[f"{label}_sr"] = round(successes / max(total, 1), 3)
+                verified = [r.get("task_success") for r in results if r.get("task_success") is not None]
+                metrics[f"{label}_sr"] = round(sum(verified) / len(verified), 3) if verified else None
 
-        metrics["eval_sr"] = round(
-            (metrics.get("retention_sr", 0) * 6 + metrics.get("hard_transfer_sr", 0) * 6) / 12, 3)
+        ret = metrics.get("retention_sr")
+        hard = metrics.get("hard_transfer_sr")
+        metrics["eval_sr"] = round((ret * 4 + hard * 4) / 8, 3) if ret is not None and hard is not None else None
 
         return metrics
 
@@ -200,6 +216,8 @@ class OnlineRunner:
             "deprecated": lifecycle.get("deprecated", 0),
             "disabled": lifecycle.get("disabled", 0),
             "total_knowledge": sum(lifecycle.values()),
+            "harm_rate": (sum(bool(x.get("is_harmful")) for x in ts.get_observations() if x.get("used")) /
+                          max(1, sum(1 for x in ts.get_observations() if x.get("used")))),
         }
 
     # ── Full experiment ──
@@ -267,7 +285,7 @@ class OnlineRunner:
         series = {m: {
             "eval_sr": [], "retention_sr": [], "hard_transfer_sr": [],
             "certified": [], "deprecated": [], "disabled": [],
-            "active_knowledge": [],
+            "active_knowledge": [], "harm_rate": [],
         } for m in methods}
 
         for round_data in all_results:
@@ -284,10 +302,11 @@ class OnlineRunner:
             r = self.rounds
 
             # AULC: Area Under Learning Curve (average eval SR over rounds)
-            aulc = sum(s["eval_sr"]) / max(r, 1) if s["eval_sr"] else 0
+            valid_eval = [v for v in s["eval_sr"] if v is not None]
+            aulc = sum(valid_eval) / len(valid_eval) if valid_eval else None
 
-            # SafetyDrift: HRR_r - HRR_1 (placeholder — HRR needs harm logs)
-            safety_drift = 0.0  # Requires HRR computation from harm logs
+            hs = [v for v in s["harm_rate"] if v is not None]
+            safety_drift = (hs[-1] - hs[0]) if len(hs) >= 2 else None
 
             # KPR at final round
             cert_last = s["certified"][-1] if s["certified"] else 0
@@ -295,11 +314,11 @@ class OnlineRunner:
             kpr = dep_last / max(cert_last, 1)
 
             report["series"][m] = {
-                "aulc": round(aulc, 3),
-                "eval_sr_final": round(s["eval_sr"][-1], 3) if s["eval_sr"] else 0,
-                "retention_sr_final": round(s["retention_sr"][-1], 3) if s["retention_sr"] else 0,
-                "hard_transfer_sr_final": round(s["hard_transfer_sr"][-1], 3) if s["hard_transfer_sr"] else 0,
-                "safety_drift": round(safety_drift, 3),
+                "aulc": round(aulc, 3) if aulc is not None else None,
+                "eval_sr_final": round(s["eval_sr"][-1], 3) if s["eval_sr"] and s["eval_sr"][-1] is not None else None,
+                "retention_sr_final": round(s["retention_sr"][-1], 3) if s["retention_sr"] and s["retention_sr"][-1] is not None else None,
+                "hard_transfer_sr_final": round(s["hard_transfer_sr"][-1], 3) if s["hard_transfer_sr"] and s["hard_transfer_sr"][-1] is not None else None,
+                "safety_drift": round(safety_drift, 3) if safety_drift is not None else None,
                 "kpr": round(kpr, 3),
                 "certified_final": cert_last,
                 "deprecated_final": dep_last,
@@ -320,11 +339,13 @@ class OnlineRunner:
         header = f"  {'Method':<28} {'AULC':>7} {'EvalSR':>7} {'RetSR':>6} {'HTSR':>6} {'Safety':>7} {'KPR':>6} {'Cert':>5} {'Dep':>5}"
         print(header)
         print(f"  {'─'*28} {'─'*7} {'─'*7} {'─'*6} {'─'*6} {'─'*7} {'─'*6} {'─'*5} {'─'*5}")
+        def fmt(v, width=7):
+            return f"{v:{width}.3f}" if isinstance(v, (int, float)) else f"{'n/a':>{width}}"
         for m in methods:
             s = report["series"][m]
-            print(f"  {m:<28} {s['aulc']:>7.3f} {s['eval_sr_final']:>7.3f} "
-                  f"{s['retention_sr_final']:>6.3f} {s['hard_transfer_sr_final']:>6.3f} "
-                  f"{s['safety_drift']:>7.3f} {s['kpr']:>6.3f} "
+            print(f"  {m:<28} {fmt(s['aulc'])} {fmt(s['eval_sr_final'])} "
+                  f"{fmt(s['retention_sr_final'], 6)} {fmt(s['hard_transfer_sr_final'], 6)} "
+                  f"{fmt(s['safety_drift'])} {fmt(s['kpr'], 6)} "
                   f"{s['certified_final']:>5} {s['deprecated_final']:>5}")
 
         # Round-by-round eval SR

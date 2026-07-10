@@ -24,7 +24,7 @@ Speed: ~4× with 4 workers. E3: 17h → 4-5h (single MC per worker).
        ~8× with 8 workers + MC instance sharing.
 """
 
-import subprocess, sys, os, json, time, signal, shutil, argparse, socket
+import subprocess, sys, os, json, time, signal, shutil, argparse, socket, hashlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Optional
@@ -56,6 +56,9 @@ class ExperimentConfig:
     store_path: str = ""
     frozen: bool = False
     active_calib_rate: float = 0.0
+    calibration_path: str = ""
+    run_id: str = ""
+    snapshot_path: str = ""
 
 
 class ParallelRunner:
@@ -180,13 +183,35 @@ class ParallelRunner:
             f"+cact_method={cfg.method}",
             f"plan_model={cfg.plan_model}",
         ]
+        if cfg.snapshot_path and cfg.store_path:
+            import shutil
+            if os.path.exists(cfg.store_path):
+                shutil.rmtree(cfg.store_path, ignore_errors=True)
+            if os.path.exists(cfg.snapshot_path):
+                shutil.copytree(cfg.snapshot_path, cfg.store_path)
         if cfg.store_path:
             cmd.append(f"+cact_store_path={cfg.store_path}")
+        if cfg.calibration_path:
+            cmd.append(f"+cact_calibration_path={cfg.calibration_path}")
+        if cfg.run_id:
+            cmd.append(f"+cact_run_id={cfg.run_id}")
         if cfg.frozen:
             cmd.append("+cact_frozen=true")
         if cfg.active_calib_rate:
             cmd.append(f"+cact_active_calib_rate={cfg.active_calib_rate}")
 
+        def store_hash(path):
+            h = hashlib.sha256()
+            if path and os.path.isdir(path):
+                for root, _, files in os.walk(path):
+                    for name in sorted(files):
+                        fp = os.path.join(root, name)
+                        h.update(os.path.relpath(fp, path).encode())
+                        with open(fp, "rb") as fh:
+                            h.update(fh.read())
+            return h.hexdigest()
+
+        frozen_hash_before = store_hash(cfg.store_path) if cfg.frozen else None
         t0 = time.perf_counter()
         try:
             result = subprocess.run(
@@ -195,10 +220,29 @@ class ParallelRunner:
                 cwd=_PROJ,
                 env={**os.environ, "PYTHONUNBUFFERED": "1",
                      "PYTHONPATH": os.pathsep.join([_PROJ, os.path.join(_PROJ, "src"), os.path.join(_PROJ, "minerl")]),
-                     "VLM_BATCH_PROXY": f"http://127.0.0.1:{self.batch_proxy_port}"},
+                     "VLM_BATCH_PROXY": f"http://127.0.0.1:{self.batch_proxy_port}",
+                     "CACT_TRUST_STORE_DIR": cfg.store_path or os.environ.get("CACT_TRUST_STORE_DIR", "")},
             )
             elapsed = time.perf_counter() - t0
             success = result.returncode == 0
+            frozen_hash_after = store_hash(cfg.store_path) if cfg.frozen else None
+            if cfg.frozen and frozen_hash_before != frozen_hash_after:
+                success = False
+                frozen_error = "frozen store mutated"
+            else:
+                frozen_error = ""
+            task_success = None
+            if cfg.run_id:
+                episode_file = os.path.join(_PROJ, "exp_results", "cact_logs",
+                                            cfg.run_id, "episode", "episode.jsonl")
+                if os.path.exists(episode_file):
+                    try:
+                        with open(episode_file, encoding="utf-8") as fh:
+                            rows = [json.loads(line) for line in fh if line.strip()]
+                        if rows:
+                            task_success = bool(rows[-1].get("success"))
+                    except (OSError, json.JSONDecodeError):
+                        task_success = None
 
             return {
                 "key": key,
@@ -209,6 +253,9 @@ class ParallelRunner:
                 "returncode": result.returncode,
                 "elapsed_sec": round(elapsed, 1),
                 "stderr_tail": result.stderr[-500:] if result.stderr else "",
+                "task_success": task_success,
+                "frozen_store_hash": frozen_hash_after if cfg.frozen else None,
+                "frozen_error": frozen_error,
             }
         except subprocess.TimeoutExpired:
             return {
@@ -226,17 +273,43 @@ class ParallelRunner:
     # ── Build experiment grid ──
     def _build_grid(self, benchmark: str, seeds: List[int],
                     methods: List[str],
-                    plan_model: str = "Qwen/Qwen2.5-VL-7B-Instruct") -> List[ExperimentConfig]:
+                    plan_model: str = "Qwen/Qwen2.5-VL-7B-Instruct",
+                    task_indices: List[int] = None) -> List[ExperimentConfig]:
         """Build the full experiment grid from benchmark YAML config."""
-        import yaml
         bench_path = os.path.join(_PROJ, "src", "optimus1", "conf",
                                   "benchmark", f"{benchmark}.yaml")
-        with open(bench_path, encoding='utf-8') as f:
-            bench_cfg = yaml.safe_load(f)
-
-        tasks = bench_cfg.get("all_task", [])
+        try:
+            import yaml
+            with open(bench_path, encoding="utf-8") as f:
+                bench_cfg = yaml.safe_load(f)
+            tasks = bench_cfg.get("all_task", [])
+        except ModuleNotFoundError:
+            # Lightweight fallback for the runner's task index selection when
+            # PyYAML is unavailable in a minimal environment.
+            import re
+            tasks = []
+            current = None
+            with open(bench_path, encoding="utf-8") as f:
+                for raw in f:
+                    line = raw.strip()
+                    if line.startswith("- {"):
+                        current = {}
+                        for key, quoted, bare in re.findall(r"([A-Za-z_]+):\s*(?:[\"']([^\"']*)[\"']|([^,}]+))", line[3:]):
+                            current[key] = (quoted or bare).strip()
+                        tasks.append(current)
+                    elif line.startswith("- id:"):
+                        current = {"id": line.split(":", 1)[1].strip()}
+                        tasks.append(current)
+                    elif current is not None and ":" in line and not line.startswith("#"):
+                        key, value = line.split(":", 1)
+                        value = value.strip().strip("\"'")
+                        if key.strip() in {"type", "instruction", "goal", "group", "difficulty"}:
+                            current[key.strip()] = value
         grid = []
+        allowed = set(task_indices) if task_indices is not None else None
         for idx, task in enumerate(tasks):
+            if allowed is not None and idx not in allowed:
+                continue
             task_name = task if isinstance(task, str) else task.get("name", str(idx))
             for seed in seeds:
                 for method in methods:
@@ -244,6 +317,11 @@ class ParallelRunner:
                         task=task_name, task_idx=idx, seed=seed,
                         method=method, benchmark=benchmark,
                         vlm_port=self.vlm_port, mc_port=0,
+                        store_path=os.path.join(_PROJ, "exp_results", "stores",
+                                                benchmark,
+                                                method.replace("/", "_").replace("-", "_"),
+                                                f"seed_{seed}", f"task_{idx}"),
+                        run_id=f"{benchmark}_{method}_seed{seed}_task{idx}",
                     ))
         return grid
 
@@ -385,6 +463,13 @@ def main():
                        help="Resume from checkpoint")
     parser.add_argument("--checkpoint_dir", default=None,
                        help="Checkpoint directory")
+    parser.add_argument("--task_indices", default=None,
+                       help="Comma-separated task indices to run")
+    parser.add_argument("--frozen", action="store_true")
+    parser.add_argument("--calibration_path", default="")
+    parser.add_argument("--active_calib_rate", type=float, default=0.0)
+    parser.add_argument("--store_path", default="")
+    parser.add_argument("--snapshot_path", default="")
     parser.add_argument("--print_grid", action="store_true",
                        help="Print experiment grid without running")
 
@@ -397,6 +482,8 @@ def main():
     else:
         seeds = [int(s) for s in args.seeds.split(",")]
 
+    task_indices = [int(x) for x in args.task_indices.split(",")] if args.task_indices else None
+
     runner = ParallelRunner(
         workers=args.workers,
         vlm_port=args.vlm_port,
@@ -404,7 +491,7 @@ def main():
     )
 
     if args.print_grid:
-        grid = runner._build_grid(args.benchmark, seeds, args.methods or DEFAULT_METHODS)
+        grid = runner._build_grid(args.benchmark, seeds, args.methods or DEFAULT_METHODS, task_indices=task_indices)
         print(f"Grid: {len(grid)} episodes")
         for cfg in grid[:20]:
             print(f"  task={cfg.task} seed={cfg.seed} method={cfg.method}")
@@ -412,6 +499,16 @@ def main():
             print(f"  ... and {len(grid)-20} more")
         return
 
+    grid = runner._build_grid(args.benchmark, seeds, args.methods or DEFAULT_METHODS,
+                             plan_model=args.plan_model, task_indices=task_indices)
+    for cfg in grid:
+        cfg.frozen = args.frozen
+        cfg.calibration_path = args.calibration_path
+        cfg.active_calib_rate = args.active_calib_rate
+        if args.store_path:
+            cfg.store_path = args.store_path
+        if args.snapshot_path:
+            cfg.snapshot_path = args.snapshot_path
     runner._t_start = time.perf_counter()
     runner.run(
         benchmark=args.benchmark,
@@ -419,6 +516,7 @@ def main():
         methods=args.methods,
         plan_model=args.plan_model,
         resume=args.resume,
+        grid=grid,
     )
     runner.print_summary()
 

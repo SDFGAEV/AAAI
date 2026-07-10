@@ -223,6 +223,7 @@ class DecisionController:
             result.uplift_lcb = best["uplift_lcb"]
             result.harm_ucb = best["harm_ucb"]
             result.lifecycle_state = best["lifecycle"]
+            result.contract_satisfied_before = bool(best["contract_ok"])
             # Populate thresholds from gate info
             gi = best["gate_info"]
             result.tau_group_level = gi.get("tau", 0.90)
@@ -232,6 +233,7 @@ class DecisionController:
         else:
             result.decision = "fallback"
             result.chosen_knowledge_id = ""
+            result.contract_satisfied_before = bool(any(c.get("contract_ok") for c in scored))
 
         # ── Step 7: Active logging / Thompson probing (skip if ablated) ──
         if (self.abl_active_calib or self.abl_thompson) and mode in ("accumulation", "calibration", "online"):

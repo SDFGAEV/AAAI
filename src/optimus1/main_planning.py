@@ -445,7 +445,9 @@ def new_agent_do(
                         continue
 
                     failed_waypoints.append(waypoint)
-                    action_memory.save_success_failure(waypoint, language_action_str, is_success=False)
+                    action_memory.save_success_failure(waypoint, language_action_str, is_success=False,
+                                                         postcondition_satisfied=False,
+                                                         harmful_reuse=True)
                     subgoal = None
 
                     # NOTE: if a same waypoint is failed multiple times, then end this episode
@@ -470,6 +472,8 @@ def new_agent_do(
                     )
                     obs, reward, game_over, info = env.step(action, current_sg_target)
                     action_memory.set_observation(obs, info)
+                    if action_memory.needs_supervision_check():
+                        action_memory.acknowledge_supervision(bool(info.get("reflection_passed", False)) if isinstance(info, dict) else False, obs, info)
                     pbar.update(num_step, advance=1)
                     monitors.update(f"{temp_sg_prompt}_{progress}", env.current_subgoal_finish)
 
@@ -541,7 +545,9 @@ def new_agent_do(
 
                 waypoint_success = env.check_waypoint_finish([waypoint, 1])
 
-                action_memory.save_success_failure(waypoint, language_action_str, is_success=waypoint_success)
+                action_memory.save_success_failure(waypoint, language_action_str, is_success=waypoint_success,
+                                                     postcondition_satisfied=bool(waypoint_success),
+                                                     harmful_reuse=(not waypoint_success))
                 _waypoint_recorded = True
                 if waypoint_success:
                     logger.info(f"[green]Achieved waypoint {waypoint}[/green]")
@@ -563,7 +569,9 @@ def new_agent_do(
 
         # end of while loop. game is done.
         if not original_final_goal_success and not _waypoint_recorded:
-            action_memory.save_success_failure(waypoint, language_action_str, is_success=False)
+            action_memory.save_success_failure(waypoint, language_action_str, is_success=False,
+                                                         postcondition_satisfied=False,
+                                                         harmful_reuse=True)
 
         if env.api_thread is not None and env.api_thread_is_alive():
             env.api_thread.join()
@@ -636,8 +644,9 @@ def main(cfg: DictConfig):
     cact_frozen = cfg.get("cact_frozen", False)
     cact_store_path = cfg.get("cact_store_path", "")
     cact_cf = cfg.get("cact_cf_branching", False)
-    cact_log_dir = os.path.join(_PROJ, "exp_results", "cact_logs",
-                                 f"{cact_method}_seed{seed}")
+    cact_calibration_path = cfg.get("cact_calibration_path", os.environ.get("CACT_CALIBRATION_PATH", ""))
+    cact_run_id = cfg.get("cact_run_id", f"{cact_method}_seed{seed}")
+    cact_log_dir = os.path.join(_PROJ, "exp_results", "cact_logs", str(cact_run_id))
     ac_rate = cfg.get("cact_active_calib_rate", 0.15 if cact_cf else 0.0)
 
     logger.info(f"[C-ACT] method={cact_method} store={cact_store_path or 'default'} "
@@ -646,7 +655,8 @@ def main(cfg: DictConfig):
                                frozen=cact_frozen,
                                store_path=cact_store_path or None,
                                active_calib_rate=ac_rate,
-                               log_dir=cact_log_dir)
+                               log_dir=cact_log_dir,
+                               calibration_path=cact_calibration_path or None)
     action_memory.set_seed(seed)
 
     if cfg["task"]["interactive"] and cfg["type"] != "headless":
@@ -671,6 +681,7 @@ def main(cfg: DictConfig):
                 ServerAPI._reset(cfg["server"])
                 logger.info("[red]env & server reset...[/red] ")
                 obs = env.reset()
+                action_memory.set_observation(obs, {})
 
             except Exception as e:
                 logger.error(f"Error during reset: {e}")

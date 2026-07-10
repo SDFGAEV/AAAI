@@ -46,7 +46,8 @@ class CactMemory:
 
     def __init__(self, xenon_memory, method="C-ACT-Full",
                  store_path: str = None, frozen: bool = False,
-                 active_calib_rate: float = 0.0, log_dir: str = None):
+                 active_calib_rate: float = 0.0, log_dir: str = None,
+                 calibration_path: str = None):
         self._mem = xenon_memory
 
         # Component flags (for ablation)
@@ -87,6 +88,9 @@ class CactMemory:
         # Core C-ACT components
         self._store = TrustStore(store_path or "cact_ckpt/trust_store")
         self._gate = TrustGate()
+        calibration_path = calibration_path or os.environ.get("CACT_CALIBRATION_PATH")
+        if calibration_path:
+            self._gate.load_calibration(calibration_path)
         self._bucket = ContextBucket()
         self._extractor = ContractExtractor()
         self._checker = ContractChecker()
@@ -116,6 +120,8 @@ class CactMemory:
         # State tracking
         self._prev_kid = None
         self._last_was_supervised = False
+        self._supervision_pending = False
+        self._supervision_blocked = False
         self._registered_cnt = 0    # counter for register_knowledge
         self._generated_cnt = 0     # counter for knowledge generated in save_success_failure
         self._current_difficulty = "medium"
@@ -215,6 +221,7 @@ class CactMemory:
 
     def set_task_info(self, difficulty: str = "medium", group: str = "crafting"):
         """Set current task metadata for episode logging."""
+        self._supervision_blocked = False
         self._current_difficulty = difficulty
         self._current_group = group
 
@@ -232,7 +239,22 @@ class CactMemory:
         When True, the caller should run an immediate reflection check after
         each execution step. If the check fails, fall back to base policy.
         """
-        return self._last_was_supervised
+        return self._supervision_pending
+
+    def acknowledge_supervision(self, passed: bool = True, observation: Dict = None,
+                                info: Dict = None) -> bool:
+        """Consume the probation verification hook from the environment loop."""
+        if not self._supervision_pending:
+            return True
+        if observation is not None or info is not None:
+            self.set_observation(observation, info)
+        explicit = (info or {}).get("reflection_passed") if isinstance(info, dict) else None
+        ok = bool(passed if explicit is None else explicit)
+        self._supervision_pending = False
+        self._last_was_supervised = False
+        if not ok:
+            self._supervision_blocked = True
+        return ok
 
     # ── Log dumping ──
     def dump_logs(self):
@@ -253,6 +275,9 @@ class CactMemory:
         self._logs_dumped = True
         for fname, data in log_files.items():
             if data:
+                for event in data:
+                    event.setdefault("schema_version", "cact.v1")
+                    event.setdefault("run_id", os.path.basename(self.log_dir))
                 path = os.path.join(self.log_dir, fname)
                 os.makedirs(os.path.dirname(path), exist_ok=True)
                 with open(path, mode) as f:
@@ -332,7 +357,15 @@ class CactMemory:
         return kid
 
     # ── save_success_failure ──
-    def save_success_failure(self, waypoint, language_action_str, is_success):
+    def set_outcome_labels(self, harmful_reuse=None, postcondition_satisfied=None,
+                           resource_conflict=False, chain_success=True):
+        self._pending_outcome = {"harmful_reuse": harmful_reuse,
+            "postcondition_satisfied": postcondition_satisfied,
+            "resource_conflict": resource_conflict, "chain_success": chain_success}
+
+    def save_success_failure(self, waypoint, language_action_str, is_success,
+                             harmful_reuse=None, postcondition_satisfied=None,
+                             resource_conflict=False, chain_success=True):
         """Record outcome after a knowledge use/failure with attribution."""
         self._mem.save_success_failure(waypoint, language_action_str, is_success)
         sv = 1.0 if is_success else 0.0
@@ -346,7 +379,7 @@ class CactMemory:
 
         # Use last decision result
         last = getattr(self, '_last_decision_result', None)
-        was_used = last.decision in ("reuse", "probe") if last else True
+        was_used = last.decision in ("reuse", "probe") if last else False
 
         # Increment reuse/fallback/harmful counters
         if was_used:
@@ -362,15 +395,20 @@ class CactMemory:
 
         # Contract / interaction status
         contract = self._store.get_contract(kid)
-        # Contract violation: in the current architecture, post-execution state is not
-        # available here (the caller has no mechanism to pass postcond check results).
-        # We use harm_ucb >= 0.10 as a proxy: a high harm upper bound suggests the
-        # contract's safety claims are not being upheld. This is imperfect but is the
-        # best available signal without deeper integration into XENON's observation loop.
-        contract_violated = (not is_success and hu >= 0.10 and contract is not None)
-        interaction_conflict = not last.interaction_safe if last else False
+        pending = getattr(self, "_pending_outcome", {})
+        if harmful_reuse is None:
+            harmful_reuse = pending.get("harmful_reuse")
+        if postcondition_satisfied is None:
+            postcondition_satisfied = pending.get("postcondition_satisfied")
+        resource_conflict = pending.get("resource_conflict", resource_conflict)
+        chain_success = pending.get("chain_success", chain_success)
+        self._pending_outcome = {}
+
+        # Contract violation and harm are observed labels, never posterior proxies.
+        contract_violated = (postcondition_satisfied is False and contract is not None)
+        interaction_conflict = not last.interaction_safe if last else bool(resource_conflict)
         csr_before = last.contract_satisfied_before if last else True
-        is_harmful = 1 if (not is_success and hu >= 0.10) else 0
+        is_harmful = int(bool(harmful_reuse) and was_used) if harmful_reuse is not None else int(bool(was_used and not is_success))
 
         if is_harmful:
             self._harmful_count += 1
@@ -401,12 +439,16 @@ class CactMemory:
                 )
                 attr_result = apply_attribution_to_lifecycle(
                     kid, attribution, sv, float(is_harmful),
-                    self._store, ctx, self._attributor)
+                    self._store, ctx, self._attributor,
+                    propensity=(last.propensity_reuse if was_used else last.propensity_base) if last else None)
             else:
                 # w/o Attribution Lifecycle: simple use/harm recording,
                 # ALL failures penalize knowledge (no navigation/execution distinction)
                 self._store.record_episode(kid, ctx, used=was_used, success=sv,
-                                           is_harmful=float(is_harmful))
+                                           is_harmful=float(is_harmful),
+                                           propensity=(last.propensity_reuse if was_used else last.propensity_base) if last else None,
+                                           episode_id=f"ep_{waypoint}_{self._current_seed}_{self.method}",
+                                           postcondition_satisfied=postcondition_satisfied)
                 attribution = None
                 attr_result = {"action": "simple_record", "attribution": "none"}
                 progress_delta = 0.0
@@ -414,6 +456,15 @@ class CactMemory:
             attribution = None
             attr_result = {"action": "frozen", "attribution": "none"}
             progress_delta = 0.0
+
+        if not self.frozen and self._use_attribution:
+            self._store._observations.append({
+                "kid": kid, "context": ctx, "used": bool(was_used),
+                "success": float(sv), "is_harmful": float(is_harmful),
+                "propensity": (last.propensity_reuse if was_used else last.propensity_base) if last else None,
+                "episode_id": f"ep_{waypoint}_{self._current_seed}_{self.method}",
+                "postcondition_satisfied": postcondition_satisfied,
+            })
 
         # ── Wire lifecycle_logs ──
         self.lifecycle_logs.append({
@@ -437,6 +488,7 @@ class CactMemory:
             "harm_ucb": round(hu, 4), "ess": round(ess, 1),
             "status_before": lc, "decision": last.decision if last else "reuse",
             "pre_admit_contract_pass": csr_before,
+            "contract_satisfied_before": csr_before,
             "contract_violation_after": contract_violated,
             "harmful_reuse": is_harmful,
             "tau_threshold": last.tau_group_level if last else 0.88,
@@ -445,11 +497,17 @@ class CactMemory:
             "hard_boundary_triggered": False,
             "interaction_state": last.interaction_state if last else "safe",
             "supervised": self._last_was_supervised,
-            "postcondition_satisfied": None,
+            "postcondition_satisfied": postcondition_satisfied,
+            "contract_satisfied_after": postcondition_satisfied,
+            "resource_conflict": bool(resource_conflict),
+            "chain_success": bool(chain_success),
             "progress_delta": progress_delta,
             "attribution": attribution.value if attribution else "frozen",
             "attr_action": attr_result.get("action", "none"),
             "outcome_success": int(is_success),
+            "propensity_reuse": last.propensity_reuse if last else None,
+            "propensity_base": last.propensity_base if last else None,
+            "propensity": (last.propensity_reuse if was_used else last.propensity_base) if last else None,
         })
 
         # Episode log
@@ -457,7 +515,7 @@ class CactMemory:
             "episode_id": f"ep_{waypoint}_{self._current_seed}_{self.method}",
             "task_id": waypoint,
             "waypoint": waypoint, "method": self.method, "frozen": self.frozen,
-            "task_group": task_grp, "difficulty": self._current_difficulty,
+            "task_group": task_grp, "group": task_grp, "difficulty": self._current_difficulty,
             "seed": self._current_seed,
             "hard_task": self._current_difficulty == "hard",
             "success": int(is_success),
@@ -467,6 +525,10 @@ class CactMemory:
             "harmful_reuse_count": self._harmful_count,
             "total_steps": 0, "llm_calls": 0, "tokens": 0,
             "unrecoverable_failure": 0 if is_success else 1,
+            "postcondition_pass": postcondition_satisfied,
+            "harmful_reuse": int(is_harmful),
+            "resource_conflict": bool(resource_conflict),
+            "chain_success": bool(chain_success),
         })
 
         # Knowledge generation
@@ -506,6 +568,15 @@ class CactMemory:
 
         # Build candidate list
         contract = self._store.get_contract(kid) or {}
+        if not contract:
+            if self.frozen:
+                # Frozen evaluation cannot create or mutate knowledge.
+                self._last_decision_result = None
+                return False, None
+            kid = self.register_knowledge({"type": "skill", "subgoal": waypoint,
+                                           "correction": str(waypoint),
+                                           "group": task_grp}) or kid
+            contract = self._store.get_contract(kid) or {}
         candidates = [{
             "knowledge_id": kid,
             "type": contract.get("type", "skill"),
@@ -560,12 +631,13 @@ class CactMemory:
             state["has_crafting_table"] = "crafting_table" in inv_items
             state["has_fuel"] = bool({"coal", "charcoal"} & inv_items)
             state["has_bucket"] = "bucket" in inv_items or "lava_bucket" in inv_items
-            state["near_lava"] = "lava_bucket" in inv_items
-            state["in_combat"] = bool({"iron_sword", "diamond_sword", "stone_sword",
+            state["near_lava"] = bool(info.get("near_lava", obs.get("near_lava", "lava_bucket" in inv_items)))
+            state["in_combat"] = bool(info.get("in_combat", False) or ({"iron_sword", "diamond_sword", "stone_sword",
                 "wooden_sword", "shield", "bow"} & inv_items) and eq.get("mainhand", {}).get(
-                "type", "") in ("sword", "axe", "bow")
-            state["low_health"] = False  # Not directly observable from mineRL
-            state["near_cliff"] = False  # Not directly observable
+                "type", "") in ("sword", "axe", "bow"))
+            life = obs.get("life_stats", {}) if isinstance(obs.get("life_stats", {}), dict) else {}
+            state["low_health"] = bool(info.get("low_health", life.get("health", life.get("life", 20)) < 5))
+            state["near_cliff"] = bool(info.get("near_cliff", obs.get("near_cliff", False)))
             state["irreversible_resource_constraint"] = bool(
                 {"diamond", "diamond_pickaxe", "obsidian", "diamond_sword"} & inv_items)
             state["resource_critical"] = state["irreversible_resource_constraint"]
@@ -588,6 +660,9 @@ class CactMemory:
         else:
             mode = "accumulation"
 
+        if self._supervision_blocked:
+            return False, None
+
         # C-ACT decision
         if self.method in ("C-ACT-Full", "Online-C-ACT") or "C-ACT-" in self.method:
             self._sync_ablation_flags()
@@ -597,9 +672,17 @@ class CactMemory:
             result = self._legacy_decide(
                 kid, ctx, candidates, state, task, context)
 
+        if mode in ("accumulation", "calibration", "online"):
+            if result.propensity_reuse <= 0 and result.propensity_base <= 0:
+                result.propensity_base = max(0.0, min(1.0, self.active_calib_rate))
+                result.propensity_reuse = 1.0 - result.propensity_base
+        else:
+            result.propensity_reuse = 1.0 if result.decision in ("reuse", "probe") else 0.0
+            result.propensity_base = 1.0 - result.propensity_reuse
         self._last_decision_result = result
         trusted = result.decision in ("reuse", "probe")
         self._last_was_supervised = getattr(result, "supervised", False)
+        self._supervision_pending = self._last_was_supervised
 
         # Snapshot inventory when knowledge is used, for progress_delta computation
         if trusted and obs:
@@ -624,6 +707,8 @@ class CactMemory:
                 "used_knowledge_chain": [result.chosen_knowledge_id] if result.chosen_knowledge_id else [],
                 "interaction_status": "conflict_detected",
                 "interaction_state": result.interaction_state,
+                "resource_conflict": True,
+                "chain_success": False,
             })
 
         # Propensity logging
@@ -638,6 +723,7 @@ class CactMemory:
                 "would_reuse_under_policy": True,
                 "base_success": 0,
                 "base_progress_delta": 0.0,
+                "task_group": task_grp,
             })
 
         self._prev_kid = kid if trusted else None
@@ -655,12 +741,14 @@ class CactMemory:
         lc = self._store.get_lifecycle_state(kid)
         grp = task.get("group", "crafting")
 
-        if self.method == "NoKnowledge":
-            result.decision = "reuse" if np.random.random() < 0.5 else "fallback"
-        elif self.method == "XENON-Original" or self.method == "Online-NoGate":
+        if self.method in ("NoKnowledge", "Base-Only"):
+            result.decision = "fallback"
+        elif self.method in ("NoGate", "XENON-Original", "Online-NoGate"):
             result.decision = "reuse"
-        elif self.method == "BankCuration" or self.method == "Online-BankCuration":
-            result.decision = "reuse" if self._store.mean(kid, ctx, "use") >= 0.3 else "fallback"
+        elif self.method in ("BankCuration", "Online-BankCuration"):
+            result.decision = "reuse" if (self._store.mean(kid, ctx, "use") >= 0.70 and
+                                            self._store.harm_upper_bound(kid, ctx) <= 0.10 and
+                                            self._store.is_reusable(kid)) else "fallback"
         elif self.method == "LifecycleSuccessGate" or self.method == "Online-SuccessLifecycle":
             if lc in (QUARANTINED, DEPRECATED, DISABLED):
                 result.decision = "fallback"
@@ -679,7 +767,7 @@ class CactMemory:
         elif self.method == "C-ACT-Full" or self.method == "Online-C-ACT":
             result.decision = "reuse"  # Full C-ACT handled by decision_controller
         elif self.method == "OracleGate":
-            result.decision = "reuse"
+            result.decision = "reuse" if bool(task.get("oracle_reuse", False)) else "fallback"
         elif self.method == "ShuffledKnowledge":
             result.decision = "reuse" if np.random.random() < 0.5 else "fallback"
         else:
