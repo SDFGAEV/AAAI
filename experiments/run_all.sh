@@ -42,14 +42,19 @@ _start_vlm_pool() {
   for ((i=0; i<idx; i++)); do ports+=($((VLM_PORT + i))); done
   VLM_PORTS=$(IFS=,; echo "${ports[*]}")
   export VLM_PORTS
-  # Wait for every VLM to accept /health.
+  # Wait for every VLM to accept /health (parallel — not serial).
   for ((i=0; i<idx; i++)); do
     local p=$((VLM_PORT + i))
     echo "[VLM] waiting for port $p ..."
-    for _ in $(seq 1 180); do
-      if curl -s --connect-timeout 1 "http://127.0.0.1:$p/health" > /dev/null 2>&1; then break; fi
+    (for _ in $(seq 1 180); do
+      if curl -s --connect-timeout 1 "http://127.0.0.1:$p/health" > /dev/null 2>&1; then echo "ready:$p"; exit 0; fi
       sleep 0.5
     done
+    echo "fail:$p") &
+  done
+  wait
+  for ((i=0; i<idx; i++)); do
+    local p=$((VLM_PORT + i))
     if ! curl -s --connect-timeout 1 "http://127.0.0.1:$p/health" > /dev/null 2>&1; then
       echo "[VLM] FATAL: port $p never became healthy"
       exit 1
