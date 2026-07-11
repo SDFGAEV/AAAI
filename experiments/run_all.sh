@@ -29,7 +29,15 @@ run_serial --benchmark cact_e0 --task_indices 0,1,2,3,4,5 --seeds 1001-1002 --me
 run_serial --benchmark cact_train --task_indices 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23 --seeds 2001-2005 --methods C-ACT --store_path "$CAL_STORE"
 run_serial --benchmark cact_train --task_indices 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23 --seeds 2101-2105 --methods C-ACT --store_path "$CAL_STORE" --protocol_path collect
 
-# E2: disjoint six-template D_select and six-template D_audit.
+# E2: direct matched-risk policy selection.  The selector requires a real
+# rollout table containing Base + 7 Full + 7 Pointwise candidates on every
+# identical task/world/episode cell; no offline replay or fabricated labels.
+if [[ -z "${E2_DIRECT_JSONL:-}" || ! -f "${E2_DIRECT_JSONL}" ]]; then
+  echo "STOP: provide E2_DIRECT_JSONL from the matched-risk rollout (15 methods/cell)." >&2
+  exit 2
+fi
+"$PYTHON" experiments/e2_direct_select.py --input "$E2_DIRECT_JSONL" \
+  --out "$RESULTS/e2_direct_selection.json"
 run_serial --benchmark cact_calib --task_indices 0,1,2,3,4,5 --seeds 3001-3008 --methods C-ACT --store_path "$CAL_STORE" --protocol_path collect
 run_serial --benchmark cact_calib --task_indices 6,7,8,9,10,11 --seeds 3011-3018 --methods C-ACT --store_path "$CAL_STORE" --protocol_path collect
 # E1c: D_pair-train must be a real sealed paired-branch artifact.

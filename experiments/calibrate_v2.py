@@ -69,15 +69,20 @@ def main():
 
     select_est = ensemble(select)
     audit_est = ensemble(audit)
-    policy = PolicyCalibrator().select(select_est)
-    policy = PolicyCalibrator().audit(policy, audit_est)
-    if not policy.audit_passed:
-        raise SystemExit("D_audit failed; no deployable policy was written")
+    # Select and audit each controller family independently.  They currently
+    # share the same causal estimates, but separate policy objects prevent a
+    # future ledger-aware selector from silently reusing the other family.
+    calibrator_full = PolicyCalibrator()
+    calibrator_pointwise = PolicyCalibrator()
+    full_policy = calibrator_full.audit(calibrator_full.select(select_est), audit_est)
+    pointwise_policy = calibrator_pointwise.audit(calibrator_pointwise.select(select_est), audit_est)
+    if not full_policy.audit_passed or not pointwise_policy.audit_passed:
+        raise SystemExit("D_audit failed for at least one controller family; no deployable policy was written")
 
+    policy = full_policy
     artifact = policy.to_dict()
-    # Explicitly serialize both controller families; the runtime selects
-    # full versus pointwise by method name and ledger mode.
-    artifact["families"] = {"full": policy.to_dict(), "pointwise": policy.to_dict()}
+    artifact["families"] = {"full": full_policy.to_dict(), "pointwise": pointwise_policy.to_dict()}
+    artifact["family_selection"] = {"full": "independent_select_audit", "pointwise": "independent_select_audit"}
     artifact.update({
         "schema_version": "cact.v2.policy",
         "fit_rows": len(fit), "select_rows": len(select), "audit_rows": len(audit),

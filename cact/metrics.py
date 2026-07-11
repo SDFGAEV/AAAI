@@ -128,7 +128,8 @@ def compute_cvr(rows: List[Dict]) -> float:
     if not rows:
         return 0.0
     return sum(not bool(_first(x, "postcondition_satisfied", "postcondition_pass",
-                               "contract_satisfied_after", default=False)) for x in rows) / len(rows)
+                               "contract_satisfied_after", "contract_violation_after",
+                               default=False)) for x in rows) / len(rows)
 
 
 def _decision_rows(rows):

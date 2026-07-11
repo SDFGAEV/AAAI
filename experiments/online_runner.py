@@ -130,6 +130,8 @@ class OnlineRunner:
             plan_model="Qwen/Qwen2.5-VL-7B-Instruct",
             resume=False, grid=grid)
         runner.print_summary()
+        for row, cfg in zip(results, grid):
+            row.setdefault("run_id", cfg.run_id)
         return results
 
     def _run_round_update(self, seed: int, round_num: int, store_path: str,
@@ -162,11 +164,11 @@ class OnlineRunner:
 
         # Copy previous round's store as starting point
         if prev_store_path and os.path.exists(prev_store_path):
-            os.makedirs(store_path, exist_ok=True)
-            for fname in ["cert_db.json", "contracts.json", "lifecycle.json"]:
-                src = os.path.join(prev_store_path, fname)
-                if os.path.exists(src):
-                    shutil.copy(src, os.path.join(store_path, fname))
+            # Preserve observations, calibration and lifecycle audit files;
+            # copying only the three databases silently erased online history.
+            if os.path.exists(store_path):
+                shutil.rmtree(store_path, ignore_errors=True)
+            _clone_frozen_store(prev_store_path, store_path)
 
         if shared_update_store is None:
             # Phase 1: Accumulation (8 episodes, updates trust store)
@@ -227,7 +229,9 @@ class OnlineRunner:
         )
 
         # Compile round metrics
-        metrics = self._compute_round_metrics(method, seed, round_num, store_path)
+        metrics = self._compute_round_metrics(
+            method, seed, round_num, store_path,
+            result_rows=list(ret_results) + list(ht_results))
 
         # Aggregate success rates
         for label, results in [("retention", ret_results), ("hard_transfer", ht_results)]:
@@ -242,13 +246,33 @@ class OnlineRunner:
         return metrics
 
     def _compute_round_metrics(self, method: str, seed: int, round_num: int,
-                                store_path: str) -> Dict:
-        """Read trust store and compute lifecycle metrics."""
+                                store_path: str, result_rows: List[Dict] = None) -> Dict:
+        """Read trust store and frozen audit logs and compute E5 metrics."""
         from cact.trust_store import TrustStore
+        from cact.metrics import (compute_echr, compute_eahr, compute_budget_metrics,
+                                  compute_late_harm_rate)
         ts = TrustStore(store_path=store_path)
         lifecycle = ts.lifecycle_stats()
         active = ts.get_active_knowledge()
-
+        rows = []
+        for result in result_rows or []:
+            run_id = result.get("run_id")
+            if not run_id:
+                continue
+            path = os.path.join(_PROJ, "exp_results", "cact_logs", run_id,
+                                "reuse", "reuse_decision.jsonl")
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    rows.extend(json.loads(line) for line in fh if line.strip())
+            except (OSError, json.JSONDecodeError):
+                continue
+        for row in rows:
+            if "decision" not in row and "used" in row:
+                row["decision"] = "reuse" if row["used"] else "fallback"
+            if "certificate_risk_charge" in row and "risk_charge" not in row:
+                row["risk_charge"] = row["certificate_risk_charge"]
+        budget = compute_budget_metrics(rows)
+        observed = ts.get_observations()
         return {
             "round": round_num, "method": method, "seed": seed,
             "lifecycle": lifecycle,
@@ -257,8 +281,15 @@ class OnlineRunner:
             "deprecated": lifecycle.get("deprecated", 0),
             "disabled": lifecycle.get("disabled", 0),
             "total_knowledge": sum(lifecycle.values()),
-            "harm_rate": (sum(bool(x.get("is_harmful")) for x in ts.get_observations() if x.get("used")) /
-                          max(1, sum(1 for x in ts.get_observations() if x.get("used")))),
+            "harm_rate": (sum(bool(x.get("is_harmful")) for x in observed if x.get("used")) /
+                          max(1, sum(1 for x in observed if x.get("used")))),
+            "log_rows": len(rows),
+            "echr": compute_echr(rows) if rows else None,
+            "eahr": compute_eahr(rows) if rows else None,
+            "budget_utilization": budget["budget_utilization"] if rows else None,
+            "budget_triggered_fallback": budget["budget_triggered_fallback"] if rows else None,
+            "total_risk_charge": budget["total_risk_charge"] if rows else None,
+            "late_harm_rate": compute_late_harm_rate(rows) if rows else None,
         }
 
     # ── Full experiment ──
@@ -329,6 +360,8 @@ class OnlineRunner:
             "eval_sr": [], "retention_sr": [], "hard_transfer_sr": [],
             "certified": [], "deprecated": [], "disabled": [],
             "active_knowledge": [], "harm_rate": [],
+            "echr": [], "eahr": [], "budget_utilization": [],
+            "budget_triggered_fallback": [], "late_harm_rate": [],
         } for m in methods}
 
         for round_data in all_results:
@@ -370,6 +403,10 @@ class OnlineRunner:
                 "eval_sr_series": [round(v, 3) for v in s["eval_sr"]],
                 "retention_sr_series": [round(v, 3) for v in s["retention_sr"]],
                 "hard_transfer_sr_series": [round(v, 3) for v in s["hard_transfer_sr"]],
+                "echr_series": s["echr"], "eahr_series": s["eahr"],
+                "budget_utilization_series": s["budget_utilization"],
+                "budget_triggered_fallback_series": s["budget_triggered_fallback"],
+                "late_harm_rate_series": s["late_harm_rate"],
             }
 
         with open(report_path, "w") as f:

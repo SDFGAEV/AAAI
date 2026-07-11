@@ -450,7 +450,10 @@ class AdmissionPolicyV2:
             ("g3", f"{opportunity.source}|{opportunity.type}")]
         for depth, key in candidates:
             row = self._est.get(key)
-            if not row or not row.get("supported", False) or int(row.get("n", 0)) < 40: continue
+            # Support is defined by the preregistered arm/ESS rules in the
+            # estimator (12 per arm and ESS >= 24); do not add an
+            # undocumented n>=40 gate at deployment time.
+            if not row or not row.get("supported", False): continue
             benefit = float(row["delta_y"]) - self.policy.kappa*float(row["se_y"])
             abs_risk = float(row["risk_abs"]) + self.policy.kappa*float(row["se_abs"])
             inc_risk = float(row["risk_inc"]) + self.policy.kappa*float(row["se_inc"])

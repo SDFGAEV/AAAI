@@ -35,6 +35,9 @@ class PairwisePreferenceModel:
     threshold: float = 0.5
     schema_version: str = SCHEMA
     train_rows: int = 0
+    validation_rows: int = 0
+    train_episode_count: int = 0
+    validation_episode_count: int = 0
 
     @classmethod
     def fit(cls, rows: Sequence[Mapping[str, Any]], l2: float = 1.0):

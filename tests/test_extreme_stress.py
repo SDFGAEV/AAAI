@@ -1150,6 +1150,8 @@ def test_metrics_extreme():
            compute_failuresr, compute_interactionsr,
            compute_rcr, compute_cfr, compute_kpr, compute_csr, compute_cvr]
     for fn in fns:
+        if fn is compute_ece:
+            continue  # v2: ECE returns NaN when data insufficient, not 0.0
         assert_close(fn([]), 0.0, msg=f"{fn.__name__} empty = 0")
 
     cov, covs, risks = compute_cov_risk([])
@@ -1166,7 +1168,9 @@ def test_metrics_extreme():
     assert_close(compute_sr(data), 0.4, msg="SR = 2/5")
     assert_close(compute_kus(data), 0.5, msg="KUS = 2/4 (2 successes in 4 reuse decisions)")
     assert_close(compute_coverage(data), 0.8, msg="Coverage = 4/5")
-    assert_true(compute_ece(data) >= 0.0, "ECE non-negative")
+    # v2: ECE returns NaN when insufficient data (not 0.0 which would falsely claim perfect calibration)
+    result = compute_ece(data)
+    assert_true(math.isnan(result) or result >= 0.0, "ECE non-negative")
 
     cov_r, _, _ = compute_cov_risk(data)
     assert_true(0.0 <= cov_r <= 1.0, f"cov_risk: {cov_r}")
@@ -1194,19 +1198,21 @@ def test_metrics_extreme():
     assert_close(compute_kpr(lc_logs), 0.5, msg="KPR = 1/2")
 
     reuse_logs = [
-        {"contract_satisfied_before": True, "contract_violation_after": False},
-        {"contract_satisfied_before": True, "contract_violation_after": True},
-        {"contract_satisfied_before": False, "contract_violation_after": False},
+        {"decision": "reuse", "pre_admit_contract_pass": True, "contract_satisfied_after": True},
+        {"decision": "reuse", "pre_admit_contract_pass": True, "contract_satisfied_after": False},
+        {"decision": "reuse", "pre_admit_contract_pass": False, "contract_satisfied_after": True},
     ]
-    assert_close(compute_csr(reuse_logs), 1.0/3.0, msg="CSR = 2/3")
+    assert_close(compute_csr(reuse_logs), 1.0/3.0, msg="CSR = 1/3 (pre AND post both pass)")
     assert_close(compute_cvr(reuse_logs), 1.0/3.0, msg="CVR = 1/3")
 
     cov_data = [{"pi_uplift": 0.9, "is_harmful": 0}, {"pi_uplift": 0.95, "is_harmful": 0}, {"pi_uplift": 0.6, "is_harmful": 1}]
     cov_r, cs, rs = compute_cov_risk(cov_data, eps=0.10)
     assert_true(len(cs) == len(rs) == 3, f"curves length: {len(cs)}")
 
-    assert_close(compute_ece([{"pi_uplift": 0.5}], n_bins=5), 0.0, msg="insufficient ECE=0")
-    assert_close(compute_ece([{"no_score": 0.5}], n_bins=5), 0.0, msg="no key ECE=0")
+    # v2: ECE returns NaN when insufficient data (< n_bins) or no score key found.
+    # This is intentional: NaN ≠ 0.0 (0.0 falsely claims perfect calibration).
+    assert_true(math.isnan(compute_ece([{"pi_uplift": 0.5}], n_bins=5)), "insufficient ECE=NaN")
+    assert_true(math.isnan(compute_ece([{"no_score": 0.5}], n_bins=5)), "no key ECE=NaN")
 
     print("  14. METRICS -- PASSED")
 
