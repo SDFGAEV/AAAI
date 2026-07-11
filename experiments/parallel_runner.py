@@ -64,6 +64,7 @@ class ExperimentConfig:
     branch_target_opportunity: str = ""
     branch_parent_id: str = ""
     branch_prefix_assignment: int = 0
+    cact_kappa: str = ""       # E2: override policy kappa
 
 
 def _clone_snapshot(src: str, dst: str) -> None:
@@ -225,6 +226,8 @@ class ParallelRunner:
             cmd.append("+cact_frozen=true")
         if cfg.active_calib_rate:
             cmd.append(f"+cact_active_calib_rate={cfg.active_calib_rate}")
+        if cfg.cact_kappa:
+            cmd.append(f"+cact_kappa={cfg.cact_kappa}")  # E2 direct select κ override
         if cfg.branch_mode:
             cmd.append(f"+cact_branch_mode={cfg.branch_mode}")
             cmd.append(f"+cact_branch_target_opportunity={cfg.branch_target_opportunity}")

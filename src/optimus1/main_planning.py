@@ -650,6 +650,7 @@ def main(cfg: DictConfig):
     cact_branch_target = str(cfg.get("cact_branch_target_opportunity", "") or "")
     cact_branch_parent = str(cfg.get("cact_branch_parent_id", "") or "")
     cact_branch_prefix = int(cfg.get("cact_branch_prefix_assignment", 0) or 0)
+    cact_kappa = cfg.get("cact_kappa", "")  # E2 direct select kappa override
     cact_run_id = cfg.get("cact_run_id", f"{cact_method}_seed{seed}")
     cact_log_dir = os.path.join(_PROJ, "exp_results", "cact_logs", str(cact_run_id))
     ac_rate = cfg.get("cact_active_calib_rate", 0.15 if cact_cf else 0.0)
@@ -665,6 +666,7 @@ def main(cfg: DictConfig):
                                protocol_path=cact_protocol_path or None,
                                protocol_seed=seed, branch_mode=cact_branch_mode,
                                branch_target_opportunity=cact_branch_target,
+                               kappa_override=cact_kappa or None,
                                branch_parent_id=cact_branch_parent,
                                branch_prefix_assignment=cact_branch_prefix)
     action_memory.set_seed(seed)

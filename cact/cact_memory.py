@@ -56,7 +56,8 @@ class CactMemory:
                  calibration_path: str = None, protocol_path: str = None,
                  protocol_seed: int = 0, branch_mode: str = "",
                  branch_target_opportunity: str = "", branch_parent_id: str = "",
-                 branch_prefix_assignment: int = 0):
+                 branch_prefix_assignment: int = 0,
+                 kappa_override: str = None):
         self._mem = xenon_memory
         requested_method = method
         method = validate_method_name(method, allow_legacy=True)
@@ -111,9 +112,13 @@ class CactMemory:
                 raise FileNotFoundError("PairwisePreferenceGate requires CACT_PREFERENCE_PATH")
             self._preference_model = PairwisePreferenceModel.load(preference_path)
         if protocol_path and os.path.exists(protocol_path):
+            use_ledger = method not in ("C-ACT-Pointwise", "Online-C-ACT-Pointwise")
+            family = "pointwise" if method in ("C-ACT-Pointwise", "Online-C-ACT-Pointwise") else "full"
             self._v2_policy = AdmissionPolicyV2.load(
-                protocol_path, use_ledger=(method not in ("C-ACT-Pointwise", "Online-C-ACT-Pointwise")),
-                family=("pointwise" if method in ("C-ACT-Pointwise", "Online-C-ACT-Pointwise") else "full"))
+                protocol_path, use_ledger=use_ledger, family=family)
+            # E2 direct select: override calibrated kappa for matched-risk rollout
+            if kappa_override:
+                self._v2_policy.policy.kappa = float(kappa_override)
         calibration_path = calibration_path or os.environ.get("CACT_CALIBRATION_PATH")
         if calibration_path:
             self._gate.load_calibration(calibration_path)
