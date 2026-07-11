@@ -4,7 +4,7 @@ defaults:
 # C-ACT E5: Retention tasks — 6 tasks for old capability preservation per round
 env:
   name: CACTTaskEnv-v0
-  max_minutes: 3
+  max_minutes: 2
   times: 1
   prefer_biome: forest
   initial_inventory: []

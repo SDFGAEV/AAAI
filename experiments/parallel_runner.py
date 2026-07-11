@@ -50,7 +50,7 @@ class ExperimentConfig:
     vlm_port: int
     mc_port: int
     plan_model: str = "Qwen/Qwen2.5-VL-7B-Instruct"
-    timeout: int = 300
+    timeout: int = 180  # per-episode soft timeout in seconds (was 300)
     env_times: int = 1
     prefix: str = "cact"
     store_path: str = ""
@@ -263,7 +263,7 @@ class ParallelRunner:
                          "CACT_TRUST_STORE_DIR": cfg.store_path or os.environ.get("CACT_TRUST_STORE_DIR", "")}
             with open(stdout_path, "w", encoding="utf-8") as stdout, open(stderr_path, "w", encoding="utf-8") as stderr:
                 result = subprocess.run(cmd, stdout=stdout, stderr=stderr, text=True,
-                                        timeout=cfg.timeout * cfg.env_times + 120,
+                                        timeout=cfg.timeout * cfg.env_times + 60,
                                         cwd=_PROJ, env=child_env)
             elapsed = time.perf_counter() - t0
             try:

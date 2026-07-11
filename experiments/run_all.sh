@@ -47,10 +47,10 @@ _start_vlm_pool() {
     local p=$((VLM_PORT + i))
     echo "[VLM] waiting for port $p ..."
     for _ in $(seq 1 180); do
-      if curl -s --connect-timeout 2 "http://127.0.0.1:$p/health" > /dev/null 2>&1; then break; fi
-      sleep 2
+      if curl -s --connect-timeout 1 "http://127.0.0.1:$p/health" > /dev/null 2>&1; then break; fi
+      sleep 0.5
     done
-    if ! curl -s --connect-timeout 2 "http://127.0.0.1:$p/health" > /dev/null 2>&1; then
+    if ! curl -s --connect-timeout 1 "http://127.0.0.1:$p/health" > /dev/null 2>&1; then
       echo "[VLM] FATAL: port $p never became healthy"
       exit 1
     fi
