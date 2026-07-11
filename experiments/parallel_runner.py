@@ -167,7 +167,15 @@ class ParallelRunner:
         proc = subprocess.Popen(cmd, stdout=vlm_log, stderr=vlm_log, env=env)
         self._server_procs[self.vlm_port] = proc
         print(f"[VLM] Started planning server on port {self.vlm_port} (PID {proc.pid})")
-        time.sleep(float(os.environ.get("CACT_VLM_STARTUP_WAIT", "8")))  # model warm-up
+        # Poll /health instead of fixed sleep — model loading typically 60-90s.
+        # Falls back to short sleep if curl is unavailable.
+        if shutil.which("curl"):
+            for _ in range(120):
+                rc = os.system(f"curl -s --connect-timeout 1 http://127.0.0.1:{self.vlm_port}/health > /dev/null 2>&1")
+                if rc == 0: break
+                time.sleep(0.5)
+        else:
+            time.sleep(float(os.environ.get("CACT_VLM_STARTUP_WAIT", "15")))
 
     def _stop_vlm_server(self):
         """Stop the VLM planning server."""
