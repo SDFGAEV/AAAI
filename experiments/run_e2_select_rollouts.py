@@ -7,13 +7,13 @@ single JSONL consumed by e2_direct_select.py.
 
 Usage:
   python experiments/run_e2_select_rollouts.py \
-    --benchmark cact_calib --task-indices 0,1,2,3,4,5 \
+    --benchmark cact_calib --task-indices 0,1,2,3,4,5,6,7 \
     --seeds 3001-3008 --workers 2 --vlm-port 12345 \
     --store-path cact_ckpt/trust_store --protocol-path protocol_release/policy.json \
     --out exp_results/e2_select_rollouts.jsonl
 """
 from __future__ import annotations
-import argparse, json, os, subprocess, sys, time
+import argparse, hashlib, json, os, shutil, subprocess, sys, time, urllib.request
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List
@@ -23,69 +23,105 @@ sys.path.insert(0, str(_PROJ))
 
 KAPPAS = (0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0)
 
+def _ensure_vlm(port: int, model: str):
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=2):
+            return None
+    except Exception:
+        pass
+    log = _PROJ / "exp_results" / f"e2_vlm_{port}.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    handle = log.open("a", encoding="utf-8")
+    proc = subprocess.Popen([sys.executable, str(_PROJ / "app.py"), "--port", str(port), "--plan_model", model],
+                            stdout=handle, stderr=handle, cwd=str(_PROJ),
+                            env={**os.environ, "PYTHONUNBUFFERED": "1"})
+    deadline = time.time() + float(os.environ.get("CACT_VLM_STARTUP_WAIT", "120"))
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=2):
+                handle.close(); return proc
+        except Exception:
+            time.sleep(1)
+    proc.terminate(); handle.close()
+    raise RuntimeError(f"VLM server on port {port} did not become healthy")
+
+
+def _hash_tree(path: Path) -> str:
+    h = hashlib.sha256()
+    for fp in sorted(p for p in path.rglob("*") if p.is_file()):
+        h.update(str(fp.relative_to(path)).encode())
+        h.update(fp.read_bytes())
+    return h.hexdigest()
+
+def _clone_store(source: Path, destination: Path) -> str:
+    if not source.is_dir():
+        raise FileNotFoundError(f"E2 frozen snapshot not found: {source}")
+    if destination.exists(): shutil.rmtree(destination)
+    if os.environ.get("CACT_FROZEN_HARDLINK") == "1" and os.environ.get("CACT_ALLOW_UNSAFE_HARDLINK") == "1":
+        destination.mkdir(parents=True)
+        for root, _, files in os.walk(source):
+            rel = Path(root).relative_to(source); target = destination / rel
+            target.mkdir(parents=True, exist_ok=True)
+            for name in files: os.link(Path(root) / name, target / name)
+    else: shutil.copytree(source, destination)
+    return _hash_tree(source)
 
 def _run_one(task_idx: int, seed: int, method: str, cfg: dict) -> dict:
-    """Run a single episode and parse its success/harm from logs."""
-    cmd = [
-        sys.executable, "-m", "optimus1.main_planning",
-        f"server.port={cfg['vlm_port']}",
-        f"server.url=http://127.0.0.1",
-        f"benchmark={cfg['benchmark']}",
-        f"+evaluate=[{task_idx}]",
-        f"env.times=1",
-        f"seed={seed}",
-        f"prefix=cact_e2",
-        f"+cact_method=C-ACT",
-        f"plan_model={cfg.get('plan_model', 'Qwen/Qwen2.5-VL-7B-Instruct')}",
-        f"+cact_run_id=e2_{method}_seed{seed}_task{task_idx}",
-    ]
-    if cfg.get("store_path"):
-        cp = Path(cfg["store_path"])
-        cmd.append(f"+cact_store_path={cp}")
-    if cfg.get("protocol_path"):
+    """Run one frozen cell with an isolated store and common episode ID."""
+    actual_method = ("NoKnowledge" if method == "Base" else
+                     "C-ACT-Pointwise" if method.startswith("Pointwise:") else "C-ACT")
+    cell_id = f"e2_cell_seed{seed}_task{task_idx}"
+    run_id = f"e2_{method.replace(':', '_')}_seed{seed}_task{task_idx}"
+    source = Path(cfg.get("snapshot_path") or cfg.get("store_path", ""))
+    run_store = _PROJ / "exp_results" / "e2_stores" / run_id
+    store_hash = _clone_store(source, run_store)
+    cell_key = f"{task_idx}|{seed}"
+    world_hash = cfg.get("world_snapshot_hashes", {}).get(cell_key)
+    if not world_hash:
+        raise RuntimeError(f"missing world snapshot hash for matched cell {cell_key}")
+    cmd = [sys.executable, "-m", "optimus1.main_planning",
+           f"server.port={cfg['vlm_port']}", "server.url=http://127.0.0.1",
+           f"benchmark={cfg['benchmark']}", f"+evaluate=[{task_idx}]",
+           "env.times=1", f"seed={seed}", "prefix=cact_e2",
+           f"+cact_method={actual_method}", f"+cact_store_path={run_store}",
+           f"+cact_run_id={run_id}", "+cact_frozen=true",
+           f"+cact_snapshot_hash={world_hash}",
+           f"plan_model={cfg.get('plan_model', 'Qwen/Qwen2.5-VL-7B-Instruct')}" ]
+    if cfg.get("protocol_path") and actual_method.startswith("C-ACT"):
         cmd.append(f"+cact_protocol_path={cfg['protocol_path']}")
-    if cfg.get("calibration_path"):
-        cmd.append(f"+cact_calibration_path={cfg['calibration_path']}")
-    if method.startswith("Full"):
-        cmd.append(f"+cact_kappa={method.split(':')[1]}")
-    elif method.startswith("Pointwise"):
-        cmd.append(f"+cact_kappa={method.split(':')[1]}")
-    if method != "Base":
-        cmd.append("+cact_frozen=true")
-
-    t0 = time.perf_counter()
-    result = subprocess.run(
-        cmd, capture_output=True, text=True,
-        timeout=cfg.get("timeout", 240),  # aligned with parallel_runner 180+60
-        cwd=str(_PROJ),
-        env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONPATH": os.pathsep.join(
-            [str(_PROJ), str(_PROJ / "src"), str(_PROJ / "minerl")])},
-    )
-    elapsed = time.perf_counter() - t0
-    success = result.returncode == 0
-
-    # Parse success/harm from the episode log
-    out_success = 0
-    out_harm = 0
-    log_dir = _PROJ / "exp_results" / "cact_logs" / f"e2_{method}_seed{seed}_task{task_idx}"
-    episode_file = log_dir / "episode" / "episode.jsonl"
+        cmd.append(f"+cact_kappa={method.split(':', 1)[1]}")
+    t0 = time.perf_counter(); log_dir = _PROJ / "exp_results" / "runner_logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    stdout_path, stderr_path = log_dir / f"{run_id}.stdout.log", log_dir / f"{run_id}.stderr.log"
+    try:
+        with stdout_path.open("w", encoding="utf-8") as out, stderr_path.open("w", encoding="utf-8") as err:
+            result = subprocess.run(cmd, stdout=out, stderr=err, text=True,
+                                    timeout=cfg.get("timeout", 240), cwd=str(_PROJ),
+                                    env={**os.environ, "PYTHONUNBUFFERED": "1",
+                                         "PYTHONPATH": os.pathsep.join([str(_PROJ), str(_PROJ / "src"), str(_PROJ / "minerl")])})
+        rc = result.returncode
+    except subprocess.TimeoutExpired: rc = 124
+    episode_file = _PROJ / "exp_results" / "cact_logs" / run_id / "episode" / "episode.jsonl"
+    reuse_file = _PROJ / "exp_results" / "cact_logs" / run_id / "reuse" / "reuse_decision.jsonl"
+    out_success = out_harm = None; coverage = hrr = eahr = None
     if episode_file.exists():
-        try:
-            lines = [json.loads(l) for l in episode_file.read_text(encoding="utf-8").splitlines() if l.strip()]
-            if lines:
-                last = lines[-1]
-                out_success = int(bool(last.get("success", False)))
-                out_harm = int(bool(last.get("harmful_reuse", last.get("is_harmful", False))))
-        except (OSError, json.JSONDecodeError):
-            pass
-
-    return {
-        "task_id": str(task_idx), "world_seed": seed,
-        "episode_id": f"e2_{method}_s{seed}_t{task_idx}",
-        "method": method, "success": out_success,
-        "harmful_reuse": out_harm, "returncode": result.returncode,
-        "elapsed_sec": round(elapsed, 1),
-    }
+        lines = [json.loads(x) for x in episode_file.read_text(encoding="utf-8").splitlines() if x.strip()]
+        if lines: out_success = int(bool(lines[-1].get("success", False)))
+    decision_rows = []
+    if reuse_file.exists():
+        decision_rows = [json.loads(x) for x in reuse_file.read_text(encoding="utf-8").splitlines() if x.strip()]
+    admitted = [x for x in decision_rows if x.get("decision") in ("reuse", "probe")]
+    harmful = [x for x in admitted if bool(x.get("harmful_reuse", x.get("is_harmful", False)))]
+    coverage = len(admitted) / len(decision_rows) if decision_rows else 0.0
+    hrr = len(harmful) / len(admitted) if admitted else 0.0
+    eahr = int(bool(harmful)); out_harm = eahr
+    if rc != 0 or out_success is None or out_harm is None:
+        raise RuntimeError(f"E2 rollout failed/incomplete: {run_id} rc={rc}")
+    return {"task_id": str(task_idx), "world_seed": seed, "episode_id": cell_id,
+            "matched_cell_id": cell_id, "method": method, "success": out_success,
+            "harmful_reuse": out_harm, "snapshot_hash": world_hash,
+            "store_hash": store_hash, "coverage": coverage, "hrr": hrr, "eahr": eahr,
+            "run_id": run_id, "returncode": rc, "elapsed_sec": round(time.perf_counter()-t0, 1)}
 
 
 def _methods():
@@ -104,7 +140,10 @@ def main():
     ap.add_argument("--seeds", required=True)
     ap.add_argument("--workers", type=int, default=2)
     ap.add_argument("--vlm-port", type=int, default=12345)
-    ap.add_argument("--store-path", default="")
+    ap.add_argument("--store-path", default="", help="legacy alias for frozen snapshot path")
+    ap.add_argument("--snapshot-path", default="", help="immutable frozen store snapshot")
+    ap.add_argument("--world-snapshot-manifest", required=True,
+                    help="JSON mapping task_id|world_seed to canonical world snapshot hash")
     ap.add_argument("--protocol-path", default="")
     ap.add_argument("--calibration-path", default="")
     ap.add_argument("--out", required=True)
@@ -122,25 +161,37 @@ def main():
     print(json.dumps({"benchmark": args.benchmark, "tasks": len(task_indices),
                       "seeds": len(seeds), "methods": 15, "episodes": total}))
 
+    manifest = json.loads(Path(args.world_snapshot_manifest).read_text(encoding="utf-8"))
+    hashes = manifest.get("hashes", manifest)
+    if not isinstance(hashes, dict): raise SystemExit("world snapshot manifest must be a JSON mapping")
     cfg = {"vlm_port": args.vlm_port, "benchmark": args.benchmark,
-           "store_path": args.store_path, "protocol_path": args.protocol_path,
+           "store_path": args.store_path, "snapshot_path": args.snapshot_path,
+           "world_snapshot_hashes": {str(k): str(v) for k, v in hashes.items()},
+           "protocol_path": args.protocol_path,
            "calibration_path": args.calibration_path, "plan_model": args.plan_model}
 
     from concurrent.futures import ThreadPoolExecutor, as_completed
+    owned_vlm = _ensure_vlm(args.vlm_port, args.plan_model)
     all_results = []
-    with ThreadPoolExecutor(max_workers=min(args.workers, os.cpu_count() or 2)) as pool:
-        futures = {}
-        for ti in task_indices:
-            for s in seeds:
-                for method in _methods():
-                    futures[pool.submit(_run_one, ti, s, method, cfg)] = (ti, s, method)
-        for f in as_completed(futures):
-            result = f.result()
-            all_results.append(result)
-            ti, s, method = futures[f]
-            print(f"  [{method}] task={ti} seed={s} success={result['success']} "
-                  f"harm={result['harmful_reuse']} rc={result['returncode']} "
-                  f"({result['elapsed_sec']:.0f}s)")
+    try:
+        with ThreadPoolExecutor(max_workers=min(args.workers, os.cpu_count() or 2)) as pool:
+            futures = {}
+            for ti in task_indices:
+                for s in seeds:
+                    for method in _methods():
+                        futures[pool.submit(_run_one, ti, s, method, cfg)] = (ti, s, method)
+            for f in as_completed(futures):
+                result = f.result()
+                all_results.append(result)
+                ti, s, method = futures[f]
+                print(f"  [{method}] task={ti} seed={s} success={result['success']} "
+                      f"harm={result['harmful_reuse']} rc={result['returncode']} "
+                      f"({result['elapsed_sec']:.0f}s)")
+    finally:
+        if owned_vlm is not None:
+            owned_vlm.terminate()
+            try: owned_vlm.wait(timeout=10)
+            except subprocess.TimeoutExpired: owned_vlm.kill()
 
     # Validate completeness
     cells = defaultdict(dict)
@@ -150,14 +201,12 @@ def main():
     incomplete = [(k, sorted(expected_methods - set(v.keys())))
                   for k, v in cells.items() if set(v.keys()) != expected_methods]
     if incomplete:
-        print(f"[FAIL] incomplete cells: {len(incomplete)}")
-    else:
-        print(f"[OK] all {len(cells)} task-seed cells complete with 15 methods each")
-
-    out = Path(args.out)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in all_results) + "\n",
-                   encoding="utf-8")
+        raise SystemExit(f"incomplete matched-risk cells: {len(incomplete)}")
+    print(f"[OK] all {len(cells)} task-seed cells complete with 15 methods each")
+    out = Path(args.out); out.parent.mkdir(parents=True, exist_ok=True)
+    tmp = out.with_suffix(out.suffix + ".tmp")
+    tmp.write_text("\n".join(json.dumps(r, ensure_ascii=False, sort_keys=True) for r in all_results) + "\n", encoding="utf-8")
+    os.replace(tmp, out)
     print(json.dumps({"out": str(out), "rows": len(all_results)}, ensure_ascii=False))
 
 

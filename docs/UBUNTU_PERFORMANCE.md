@@ -31,3 +31,8 @@ export CACT_FROZEN_HARDLINK=1
 ## 压测建议
 
 先用 E0 做 `CACT_WORKERS=1,2,4` 小规模对比，记录 runner 的 `elapsed_sec`、GPU utilization、Minecraft server CPU 和 VLM batch latency；只有吞吐提高且 E0 结果不变时才扩大到 E3/E5。
+
+
+## Frozen-store hardlink safety
+
+`CACT_FROZEN_HARDLINK=1` is not sufficient by itself. Hardlinks are enabled only when `CACT_ALLOW_UNSAFE_HARDLINK=1` is also set; the safe default is a real copy. This prevents an accidental frozen write from mutating the calibration source store.

@@ -38,6 +38,7 @@ class PairwisePreferenceModel:
     validation_rows: int = 0
     train_episode_count: int = 0
     validation_episode_count: int = 0
+    l2: float = 1.0
 
     @classmethod
     def fit(cls, rows: Sequence[Mapping[str, Any]], l2: float = 1.0):
@@ -59,7 +60,7 @@ class PairwisePreferenceModel:
             beta -= step
             if float(np.max(np.abs(step))) < 1e-6:
                 break
-        return cls(weights=beta[1:].tolist(), bias=float(beta[0]), train_rows=len(clean))
+        return cls(weights=beta[1:].tolist(), bias=float(beta[0]), train_rows=len(clean), l2=float(l2))
 
     def predict_proba(self, row: Mapping[str, Any]) -> float:
         x = _features(row)

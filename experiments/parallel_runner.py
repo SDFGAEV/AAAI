@@ -24,7 +24,7 @@ Speed: ~4× with 4 workers. E3: 17h → 4-5h (single MC per worker).
        ~8× with 8 workers + MC instance sharing.
 """
 
-import subprocess, sys, os, json, time, signal, shutil, argparse, socket, hashlib
+import subprocess, sys, os, json, time, signal, shutil, argparse, socket, hashlib, urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Optional
@@ -64,7 +64,9 @@ class ExperimentConfig:
     branch_target_opportunity: str = ""
     branch_parent_id: str = ""
     branch_prefix_assignment: int = 0
+    branch_prefix_trace: str = ""
     cact_kappa: str = ""       # E2: override policy kappa
+    snapshot_hash: str = ""
 
 
 def _clone_snapshot(src: str, dst: str) -> None:
@@ -145,37 +147,34 @@ class ParallelRunner:
 
     # ── Server lifecycle ──
     def _start_vlm_server(self, plan_model: str):
-        """Start the VLM planning server (shared across all workers)."""
+        """Start or validate a healthy shared VLM planning server."""
+        health = f"http://127.0.0.1:{self.vlm_port}/health"
         if not self._port_free(self.vlm_port):
-            print(f"[Warning] VLM port {self.vlm_port} in use — reusing existing server")
-            return
-
-        cmd = [
-            sys.executable, os.path.join(_PROJ, "app.py"),
-            "--port", str(self.vlm_port),
-            "--plan_model", plan_model,
-        ]
+            try:
+                with urllib.request.urlopen(health, timeout=3):
+                    print(f"[VLM] Reusing healthy server on port {self.vlm_port}")
+                    return
+            except Exception as exc:
+                raise RuntimeError(f"VLM port {self.vlm_port} is occupied but unhealthy") from exc
+        cmd = [sys.executable, os.path.join(_PROJ, "app.py"),
+               "--port", str(self.vlm_port), "--plan_model", plan_model]
         os.makedirs(os.path.join(_PROJ, "exp_results"), exist_ok=True)
-        vlm_log = open(os.path.join(_PROJ, "exp_results", "vlm_server.log"), "a")
-        env = {
-            **os.environ,
-            "PYTHONUNBUFFERED": "1",
-            "PYTHONPATH": os.pathsep.join([
-                _PROJ, os.path.join(_PROJ, "src"), os.path.join(_PROJ, "minerl")
-            ]),
-        }
+        vlm_log = open(os.path.join(_PROJ, "exp_results", "vlm_server.log"), "a", encoding="utf-8")
+        env = {**os.environ, "PYTHONUNBUFFERED": "1",
+               "PYTHONPATH": os.pathsep.join([_PROJ, os.path.join(_PROJ, "src"), os.path.join(_PROJ, "minerl")])}
         proc = subprocess.Popen(cmd, stdout=vlm_log, stderr=vlm_log, env=env)
-        self._server_procs[self.vlm_port] = proc
+        vlm_log.close(); self._server_procs[self.vlm_port] = proc
         print(f"[VLM] Started planning server on port {self.vlm_port} (PID {proc.pid})")
-        # Poll /health instead of fixed sleep — model loading typically 60-90s.
-        # Falls back to short sleep if curl is unavailable.
-        if shutil.which("curl"):
-            for _ in range(120):
-                rc = os.system(f"curl -s --connect-timeout 1 http://127.0.0.1:{self.vlm_port}/health > /dev/null 2>&1")
-                if rc == 0: break
+        ready = False
+        for _ in range(int(os.environ.get("CACT_VLM_HEALTH_RETRIES", "240"))):
+            try:
+                with urllib.request.urlopen(health, timeout=2):
+                    ready = True; break
+            except Exception:
                 time.sleep(0.5)
-        else:
-            time.sleep(float(os.environ.get("CACT_VLM_STARTUP_WAIT", "15")))
+        if not ready:
+            proc.terminate()
+            raise RuntimeError(f"VLM server on port {self.vlm_port} failed health check")
 
     def _stop_vlm_server(self):
         """Stop the VLM planning server."""
@@ -238,12 +237,16 @@ class ParallelRunner:
         if cfg.active_calib_rate:
             cmd.append(f"+cact_active_calib_rate={cfg.active_calib_rate}")
         if cfg.cact_kappa:
-            cmd.append(f"+cact_kappa={cfg.cact_kappa}")  # E2 direct select κ override
+            cmd.append(f"+cact_kappa={cfg.cact_kappa}")  # E2 direct select kappa override
+        if cfg.snapshot_hash:
+            cmd.append(f"+cact_snapshot_hash={cfg.snapshot_hash}")
         if cfg.branch_mode:
             cmd.append(f"+cact_branch_mode={cfg.branch_mode}")
             cmd.append(f"+cact_branch_target_opportunity={cfg.branch_target_opportunity}")
             cmd.append(f"+cact_branch_parent_id={cfg.branch_parent_id}")
             cmd.append(f"+cact_branch_prefix_assignment={cfg.branch_prefix_assignment}")
+            if cfg.branch_prefix_trace:
+                cmd.append(f"+cact_branch_prefix_trace={cfg.branch_prefix_trace}")
 
         def store_hash(path):
             h = hashlib.sha256()
@@ -267,7 +270,12 @@ class ParallelRunner:
             stderr_path = os.path.join(runner_log_dir, f"{log_id}.stderr.log")
             child_env = {**os.environ, "PYTHONUNBUFFERED": "1",
                          "PYTHONPATH": os.pathsep.join([_PROJ, os.path.join(_PROJ, "src"), os.path.join(_PROJ, "minerl")]),
-                         "VLM_BATCH_PROXY": f"http://127.0.0.1:{self.batch_proxy_port}",
+                         # External multi-GPU pools already expose one
+                         # endpoint per worker; do not collapse all requests
+                         # onto the single batch proxy/GPU 0.
+                         "VLM_BATCH_PROXY": (f"http://127.0.0.1:{cfg.vlm_port}"
+                                             if self._vlm_ports else
+                                             f"http://127.0.0.1:{self.batch_proxy_port}"),
                          "CACT_TRUST_STORE_DIR": cfg.store_path or os.environ.get("CACT_TRUST_STORE_DIR", "")}
             with open(stdout_path, "w", encoding="utf-8") as stdout, open(stderr_path, "w", encoding="utf-8") as stderr:
                 result = subprocess.run(cmd, stdout=stdout, stderr=stderr, text=True,
@@ -306,6 +314,7 @@ class ParallelRunner:
 
             return {
                 "key": key,
+                "run_id": cfg.run_id,
                 "task": cfg.task,
                 "seed": cfg.seed,
                 "method": cfg.method,
@@ -322,13 +331,13 @@ class ParallelRunner:
             }
         except subprocess.TimeoutExpired:
             return {
-                "key": key, "task": cfg.task, "seed": cfg.seed,
+                "key": key, "run_id": cfg.run_id, "task": cfg.task, "seed": cfg.seed,
                 "method": cfg.method, "status": "timeout",
                 "elapsed_sec": cfg.timeout + 120,
             }
         except Exception as e:
             return {
-                "key": key, "task": cfg.task, "seed": cfg.seed,
+                "key": key, "run_id": cfg.run_id, "task": cfg.task, "seed": cfg.seed,
                 "method": cfg.method, "status": "error",
                 "error": str(e),
             }

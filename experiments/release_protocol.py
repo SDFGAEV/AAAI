@@ -36,7 +36,9 @@ def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--out", default=str(ROOT / "protocol_release")); ap.add_argument("--label", default="protocol-candidate"); args = ap.parse_args()
     out = Path(args.out); out.mkdir(parents=True, exist_ok=True)
     files = [MANUAL, ROOT/"cact/protocol_v2.py", ROOT/"experiments/calibrate_v2.py", ROOT/"experiments/parallel_runner.py", ROOT/"experiments/run_all.sh", ROOT/"paper/PAPER_SUBMISSION_DRAFT_NEW.md", ROOT/"paper/PAPER_SUBMISSION_DRAFT_V2.md", ROOT/"cact/preference_gate.py", ROOT/"experiments/train_pairwise.py", ROOT/"cact/metrics.py", ROOT/"analysis/bootstrap.py", ROOT/"analysis/split_audit.py", ROOT/"analysis/validate_task_cards.py",
-           ROOT/"experiments/e2_direct_select.py", ROOT/"experiments/online_runner.py",
+           ROOT/"experiments/e2_direct_select.py", ROOT/"experiments/run_e2_select_rollouts.py",
+           ROOT/"experiments/generate_pair_train.py", ROOT/"experiments/validate_e2_audit.py",
+           ROOT/"experiments/online_runner.py",
            ROOT/"experiments/release_protocol.py", ROOT/"experiments/health_check.py",
            ROOT/"tests/test_controller_ledger.py",
            ROOT/"docs/UBUNTU_PERFORMANCE.md"]

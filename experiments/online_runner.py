@@ -21,7 +21,7 @@ Usage:
 Design doc §24, Tables 134-141.
 """
 
-import sys, os, json, time, subprocess, argparse, shutil
+import sys, os, json, time, subprocess, argparse, shutil, urllib.request
 from typing import Dict, List, Tuple
 from pathlib import Path
 
@@ -34,7 +34,7 @@ DEFAULT_ROUNDS = 10
 DEFAULT_SEED = 5001
 
 def _clone_frozen_store(src: str, dst: str) -> None:
-    if os.environ.get("CACT_FROZEN_HARDLINK") != "1":
+    if os.environ.get("CACT_FROZEN_HARDLINK") != "1" or os.environ.get("CACT_ALLOW_UNSAFE_HARDLINK") != "1":
         shutil.copytree(src, dst); return
     os.makedirs(dst, exist_ok=True)
     for root, _, files in os.walk(src):
@@ -70,13 +70,26 @@ class OnlineRunner:
         return os.path.join(self._store_root, f"{safe}_seed{seed}_r{round_num:02d}")
 
     def _start_vlm(self, plan_model: str = "Qwen/Qwen2.5-VL-7B-Instruct"):
+        health = f"http://127.0.0.1:{self.vlm_port}/health"
+        try:
+            with urllib.request.urlopen(health, timeout=3):
+                print(f"[VLM] Reusing healthy server on port {self.vlm_port}")
+                return
+        except Exception:
+            pass
         cmd = [sys.executable, os.path.join(_PROJ, "app.py"),
                "--port", str(self.vlm_port), "--plan_model", plan_model]
         os.makedirs(os.path.join(_PROJ, "exp_results"), exist_ok=True)
-        vlm_log = open(os.path.join(_PROJ, "exp_results", "vlm_server.log"), "a")
+        vlm_log = open(os.path.join(_PROJ, "exp_results", "vlm_server.log"), "a", encoding="utf-8")
         self._vlm_proc = subprocess.Popen(cmd, stdout=vlm_log, stderr=vlm_log)
+        vlm_log.close()
         print(f"[VLM] Server on port {self.vlm_port} (PID {self._vlm_proc.pid})")
-        time.sleep(float(os.environ.get("CACT_VLM_STARTUP_WAIT", "8")))
+        for _ in range(int(os.environ.get("CACT_VLM_HEALTH_RETRIES", "240"))):
+            try:
+                with urllib.request.urlopen(health, timeout=2): return
+            except Exception: time.sleep(0.5)
+        self._stop_vlm()
+        raise RuntimeError(f"VLM server on port {self.vlm_port} failed health check")
 
     def _stop_vlm(self):
         if self._vlm_proc:
@@ -372,7 +385,7 @@ class OnlineRunner:
                 if m in round_data:
                     rd = round_data[m]
                     for key in series[m]:
-                        series[m][key].append(rd.get(key, 0))
+                        series[m][key].append(rd.get(key))
 
         # Compute derived metrics
         report = {"methods": methods, "rounds": self.rounds, "series": {}}

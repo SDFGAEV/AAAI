@@ -85,13 +85,19 @@ def main():
     if args.direct_selection:
         direct = json.loads(Path(args.direct_selection).read_text(encoding="utf-8"))
         selected = direct.get("selection", {})
-        for family, obj in (("full", full_policy), ("pointwise", pointwise_policy)):
+        direct_policies = {}
+        for family in ("full", "pointwise"):
             if family not in selected or "kappa" not in selected[family]:
                 raise SystemExit(f"direct selection missing {family} kappa")
-            obj.kappa = float(selected[family]["kappa"])
-            obj = PolicyCalibrator().audit(obj, audit_est)
-            if not obj.audit_passed:
+            kappa = float(selected[family]["kappa"])
+            # Re-materialize the admitted group set at the directly selected
+            # kappa; do not retain estimates selected at another kappa.
+            direct_policy = PolicyCalibrator(kappas=(kappa,)).select(select_est)
+            direct_policy = PolicyCalibrator().audit(direct_policy, audit_est)
+            if not direct_policy.audit_passed:
                 raise SystemExit(f"D_audit failed after direct {family} kappa selection")
+            direct_policies[family] = direct_policy
+        full_policy, pointwise_policy = direct_policies["full"], direct_policies["pointwise"]
         selection_source = "e2_direct_matched_risk"
     policy = full_policy
     artifact = policy.to_dict()

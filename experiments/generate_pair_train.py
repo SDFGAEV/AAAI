@@ -14,10 +14,11 @@ from __future__ import annotations
 import argparse, hashlib, json, os, shutil
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
-
-from experiments.parallel_runner import ExperimentConfig, ParallelRunner
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from experiments.parallel_runner import ExperimentConfig, ParallelRunner
 
 def _read_jsonl(path: Path) -> List[Dict[str, Any]]:
     if not path.exists(): return []
@@ -56,15 +57,17 @@ def _pilot_candidates(log_root: Path, runs: Iterable[Dict[str, Any]]) -> List[Di
 
 def _cfg(benchmark: str, task_idx: int, seed: int, method: str,
          run_id: str, store: Path, snapshot: Path, parent: str,
-         branch_mode: str = "", target: str = "") -> ExperimentConfig:
+         branch_mode: str = "", target: str = "", snapshot_hash: str = "",
+         prefix_trace: str = "") -> ExperimentConfig:
     cfg = ExperimentConfig(task=str(task_idx), task_idx=task_idx, seed=seed,
                            method=method, benchmark=benchmark, vlm_port=12345,
                            mc_port=0, store_path=str(store), run_id=run_id,
-                           snapshot_path=str(snapshot), protocol_path="collect",
+                           snapshot_path=str(snapshot) if snapshot else "", protocol_path="collect",
                            branch_mode=branch_mode,
                            branch_target_opportunity=target,
                            branch_parent_id=parent,
-                           branch_prefix_assignment=0)
+                           branch_prefix_assignment=0, branch_prefix_trace=prefix_trace,
+                           snapshot_hash=snapshot_hash)
     cfg.active_calib_rate = 0.5
     return cfg
 
@@ -95,6 +98,7 @@ def main() -> None:
     ap.add_argument("--target", type=int, default=320)
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--out", default=str(ROOT / "exp_results/cact_pair_train/paired/pairs.jsonl"))
+    ap.add_argument("--world-snapshot-manifest", required=True)
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
     task_indices = [int(x) for x in args.pilot_task_indices.split(",") if x]
@@ -103,6 +107,12 @@ def main() -> None:
     else: seeds = [int(x) for x in args.pilot_seeds.split(",") if x]
     if args.target != 320:
         raise SystemExit("The preregistered E1c target is exactly 320 pairs")
+    if args.dry_run:
+        print(json.dumps({"pilot_episodes": len(task_indices) * len(seeds),
+                          "target_pairs": args.target, "branch_episodes": args.target * 2}, ensure_ascii=False)); return
+    manifest = json.loads(Path(args.world_snapshot_manifest).read_text(encoding="utf-8"))
+    hashes = manifest.get("hashes", manifest)
+    if not isinstance(hashes, dict): raise SystemExit("world snapshot manifest must be a JSON mapping")
     root = ROOT / "exp_results" / "cact_pair_train"
     pilot_root = root / "pilot_stores"; log_root = ROOT / "exp_results" / "cact_logs"
     runner = ParallelRunner(workers=max(1, args.workers), vlm_port=12345)
@@ -110,12 +120,12 @@ def main() -> None:
     for task_idx in task_indices:
         for seed in seeds:
             run_id = f"pair_pilot_seed{seed}_task{task_idx}"
+            # Pilot creates the source store; snapshot and destination must
+            # never be the same path because the runner clears the destination.
             pilot_cfgs.append(_cfg(args.benchmark, task_idx, seed, "C-ACT", run_id,
-                                   pilot_root / run_id, pilot_root / run_id, run_id))
+                                   pilot_root / run_id, None, run_id,
+                                   snapshot_hash=str(hashes.get(f"{task_idx}|{seed}", ""))))
             pilot_meta.append({"run_id": run_id, "task_idx": task_idx, "seed": seed})
-    if args.dry_run:
-        print(json.dumps({"pilot_episodes": len(pilot_cfgs), "target_pairs": args.target,
-                          "branch_episodes": args.target * 2}, ensure_ascii=False)); return
     runner.run(args.benchmark, seeds=seeds, methods=["C-ACT"], grid=pilot_cfgs)
     candidates = _pilot_candidates(log_root, pilot_meta)
     if len(candidates) < args.target:
@@ -125,11 +135,21 @@ def main() -> None:
     for i, row in enumerate(selected):
         parent = f"pair_{i:04d}_{row['task_idx']}_{row['seed']}_{row['opportunity_id']}"
         snapshot = pilot_root / str(row["pilot_run_id"])
+        if not snapshot.is_dir():
+            raise RuntimeError(f"pilot snapshot missing: {snapshot}")
+        pilot_opps = _read_jsonl(log_root / str(row["pilot_run_id"]) / "opportunities.jsonl")
+        target_index = next((j for j, x in enumerate(pilot_opps)
+                             if x.get("opportunity_id") == row["opportunity_id"]), None)
+        if target_index is None: raise RuntimeError(f"pilot target not found: {row['opportunity_id']}")
+        prefix_trace = json.dumps({str(x["opportunity_id"]): int(x["assignment"])
+                                   for x in pilot_opps[:target_index]}, separators=(",", ":"))
         for mode in ("reuse", "base"):
             run_id = f"pair_{mode}_{i:04d}_seed{row['seed']}_task{row['task_idx']}"
             branch_cfgs.append(_cfg(args.benchmark, int(row["task_idx"]), int(row["seed"]),
                                     "C-ACT", run_id, root / "branch_stores" / run_id,
-                                    snapshot, parent, mode, str(row["opportunity_id"])))
+                                    snapshot, parent, mode, str(row["opportunity_id"]),
+                                    snapshot_hash=str(row.get("snapshot_hash", "")),
+                                    prefix_trace=prefix_trace))
             branch_meta.append((run_id, parent, mode, row))
     runner = ParallelRunner(workers=1, vlm_port=12345)
     runner.run(args.benchmark, seeds=seeds, methods=["C-ACT"], grid=branch_cfgs)
@@ -137,13 +157,30 @@ def main() -> None:
     for i, row in enumerate(selected):
         got = {}
         parent = f"pair_{i:04d}_{row['task_idx']}_{row['seed']}_{row['opportunity_id']}"
+        prefix_signatures = {}
         for run_id, p, mode, _ in branch_meta:
             if p != parent: continue
+            opportunities = _read_jsonl(log_root / run_id / "opportunities.jsonl")
+            target_index = next((j for j, x in enumerate(opportunities)
+                                 if x.get("opportunity_id") == row["opportunity_id"]), None)
+            if target_index is None:
+                raise RuntimeError(f"{run_id}: target opportunity absent from opportunity log")
+            keys = ("opportunity_id", "task_id", "world_seed", "raw_text_hash",
+                    "task_group", "failure_type", "risk_tier", "resource_scarcity",
+                    "boundary_status", "inventory_signature", "episode_phase",
+                    "prior_admission_bin", "prior_fallback_bin")
+            prefix_signatures[mode] = [tuple(x.get(k) for k in keys)
+                                       for x in opportunities[:target_index]]
             logs = _read_jsonl(log_root / run_id / "reuse" / "reuse_decision.jsonl")
             target_rows = [x for x in logs if x.get("opportunity_id") == row["opportunity_id"]]
             if len(target_rows) != 1: raise RuntimeError(f"{run_id}: target opportunity not reached exactly once")
-            got[mode] = _label(target_rows[0], mode)
+            branch_row = _label(target_rows[0], mode)
+            if branch_row.get("branch_parent_id") != parent or branch_row.get("branch_mode") != mode:
+                raise RuntimeError(f"{run_id}: branch identity mismatch")
+            got[mode] = branch_row
         if set(got) != {"reuse", "base"}: raise RuntimeError(f"missing paired branch for {parent}")
+        if prefix_signatures.get("reuse") != prefix_signatures.get("base"):
+            raise RuntimeError(f"shared-prefix mismatch for {parent}")
         pref = _preferred(got["reuse"], got["base"])
         if pref is None: continue
         pairs.append({"schema_version": "cact.pair.v1", "pair_id": parent,

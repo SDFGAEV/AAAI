@@ -110,28 +110,72 @@ run_serial --benchmark cact_e0 --task_indices 0,1,2,3,4,5 --seeds 1001-1002 --me
 run_serial --benchmark cact_train --task_indices 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23 --seeds 2001-2005 --methods C-ACT --store_path "$CAL_STORE"
 run_serial --benchmark cact_train --task_indices 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23 --seeds 2101-2105 --methods C-ACT --store_path "$CAL_STORE" --protocol_path collect
 
-# E2: direct matched-risk policy selection.  The selector requires a real
-# rollout table containing Base + 7 Full + 7 Pointwise candidates on every
-# identical task/world/episode cell; no offline replay or fabricated labels.
-if [[ -z "${E2_DIRECT_JSONL:-}" || ! -f "${E2_DIRECT_JSONL}" ]]; then
-  echo "STOP: provide E2_DIRECT_JSONL from the matched-risk rollout (15 methods/cell)." >&2
-  exit 2
+# D_select/D_audit opportunity logging is required before a provisional
+# artifact can parameterize the 15-policy direct E2 rollouts.
+run_serial --benchmark cact_calib --task_indices 0,1,2,3,4,5 --seeds 3001-3008 --methods C-ACT --store_path "$CAL_STORE" --protocol_path collect
+run_serial --benchmark cact_calib --task_indices 6,7,8,9,10,11 --seeds 3011-3018 --methods C-ACT --store_path "$CAL_STORE" --protocol_path collect
+FIT_GLOB="$RESULTS/cact_logs/cact_train_C-ACT_seed*_task*/opportunities.jsonl"
+SELECT_GLOB="$RESULTS/cact_logs/cact_calib_C-ACT_seed*_task[0-5]/opportunities.jsonl"
+AUDIT_GLOB1="$RESULTS/cact_logs/cact_calib_C-ACT_seed*_task[6-9]/opportunities.jsonl"
+AUDIT_GLOB2="$RESULTS/cact_logs/cact_calib_C-ACT_seed*_task1[01]/opportunities.jsonl"
+PROVISIONAL_POLICY="$RESULTS/v2_policy_provisional.json"
+"$PYTHON" experiments/calibrate_v2.py --fit-glob "$FIT_GLOB" --select-glob "$SELECT_GLOB" \
+  --audit-glob "$AUDIT_GLOB1" "$AUDIT_GLOB2" --out "$PROVISIONAL_POLICY"
+
+# E2: direct matched-risk policy selection.  Generate the table only when
+# explicitly enabled; otherwise require a precomputed, audited input.
+if [[ -z "${E2_DIRECT_JSONL:-}" ]]; then
+  if [[ "${CACT_AUTO_GENERATE_E2:-0}" != "1" ]]; then
+    echo "STOP: set E2_DIRECT_JSONL or CACT_AUTO_GENERATE_E2=1 for real E2 rollouts." >&2
+    exit 2
+  fi
+  E2_DIRECT_JSONL="$RESULTS/e2_select_rollouts.jsonl"
+  "$PYTHON" experiments/run_e2_select_rollouts.py \
+    --benchmark cact_calib --task-indices "${CACT_E2_TASK_INDICES:-0,1,2,3,4,5,6,7}" \
+    --seeds "${CACT_E2_SEEDS:-3001-3008}" --workers "$WORKERS" --vlm-port "$VLM_PORT" \
+    --snapshot-path "$CAL_STORE" --world-snapshot-manifest "${CACT_WORLD_SNAPSHOT_MANIFEST:?set CACT_WORLD_SNAPSHOT_MANIFEST}" \
+    --protocol-path "$PROVISIONAL_POLICY" --out "$E2_DIRECT_JSONL"
 fi
 "$PYTHON" experiments/e2_direct_select.py --input "$E2_DIRECT_JSONL" \
   --out "$RESULTS/e2_direct_selection.json"
-run_serial --benchmark cact_calib --task_indices 0,1,2,3,4,5 --seeds 3001-3008 --methods C-ACT --store_path "$CAL_STORE" --protocol_path collect
-run_serial --benchmark cact_calib --task_indices 6,7,8,9,10,11 --seeds 3011-3018 --methods C-ACT --store_path "$CAL_STORE" --protocol_path collect
-# E1c: D_pair-train must be a real sealed paired-branch artifact.
+
+# E1c: generate the real sealed paired-branch artifact when requested.
 PAIR_GLOB="$RESULTS/cact_pair_train/*/pairs.jsonl"
+PAIR_FILES=()
 if compgen -G "$PAIR_GLOB" > /dev/null; then
-  "$PYTHON" experiments/train_pairwise.py --input "$PAIR_GLOB" --out "$PREFERENCE_FILE"
-else
-  echo "STOP: missing D_pair-train pairs.jsonl; do not fabricate preference labels." >&2
+  mapfile -t PAIR_FILES < <(compgen -G "$PAIR_GLOB" | sort)
+fi
+if (( ${#PAIR_FILES[@]} == 0 )); then
+  if [[ "${CACT_AUTO_GENERATE_E1C:-0}" != "1" ]]; then
+    echo "STOP: missing E1c pairs.jsonl; set CACT_AUTO_GENERATE_E1C=1 for real branch collection." >&2
+    exit 2
+  fi
+  "$PYTHON" experiments/generate_pair_train.py \
+    --pilot-task-indices "${CACT_E1C_TASK_INDICES:-0,1,2,3,4,5,6,7,8,9,10,11}" \
+    --pilot-seeds "${CACT_E1C_SEEDS:-2101-2115}" --workers 1 \
+    --world-snapshot-manifest "${CACT_WORLD_SNAPSHOT_MANIFEST:?set CACT_WORLD_SNAPSHOT_MANIFEST}" \
+    --out "$RESULTS/cact_pair_train/generated/pairs.jsonl"
+  PAIR_FILES=("$RESULTS/cact_pair_train/generated/pairs.jsonl")
+fi
+if (( ${#PAIR_FILES[@]} != 1 )); then
+  echo "STOP: expected exactly one sealed E1c pairs.jsonl, found ${#PAIR_FILES[@]}." >&2
   exit 2
 fi
+"$PYTHON" experiments/train_pairwise.py --input "${PAIR_FILES[0]}" --out "$PREFERENCE_FILE"
 export CACT_PREFERENCE_PATH="$PREFERENCE_FILE"
 
-"$PYTHON" experiments/calibrate_v2.py --fit-glob "$RESULTS/cact_logs/cact_train_C-ACT_seed*_task[0-9]*/opportunities.jsonl" --select-glob "$RESULTS/cact_logs/cact_calib_C-ACT_seed*_task[0-5]/opportunities.jsonl" --audit-glob "$RESULTS/cact_logs/cact_calib_C-ACT_seed*_task[6-9]/opportunities.jsonl" "$RESULTS/cact_logs/cact_calib_C-ACT_seed*_task1[01]/opportunities.jsonl" --direct-selection "$RESULTS/e2_direct_selection.json" --out "$POLICY_FILE"
+"$PYTHON" experiments/calibrate_v2.py --fit-glob "$FIT_GLOB" --select-glob "$SELECT_GLOB" \
+  --audit-glob "$AUDIT_GLOB1" "$AUDIT_GLOB2" --direct-selection "$RESULTS/e2_direct_selection.json" --out "$POLICY_FILE"
+
+# D_audit: direct selected-policy rollout plus sealed paired audit.
+if [[ "${CACT_REQUIRE_E2_AUDIT:-1}" == "1" ]]; then
+  if [[ -z "${E2_AUDIT_JSONL:-}" || -z "${E2_AUDIT_PAIRS_JSONL:-}" || ! -f "$E2_AUDIT_JSONL" || ! -f "$E2_AUDIT_PAIRS_JSONL" ]]; then
+    echo "STOP: provide E2_AUDIT_JSONL and E2_AUDIT_PAIRS_JSONL before E3." >&2
+    exit 2
+  fi
+  "$PYTHON" experiments/validate_e2_audit.py --rollouts "$E2_AUDIT_JSONL" \
+    --pairs "$E2_AUDIT_PAIRS_JSONL" --out "$RESULTS/e2_audit_validation.json"
+fi
 
 # E3: 36 conditions × 8 seeds × six preregistered methods, strict frozen.
 run --benchmark cact_p3 --task_indices 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35 --seeds 4001-4008 --methods NoKnowledge NoGate FixedBayes PairwisePreferenceGate C-ACT-Pointwise C-ACT --frozen --snapshot_path "$CAL_STORE" --protocol_path "$POLICY_FILE"

@@ -57,7 +57,9 @@ class CactMemory:
                  protocol_seed: int = 0, branch_mode: str = "",
                  branch_target_opportunity: str = "", branch_parent_id: str = "",
                  branch_prefix_assignment: int = 0,
-                 kappa_override: str = None):
+                 branch_prefix_trace: str = "",
+                 kappa_override: str = None, snapshot_hash: str = ""):
+
         self._mem = xenon_memory
         requested_method = method
         method = validate_method_name(method, allow_legacy=True)
@@ -144,6 +146,11 @@ class CactMemory:
         self.branch_target_opportunity = str(branch_target_opportunity or "")
         self.branch_parent_id = str(branch_parent_id or "")
         self.branch_prefix_assignment = int(bool(branch_prefix_assignment))
+        try:
+            self.branch_prefix_trace = {str(k): int(bool(v)) for k, v in json.loads(branch_prefix_trace or "{}").items()}
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise ValueError("branch_prefix_trace must be a JSON object of opportunity_id to assignment") from exc
+        self._snapshot_hash = str(snapshot_hash or "")
         self._branch_triggered = False
         self.log_dir = log_dir
         if self._protocol_enabled and log_dir:
@@ -579,6 +586,12 @@ class CactMemory:
             "resource_conflict": bool(resource_conflict),
             "chain_success": bool(chain_success),
             "progress_delta": progress_delta,
+            # Observed environment costs; null means the environment did not
+            # expose the field and paired collection must fail closed.
+            "steps": self._current_info.get("window_steps", self._current_info.get("steps", self._current_info.get("num_steps"))),
+            "resource_cost": self._current_info.get("resource_cost"),
+            "snapshot_hash": self._current_info.get("snapshot_hash", ""),
+            "world_seed": self._current_info.get("world_seed", self._current_seed),
             "attribution": attribution.value if attribution else "frozen",
             "attr_action": attr_result.get("action", "none"),
             "outcome_success": int(is_success),
@@ -676,7 +689,7 @@ class CactMemory:
             second_intervention_flag=bool(self._current_info.get("second_intervention", False)), eligible=eligible,
             eligibility_reason="eligible" if eligible else blocked[0],
             annotator_status=str(self._current_info.get("annotator_status", "not_applicable")),
-            snapshot_hash=str(self._current_info.get("snapshot_hash", "")),
+            snapshot_hash=str(self._current_info.get("snapshot_hash") or self._snapshot_hash),
         )
 
     # ── is_succeeded_waypoint (MAIN GATE) ──
@@ -819,7 +832,7 @@ class CactMemory:
                     self._branch_triggered = True
                     reason = f"paired_branch_{self.branch_mode}"
                 else:
-                    assignment = self.branch_prefix_assignment
+                    assignment = self.branch_prefix_trace.get(provisional.opportunity_id, self.branch_prefix_assignment)
                     reason = "paired_prefix"
                 propensity, random_seed = 0.5, 0
                 gate = {"decision": "ADMIT" if assignment else "FALLBACK",

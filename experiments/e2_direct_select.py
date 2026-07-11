@@ -25,8 +25,9 @@ def load(path):
         for line in fh:
             if line.strip():
                 row = json.loads(line)
-                missing = {"task_id", "world_seed", "episode_id", "method",
-                           "success", "harmful_reuse"} - set(row)
+                missing = {"task_id", "world_seed", "episode_id", "matched_cell_id",
+                           "method", "success", "harmful_reuse", "snapshot_hash",
+                           "coverage", "hrr", "eahr"} - set(row)
                 if missing:
                     raise ValueError(f"row missing required fields: {sorted(missing)}")
                 rows.append(row)
@@ -34,15 +35,21 @@ def load(path):
         raise ValueError("D_select direct rollout file is empty")
     return rows
 
-def select(rows, eps_inc=0.02):
+def select(rows, eps_inc=0.02, eps_abs=0.10):
     cells = defaultdict(dict)
     for row in rows:
+        if row.get("returncode", 0) != 0:
+            raise ValueError(f"failed rollout present in E2 table: {row.get('run_id', row)}")
         key = _cell(row); method = str(row["method"])
         if method not in REQUIRED:
             raise ValueError(f"unexpected E2 method: {method}")
         if method in cells[key]:
             raise ValueError(f"duplicate matched cell: {key} {method}")
         cells[key][method] = row
+    for key, methods in cells.items():
+        hashes = {str(row["snapshot_hash"]) for row in methods.values()}
+        if len(hashes) != 1:
+            raise ValueError(f"matched cell has inconsistent snapshot hashes: {key}")
     incomplete = [key for key, methods in cells.items() if set(methods) != REQUIRED]
     if incomplete:
         raise ValueError(f"incomplete matched-risk cells: {len(incomplete)}")
@@ -51,28 +58,36 @@ def select(rows, eps_inc=0.02):
         candidates = []
         for kappa in KAPPAS:
             method = f"{family}:{kappa:g}"
-            deltas, risks = [], []
+            deltas, inc_eahr, hrrs, coverages = [], [], [], []
             for methods in cells.values():
                 base, cand = methods["Base"], methods[method]
                 deltas.append(float(cand["success"]) - float(base["success"]))
-                risks.append(float(cand["harmful_reuse"]) - float(base["harmful_reuse"]))
+                inc_eahr.append(float(cand["eahr"]) - float(base["eahr"]))
+                hrrs.append(float(cand["hrr"]))
+                coverages.append(float(cand["coverage"]))
             mean_delta = sum(deltas) / len(deltas)
-            mean_risk = sum(risks) / len(risks)
-            if mean_risk <= eps_inc:
-                candidates.append((mean_delta, -kappa, kappa, mean_risk))
+            mean_inc_eahr = sum(inc_eahr) / len(inc_eahr)
+            mean_hrr = sum(hrrs) / len(hrrs)
+            mean_coverage = sum(coverages) / len(coverages)
+            if mean_inc_eahr <= eps_inc and mean_hrr <= eps_abs:
+                candidates.append((mean_coverage, mean_delta, -kappa, kappa,
+                                   mean_inc_eahr, mean_hrr))
         if not candidates:
             raise ValueError(f"no {family} candidate satisfies incremental risk bound")
         best = max(candidates)
-        chosen[family.lower()] = {"kappa": best[2], "mean_delta_success": best[0],
-                                  "mean_incremental_harm": best[3], "cells": len(cells)}
+        chosen[family.lower()] = {"kappa": best[3], "mean_coverage": best[0],
+                                  "mean_delta_success": best[1],
+                                  "mean_incremental_eahr": best[4], "mean_hrr": best[5],
+                                  "cells": len(cells)}
     return chosen
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--input", required=True)
     ap.add_argument("--out", required=True); ap.add_argument("--eps-inc", type=float, default=0.02)
+    ap.add_argument("--eps-abs", type=float, default=0.10)
     args = ap.parse_args()
     result = {"schema_version": "cact.e2.direct_select.v1", "source": str(Path(args.input)),
-              "selection": select(load(args.input), args.eps_inc)}
+              "selection": select(load(args.input), args.eps_inc, args.eps_abs)}
     Path(args.out).write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
     print(json.dumps(result, ensure_ascii=False))
 
