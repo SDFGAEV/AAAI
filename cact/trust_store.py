@@ -71,14 +71,22 @@ class TrustStore:
             except (json.JSONDecodeError, OSError): self._contracts = {}
 
     def _save(self):
-        with open(self._db_file, "w") as f:
-            json.dump(self._data, f, indent=2)
-        obs_file = os.path.join(self.store_path, "observations.json")
-        with open(obs_file, "w", encoding="utf-8") as f:
-            json.dump(self._observations, f, indent=2)
-        contract_file = os.path.join(self.store_path, "contracts.json")
-        with open(contract_file, "w", encoding="utf-8") as f:
-            json.dump(self._contracts, f, indent=2)
+        """Persist atomically; compact JSON reduces Ubuntu filesystem churn."""
+        kwargs = {"ensure_ascii": False}
+        if os.environ.get("CACT_PRETTY_JSON"):
+            kwargs["indent"] = 2
+        else:
+            kwargs["separators"] = (",", ":")
+        payloads = ((self._db_file, self._data),
+                    (os.path.join(self.store_path, "observations.json"), self._observations),
+                    (os.path.join(self.store_path, "contracts.json"), self._contracts))
+        for path, payload in payloads:
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(payload, f, **kwargs); f.flush()
+                if os.environ.get("CACT_DURABLE_WRITES"):
+                    os.fsync(f.fileno())
+            os.replace(tmp, path)
 
     def _make_key(self, kid: str, context: str, stat: str) -> str:
         return f"{kid}|{context}|{stat}"

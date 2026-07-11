@@ -41,6 +41,7 @@ from .active_logging import ActiveBaseLogger
 from .thompson_probe import SafeThompsonProber
 from .bank_sanitizer import BankSanitizer
 from .attribution import OutcomeAttributor, apply_attribution_to_lifecycle
+from .preference_gate import PairwisePreferenceModel
 from .protocol_v2 import (Opportunity, OpportunityLogger, RandomizedAssignment,
                           AdmissionPolicyV2, ApplicabilitySpec, SCHEMA_VERSION,
                           validate_method_name)
@@ -101,9 +102,16 @@ class CactMemory:
         self._v2_logger = None
         self._v2_assigner = RandomizedAssignment(probability=0.5, seed=protocol_seed)
         self._v2_pending = None
+        self._preference_model = None
+        if method == "PairwisePreferenceGate":
+            preference_path = os.environ.get("CACT_PREFERENCE_PATH", "")
+            if not preference_path or not os.path.exists(preference_path):
+                raise FileNotFoundError("PairwisePreferenceGate requires CACT_PREFERENCE_PATH")
+            self._preference_model = PairwisePreferenceModel.load(preference_path)
         if protocol_path and os.path.exists(protocol_path):
             self._v2_policy = AdmissionPolicyV2.load(
-                protocol_path, use_ledger=(method not in ("C-ACT-Pointwise", "Online-C-ACT-Pointwise")))
+                protocol_path, use_ledger=(method not in ("C-ACT-Pointwise", "Online-C-ACT-Pointwise")),
+                family=("pointwise" if method in ("C-ACT-Pointwise", "Online-C-ACT-Pointwise") else "full"))
         calibration_path = calibration_path or os.environ.get("CACT_CALIBRATION_PATH")
         if calibration_path:
             self._gate.load_calibration(calibration_path)
@@ -154,6 +162,9 @@ class CactMemory:
         self._waypoint_to_kid: Dict[str, str] = {}  # waypoint → registered knowledge_id
         self._inventory_snapshot: Dict[str, int] = {}  # item→count when knowledge was used
         self._current_seed = 0      # experiment seed
+        self._episode_counter = 0
+        self._episode_id = "episode-0"
+        self._current_environment = None
         self._current_round = 0     # experiment round
         self._reuse_count = 0       # number of reuse decisions
         self._fallback_count = 0    # number of fallback decisions
@@ -173,11 +184,16 @@ class CactMemory:
     def save_reflection(self, wp, reflect, is_success): return self._mem.save_reflection(wp, reflect, is_success)
     def save_replan(self, wp, replan): return self._mem.save_replan(wp, replan)
     def save_decomposed_plan(self, wp, plan, is_success): return self._mem.save_decomposed_plan(wp, plan, is_success)
-    def set_current_environment(self, env_name): pass
+    def set_current_environment(self, env_name):
+        self._current_environment = env_name
+        setter = getattr(self._mem, "set_current_environment", None)
+        return setter(env_name) if callable(setter) else None
     @property
-    def current_environment(self): return None
+    def current_environment(self):
+        return getattr(self._mem, "current_environment", self._current_environment)
     @current_environment.setter
-    def current_environment(self, v): pass
+    def current_environment(self, value):
+        self.set_current_environment(value)
 
     def _sync_ablation_flags(self):
         """Pass ablation flags to all affected components. Cached per state hash."""
@@ -241,6 +257,8 @@ class CactMemory:
     def set_task_info(self, difficulty: str = "medium", group: str = "crafting"):
         """Set current task metadata for episode logging."""
         self._supervision_blocked = False
+        self._episode_counter += 1
+        self._episode_id = f"ep_{self._current_seed}_{self._episode_counter}"
         self._current_difficulty = difficulty
         self._current_group = group
 
@@ -524,6 +542,9 @@ class CactMemory:
             "pi_uplift": round(pi, 4), "uplift_lcb": round(ul, 4),
             "harm_ucb": round(hu, 4), "ess": round(ess, 1),
             "status_before": lc, "decision": last.decision if last else "reuse",
+            "budget_before": getattr(last, "certificate_budget_before", None) if last else None,
+            "budget_after": getattr(last, "certificate_budget_after", None) if last else None,
+            "risk_charge": getattr(last, "certificate_risk_charge", None) if last else None,
             "pre_admit_contract_pass": csr_before,
             "contract_satisfied_before": csr_before,
             "contract_violation_after": contract_violated,
@@ -611,7 +632,7 @@ class CactMemory:
             blocked.append("window_cannot_mask")
         eligible = not blocked
         return Opportunity(
-            episode_id=f"ep_{waypoint}_{self._current_seed}_{self.method}",
+            episode_id=self._episode_id,
             opportunity_id=f"opp_{waypoint}_{self._current_seed}_{self._reuse_count + self._fallback_count + 1}",
             round=self._current_round, stream_seed=self._current_seed,
             task_id=str(waypoint), world_seed=int(self._current_info.get("world_seed", self._current_seed) or 0),
@@ -785,6 +806,8 @@ class CactMemory:
             result.contract_satisfied_before = bool(applicable)
             result.propensity_reuse, result.propensity_base = propensity, 1.0 - propensity
             result.lifecycle_state = lc
+            for _name, _value in gate.items():
+                setattr(result, f"certificate_{_name}", _value)
             self._v2_pending = self._make_v2_opportunity(
                 waypoint, kid, ctx, task_grp, assignment, propensity, random_seed)
         # C-ACT decision
@@ -889,9 +912,13 @@ class CactMemory:
             else:
                 result.decision = "reuse" if (pi >= 0.90 and hu <= 0.10) else "fallback"
         elif self.method == "PairwisePreferenceGate":
-            raise NotImplementedError(
-                "PairwisePreferenceGate requires a trained D_pair-train artifact; "
-                "no fallback baseline is allowed.")
+            row = dict(context)
+            row.update({"task_group": grp, "knowledge_id": kid,
+                        "source": (candidates[0].get("source", "") if candidates else ""),
+                        "type": (candidates[0].get("type", "") if candidates else "")})
+            pref = self._preference_model.decide(row)
+            result.decision = "reuse" if pref["decision"] == "ADMIT" else "fallback"
+            result.preference_probability = pref["preference_probability"]
         elif self.method == "C-ACT" or self.method == "Online-C-ACT":
             result.decision = "reuse"  # Full C-ACT handled by decision_controller
         elif self.method == "OracleGate":

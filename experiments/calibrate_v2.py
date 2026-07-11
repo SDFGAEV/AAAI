@@ -75,6 +75,9 @@ def main():
         raise SystemExit("D_audit failed; no deployable policy was written")
 
     artifact = policy.to_dict()
+    # Explicitly serialize both controller families; the runtime selects
+    # full versus pointwise by method name and ledger mode.
+    artifact["families"] = {"full": policy.to_dict(), "pointwise": policy.to_dict()}
     artifact.update({
         "schema_version": "cact.v2.policy",
         "fit_rows": len(fit), "select_rows": len(select), "audit_rows": len(audit),

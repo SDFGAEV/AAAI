@@ -62,6 +62,18 @@ class ExperimentConfig:
     protocol_path: str = ""
 
 
+def _clone_snapshot(src: str, dst: str) -> None:
+    """Clone a frozen store; optional hardlinks avoid repeated Ubuntu copies."""
+    if os.environ.get("CACT_FROZEN_HARDLINK") != "1":
+        shutil.copytree(src, dst); return
+    os.makedirs(dst, exist_ok=True)
+    for root, dirs, files in os.walk(src):
+        rel = os.path.relpath(root, src)
+        target = dst if rel == "." else os.path.join(dst, rel)
+        os.makedirs(target, exist_ok=True)
+        for name in files:
+            os.link(os.path.join(root, name), os.path.join(target, name))
+
 class ParallelRunner:
     """Orchestrate parallel experiment execution."""
 
@@ -147,7 +159,7 @@ class ParallelRunner:
         proc = subprocess.Popen(cmd, stdout=vlm_log, stderr=vlm_log, env=env)
         self._server_procs[self.vlm_port] = proc
         print(f"[VLM] Started planning server on port {self.vlm_port} (PID {proc.pid})")
-        time.sleep(8)  # Wait for model to load into GPU
+        time.sleep(float(os.environ.get("CACT_VLM_STARTUP_WAIT", "8")))  # model warm-up
 
     def _stop_vlm_server(self):
         """Stop the VLM planning server."""
@@ -196,7 +208,7 @@ class ParallelRunner:
             if os.path.exists(cfg.store_path):
                 shutil.rmtree(cfg.store_path, ignore_errors=True)
             if os.path.exists(cfg.snapshot_path):
-                shutil.copytree(cfg.snapshot_path, cfg.store_path)
+                _clone_snapshot(cfg.snapshot_path, cfg.store_path)
         if cfg.store_path:
             cmd.append(f"+cact_store_path={cfg.store_path}")
         if cfg.calibration_path:
@@ -225,16 +237,26 @@ class ParallelRunner:
         protocol_hash_before = store_hash(cfg.protocol_path) if (cfg.frozen and cfg.protocol_path and os.path.isfile(cfg.protocol_path)) else None
         t0 = time.perf_counter()
         try:
-            result = subprocess.run(
-                cmd, capture_output=True, text=True,
-                timeout=cfg.timeout * cfg.env_times + 120,
-                cwd=_PROJ,
-                env={**os.environ, "PYTHONUNBUFFERED": "1",
-                     "PYTHONPATH": os.pathsep.join([_PROJ, os.path.join(_PROJ, "src"), os.path.join(_PROJ, "minerl")]),
-                     "VLM_BATCH_PROXY": f"http://127.0.0.1:{self.batch_proxy_port}",
-                     "CACT_TRUST_STORE_DIR": cfg.store_path or os.environ.get("CACT_TRUST_STORE_DIR", "")},
-            )
+            runner_log_dir = os.path.join(_PROJ, "exp_results", "runner_logs")
+            os.makedirs(runner_log_dir, exist_ok=True)
+            log_id = cfg.run_id or f"{cfg.benchmark}_{cfg.seed}_{cfg.task_idx}_{cfg.method}"
+            stdout_path = os.path.join(runner_log_dir, f"{log_id}.stdout.log")
+            stderr_path = os.path.join(runner_log_dir, f"{log_id}.stderr.log")
+            child_env = {**os.environ, "PYTHONUNBUFFERED": "1",
+                         "PYTHONPATH": os.pathsep.join([_PROJ, os.path.join(_PROJ, "src"), os.path.join(_PROJ, "minerl")]),
+                         "VLM_BATCH_PROXY": f"http://127.0.0.1:{self.batch_proxy_port}",
+                         "CACT_TRUST_STORE_DIR": cfg.store_path or os.environ.get("CACT_TRUST_STORE_DIR", "")}
+            with open(stdout_path, "w", encoding="utf-8") as stdout, open(stderr_path, "w", encoding="utf-8") as stderr:
+                result = subprocess.run(cmd, stdout=stdout, stderr=stderr, text=True,
+                                        timeout=cfg.timeout * cfg.env_times + 120,
+                                        cwd=_PROJ, env=child_env)
             elapsed = time.perf_counter() - t0
+            try:
+                with open(stderr_path, encoding="utf-8", errors="replace") as fh:
+                    fh.seek(0, os.SEEK_END); size = fh.tell(); fh.seek(max(0, size - 500), os.SEEK_SET)
+                    stderr_tail = fh.read()
+            except OSError:
+                stderr_tail = ""
             success = result.returncode == 0
             frozen_hash_after = store_hash(cfg.store_path) if cfg.frozen else None
             protocol_hash_after = store_hash(cfg.protocol_path) if (cfg.frozen and cfg.protocol_path and os.path.isfile(cfg.protocol_path)) else None
@@ -267,7 +289,9 @@ class ParallelRunner:
                 "status": "success" if success else "failed",
                 "returncode": result.returncode,
                 "elapsed_sec": round(elapsed, 1),
-                "stderr_tail": result.stderr[-500:] if result.stderr else "",
+                "stderr_tail": stderr_tail,
+                "stdout_log": stdout_path,
+                "stderr_log": stderr_path,
                 "task_success": task_success,
                 "frozen_store_hash": frozen_hash_after if cfg.frozen else None,
                 "frozen_policy_hash": protocol_hash_after if cfg.frozen else None,

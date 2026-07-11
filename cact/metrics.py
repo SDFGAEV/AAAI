@@ -129,3 +129,62 @@ def compute_cvr(rows: List[Dict]) -> float:
         return 0.0
     return sum(not bool(_first(x, "postcondition_satisfied", "postcondition_pass",
                                "contract_satisfied_after", default=False)) for x in rows) / len(rows)
+
+
+def _decision_rows(rows):
+    return [r for r in rows if r.get("eligible", True) and not r.get("censor_flag", False)]
+
+def _admitted(r):
+    return r.get("decision") in ("reuse", "probe", "ADMIT", "admit")
+
+def compute_episode_admission_coverage(rows):
+    episodes = {}
+    for r in rows:
+        episodes.setdefault(r.get("episode_id", r.get("run_id", id(r))), []).append(r)
+    return sum(any(_admitted(r) for r in rs) for rs in episodes.values()) / len(episodes) if episodes else 0.0
+
+def compute_echr(rows):
+    episodes = {}
+    for r in _decision_rows(rows):
+        eid = r.get("episode_id", r.get("run_id", id(r))); episodes.setdefault(eid, 0)
+        if _admitted(r) and bool(_first(r, "harmful_reuse", "is_harmful", default=False)): episodes[eid] += 1
+    return sum(episodes.values()) / len(episodes) if episodes else 0.0
+
+def compute_eahr(rows):
+    episodes = {}
+    for r in _decision_rows(rows):
+        eid = r.get("episode_id", r.get("run_id", id(r))); episodes.setdefault(eid, False)
+        episodes[eid] = episodes[eid] or (_admitted(r) and bool(_first(r, "harmful_reuse", "is_harmful", default=False)))
+    return sum(episodes.values()) / len(episodes) if episodes else 0.0
+
+def compute_boundary_rates(rows):
+    nonapp = [r for r in rows if str(r.get("boundary_status", "")).lower() in {"non_applicable", "blocked", "inapplicable"}]
+    app = [r for r in rows if str(r.get("boundary_status", "")).lower() in {"applicable", "eligible"}]
+    return {"far": sum(_admitted(r) for r in nonapp) / len(nonapp) if nonapp else 0.0,
+            "tar": sum(_admitted(r) for r in app) / len(app) if app else 0.0}
+
+def compute_budget_metrics(rows, initial_budget=0.05):
+    admitted = [r for r in rows if _admitted(r)]
+    charges = [max(0.0, float(r.get("risk_charge", r.get("certificate_risk_charge", 0.0)) or 0.0)) for r in admitted]
+    exhausted = sum(str(r.get("reason", r.get("certificate_reason", ""))) == "budget_exhausted" for r in rows)
+    return {"budget_utilization": min(1.0, sum(charges) / max(initial_budget, 1e-12)),
+            "budget_triggered_fallback": exhausted / len(rows) if rows else 0.0,
+            "total_risk_charge": sum(charges)}
+
+def compute_late_harm_rate(rows, late_phases=("late", "final")):
+    late = [r for r in rows if r.get("episode_phase") in late_phases and _admitted(r)]
+    return sum(bool(_first(r, "harmful_reuse", "is_harmful", default=False)) for r in late) / len(late) if late else 0.0
+
+def compute_backoff_metrics(rows):
+    fallback = [r for r in rows if str(r.get("decision", "")).lower() in {"fallback", "reject"}]
+    unsupported = [r for r in fallback if str(r.get("reason", r.get("certificate_reason", ""))).startswith("unsupported")]
+    depths = [float(r["depth"]) for r in rows if r.get("depth") is not None]
+    return {"unsupported_fallback_rate": len(unsupported) / len(rows) if rows else 0.0,
+            "mean_backoff_depth": sum(depths) / len(depths) if depths else float("nan")}
+
+def compute_aulc(values):
+    vals = [float(v) for v in values if v is not None]
+    if not vals: return 0.0
+    if len(vals) == 1: return vals[0]
+    area = np.trapezoid(vals, dx=1.0) if hasattr(np, "trapezoid") else np.trapz(vals, dx=1.0)
+    return float(area / (len(vals) - 1))

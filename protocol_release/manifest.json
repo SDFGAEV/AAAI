@@ -1,19 +1,26 @@
 {
   "schema_version": "cact.protocol_release.v1",
   "label": "protocol-candidate",
-  "created_utc": "2026-07-10T15:06:36.913962+00:00",
+  "created_utc": "2026-07-11T06:24:54.418284+00:00",
   "method": "C-ACT: Contextual Admission via Counterfactual Treatment Effects",
   "frozen_claims": [
     "reliable admission",
     "applicability boundary and adaptive risk-coverage"
   ],
   "hashes": {
-    "C-ACT_完整研究协议与论文写作手册.md": "d51c2357b5aa81fe2ded29aa495129705946d622f45308af781bfcc7ece4dc9b",
-    "C-ACT\\cact\\protocol_v2.py": "7d420abc4cadfbec7aeb653f84574d9a962fdf4ab8a1df501c4ecfd8686ef599",
-    "C-ACT\\experiments\\calibrate_v2.py": "3d690818d349edcd28ad10f12e6cc6ebf7d2a77a6639649e15e5dc9ad6081e52",
-    "C-ACT\\experiments\\parallel_runner.py": "a27c05b58ededfcad4fc39156a05bf7b62a2c023d25918426e9137d66fc09e98",
-    "C-ACT\\experiments\\run_all.sh": "9ba4e86ee7983aad19ce3f2d2b395e4cbcafb18a0427e7d37bd7af1a05618357",
-    "C-ACT\\paper\\PAPER_SUBMISSION_DRAFT_V2.md": "654e60c82930cb1124d60953a328ea330e7b6b148ad4372b1d8d16b2ab369698"
+    "C-ACT_完整研究协议与论文写作手册-新.md": "7a4e3274791ae7342d2b3f681f67de98de9ba4dbf85545580bd7ae2129c19311",
+    "C-ACT\\cact\\protocol_v2.py": "ec0ffcfbe49050408aa04f81bff2e649d0e68431c80230ed30dee2040342211c",
+    "C-ACT\\experiments\\calibrate_v2.py": "46a276ae189468f6a0d0acfffdc779f1ca5a9b2b56bb900cd644d652188ddc47",
+    "C-ACT\\experiments\\parallel_runner.py": "406cabb5cafef22350555120ec3fb342820b697a33091b86b3594d09f7881482",
+    "C-ACT\\experiments\\run_all.sh": "4c0fd1ec743cec8446962863727e5f3ab97fc9afaf4c6b2cb84d7be7e483c6bb",
+    "C-ACT\\paper\\PAPER_SUBMISSION_DRAFT_NEW.md": "ddef8cdb6108b527b46bb7adbc7b56f1e228bed6f361222f1d4f17ad99b0aed9",
+    "C-ACT\\paper\\PAPER_SUBMISSION_DRAFT_V2.md": "654e60c82930cb1124d60953a328ea330e7b6b148ad4372b1d8d16b2ab369698",
+    "C-ACT\\cact\\preference_gate.py": "b6fb14e4cec0274246128a54a6609c1b6a5b22511ad4a3e12bd8d5c8de9add7e",
+    "C-ACT\\experiments\\train_pairwise.py": "6e09384dc99dba467f43d6289ea1d4d451f48dd2e5c68e0a314940696c0c5970",
+    "C-ACT\\cact\\metrics.py": "d5fe08abdbb3a6d8335daea39832619a6b1ad25cbeb8b8b21e56b85bd56b8aa8",
+    "C-ACT\\analysis\\bootstrap.py": "76918cf33e4bf3ba978c6db4e634a67029eaac14488492bba17c17099bd0c3a4",
+    "C-ACT\\analysis\\split_audit.py": "0129999729c07346067d6118a06c0c18a19df6cc0eb705dbed62b46a5c6adbfd",
+    "C-ACT\\docs\\UBUNTU_PERFORMANCE.md": "87942fa8102bfeb55636808e48fa990a8775fefe366e24804d7b2c93f6e21275"
   },
   "seeds": {
     "E0": [

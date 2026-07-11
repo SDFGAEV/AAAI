@@ -428,10 +428,13 @@ class AdmissionPolicyV2:
         self._budget_by_episode: Dict[str, float] = {}
     @classmethod
     def load(cls, path, use_ledger: bool = True,
-             initial_budget: float = DEFAULT_BUDGET):
+             initial_budget: float = DEFAULT_BUDGET, family: str = "full"):
         with open(path, encoding="utf-8") as handle:
-            return cls(CalibratedPolicy.from_dict(json.load(handle)),
-                       use_ledger=use_ledger, initial_budget=initial_budget)
+            data = json.load(handle)
+        if isinstance(data.get("families"), dict):
+            data = data["families"].get(family, data)
+        return cls(CalibratedPolicy.from_dict(data),
+                   use_ledger=use_ledger, initial_budget=initial_budget)
     def _budget_before(self, episode_id: str) -> float:
         return self._budget_by_episode.setdefault(episode_id, self.initial_budget)
     def decide(self, opportunity: Opportunity, applicable: bool = True) -> Dict[str, Any]:

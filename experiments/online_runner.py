@@ -33,6 +33,15 @@ DEFAULT_METHODS = ["Online-NoGate", "Online-FixedBayes",
 DEFAULT_ROUNDS = 10
 DEFAULT_SEED = 5001
 
+def _clone_frozen_store(src: str, dst: str) -> None:
+    if os.environ.get("CACT_FROZEN_HARDLINK") != "1":
+        shutil.copytree(src, dst); return
+    os.makedirs(dst, exist_ok=True)
+    for root, _, files in os.walk(src):
+        rel = os.path.relpath(root, src); target = dst if rel == "." else os.path.join(dst, rel)
+        os.makedirs(target, exist_ok=True)
+        for name in files: os.link(os.path.join(root, name), os.path.join(target, name))
+
 # Per-round episodes
 N_ACCUM = 16   # shared candidate/evidence update episodes
 N_CALIB = 4     # calibration/check episodes
@@ -65,7 +74,7 @@ class OnlineRunner:
         vlm_log = open(os.path.join(_PROJ, "exp_results", "vlm_server.log"), "a")
         self._vlm_proc = subprocess.Popen(cmd, stdout=vlm_log, stderr=vlm_log)
         print(f"[VLM] Server on port {self.vlm_port} (PID {self._vlm_proc.pid})")
-        time.sleep(8)
+        time.sleep(float(os.environ.get("CACT_VLM_STARTUP_WAIT", "8")))
 
     def _stop_vlm(self):
         if self._vlm_proc:
@@ -192,7 +201,7 @@ class OnlineRunner:
             # update/evidence snapshot; only frozen evaluation is method-specific.
             if os.path.exists(store_path):
                 shutil.rmtree(store_path, ignore_errors=True)
-            shutil.copytree(shared_update_store, store_path)
+            _clone_frozen_store(shared_update_store, store_path)
             calibration_path = os.path.join(store_path, "calibration.json")
 
         # Phase 3: Frozen Evaluation — Retention (4 episodes)

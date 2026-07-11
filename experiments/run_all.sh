@@ -1,15 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 PROJ="$(cd "$(dirname "$0")/.." && pwd)"
-PYTHON="python"
-WORKERS="4"
-VLM_PORT="12345"
+PYTHON="${PYTHON:-python3}"
+WORKERS="${CACT_WORKERS:-4}"
+VLM_PORT="${CACT_VLM_PORT:-12345}"
 PLAN_MODEL="Qwen/Qwen2.5-VL-7B-Instruct"
 RESULTS="$PROJ/exp_results"
 CAL_STORE="$RESULTS/calibration_store"
 POLICY_FILE="$RESULTS/v2_policy.json"
+PREFERENCE_FILE="$RESULTS/d_pair_train_preference.json"
 mkdir -p "$RESULTS"
 cd "$PROJ"
+# Avoid BLAS/thread oversubscription when multiple Minecraft workers run.
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
+export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
+export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
 run() { "$PYTHON" experiments/parallel_runner.py "$@" --workers "$WORKERS" --vlm_port "$VLM_PORT" --plan_model "$PLAN_MODEL"; }
 run_serial() { "$PYTHON" experiments/parallel_runner.py "$@" --workers 1 --vlm_port "$VLM_PORT" --plan_model "$PLAN_MODEL"; }
 
@@ -27,6 +32,16 @@ run_serial --benchmark cact_train --task_indices 0,1,2,3,4,5,6,7,8,9,10,11,12,13
 # E2: disjoint six-template D_select and six-template D_audit.
 run_serial --benchmark cact_calib --task_indices 0,1,2,3,4,5 --seeds 3001-3008 --methods C-ACT --store_path "$CAL_STORE" --protocol_path collect
 run_serial --benchmark cact_calib --task_indices 6,7,8,9,10,11 --seeds 3011-3018 --methods C-ACT --store_path "$CAL_STORE" --protocol_path collect
+# E1c: D_pair-train must be a real sealed paired-branch artifact.
+PAIR_GLOB="$RESULTS/cact_pair_train/*/pairs.jsonl"
+if compgen -G "$PAIR_GLOB" > /dev/null; then
+  "$PYTHON" experiments/train_pairwise.py --input "$PAIR_GLOB" --out "$PREFERENCE_FILE"
+else
+  echo "STOP: missing D_pair-train pairs.jsonl; do not fabricate preference labels." >&2
+  exit 2
+fi
+export CACT_PREFERENCE_PATH="$PREFERENCE_FILE"
+
 "$PYTHON" experiments/calibrate_v2.py --fit-glob "$RESULTS/cact_logs/cact_train_C-ACT_seed*_task[0-9]*/opportunities.jsonl" --select-glob "$RESULTS/cact_logs/cact_calib_C-ACT_seed*_task[0-5]/opportunities.jsonl" --audit-glob "$RESULTS/cact_logs/cact_calib_C-ACT_seed*_task[6-9]/opportunities.jsonl" "$RESULTS/cact_logs/cact_calib_C-ACT_seed*_task1[01]/opportunities.jsonl" --out "$POLICY_FILE"
 
 # E3: 36 conditions × 8 seeds × six preregistered methods, strict frozen.
