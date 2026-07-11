@@ -14,13 +14,10 @@ import numpy as np
 SCHEMA_VERSION = "cact.v2"
 MAIN_METHODS = ("NoKnowledge", "NoGate", "FixedBayes",
                 "PairwisePreferenceGate", "C-ACT-Pointwise", "C-ACT")
-ONLINE_MAIN_METHODS = ("Online-NoGate", "Online-FixedBayes",
-                       "Online-C-ACT-Pointwise", "Online-C-ACT")
-E4_ABLATION_METHODS = ("C-ACT", "C-ACT-NoContract",
-                       "C-ACT-NoAdaptiveTau", "C-ACT-NoActiveCalib")
 LEGACY_METHODS = ("XENON-Original", "BankCuration", "LifecycleSuccessGate",
                   "SuccessLifecycle", "ACT", "C-ACT-Full", "OracleGate",
-                  "ShuffledKnowledge")
+                  "ShuffledKnowledge", "Online-NoGate", "Online-FixedBayes",
+                  "Online-C-ACT-Pointwise", "Online-C-ACT")
 METHOD_ALIASES = {
     "C-ACT-Full": "C-ACT",
     "SuccessLifecycle": "LifecycleSuccessGate",
@@ -36,20 +33,15 @@ MIN_ESS = 24.0
 def canonical_method_name(method: str) -> str:
     return METHOD_ALIASES.get(str(method), str(method))
 
-def validate_method_name(method: str, allowed: Sequence[str] = None,
-                         allow_legacy: bool = False) -> str:
+def validate_method_name(method: str, allow_legacy: bool = True) -> str:
     canonical = canonical_method_name(method)
-    if allowed is not None:
-        allowed_set = {canonical_method_name(x) for x in allowed}
-        if canonical not in allowed_set:
-            raise ValueError(f"unsupported C-ACT method: {method}")
-        return canonical
-    allowed_set = set(MAIN_METHODS)
+    allowed = set(MAIN_METHODS)
     if allow_legacy:
-        allowed_set.update(ONLINE_MAIN_METHODS)
-        allowed_set.update(E4_ABLATION_METHODS)
-        allowed_set.update(canonical_method_name(x) for x in LEGACY_METHODS)
-    if canonical not in allowed_set:
+        allowed.update(LEGACY_METHODS)
+        allowed.update(METHOD_ALIASES)
+        if canonical.startswith("C-ACT-") or canonical.startswith("Online-C-ACT-"):
+            return canonical
+    if canonical not in allowed and method not in allowed:
         raise ValueError(f"unsupported C-ACT method: {method}")
     return canonical
 

@@ -57,7 +57,7 @@ from optimus1.util import (
 )
 
 
-MINUTE = 1200
+MINUTE = 2000  # was 1200; higher = fewer reasoning interventions
 visual_info = ""
 
 def call_planner_with_retry(
@@ -104,6 +104,7 @@ def call_planner_with_retry(
                 break
 
             logger.warning(f"get_decomposed_plan at attempt {attempts} failed. Error message: {render_error}")
+            time.sleep(0.2 * attempts)  # backoff: 200ms, 400ms, 600ms
             if attempts >= max_retries:
                 logger.error("Max retries reached. Could not fetch get_decomposed_plan.")
                 return [], "", "max_tries_get_decomposed_plan"
@@ -222,6 +223,7 @@ def call_reasoning_with_retry(
                 break
 
             logger.warning(f"get_context_aware_reasoning at attempt {attempts} failed. Error message: {render_error}")
+            time.sleep(0.3 * attempts)  # backoff: 300ms, 600ms, 900ms
             if attempts >= max_retries:
                 logger.error("Max retries reached. Could not fetch get_context_aware_reasoning.")
                 return dict(), "", "max_tries_get_context_aware_reasoning"

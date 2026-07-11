@@ -5,7 +5,7 @@ defaults:
 # 4 tasks per group, all difficulty levels, disjoint seeds from E3
 env:
   name: CACTTaskEnv-v0
-  max_minutes: 3
+  max_minutes: 2
   times: 1
   prefer_biome: forest
   initial_inventory: []

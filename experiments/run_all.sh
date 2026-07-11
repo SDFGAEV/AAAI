@@ -42,15 +42,20 @@ _start_vlm_pool() {
   for ((i=0; i<idx; i++)); do ports+=($((VLM_PORT + i))); done
   VLM_PORTS=$(IFS=,; echo "${ports[*]}")
   export VLM_PORTS
-  # Wait for every VLM to accept /health.
+  # Wait for every VLM to accept /health (parallel — not serial).
   for ((i=0; i<idx; i++)); do
     local p=$((VLM_PORT + i))
     echo "[VLM] waiting for port $p ..."
-    for _ in $(seq 1 180); do
-      if curl -s --connect-timeout 2 "http://127.0.0.1:$p/health" > /dev/null 2>&1; then break; fi
-      sleep 2
+    (for _ in $(seq 1 180); do
+      if curl -s --connect-timeout 1 "http://127.0.0.1:$p/health" > /dev/null 2>&1; then echo "ready:$p"; exit 0; fi
+      sleep 0.5
     done
-    if ! curl -s --connect-timeout 2 "http://127.0.0.1:$p/health" > /dev/null 2>&1; then
+    echo "fail:$p") &
+  done
+  wait
+  for ((i=0; i<idx; i++)); do
+    local p=$((VLM_PORT + i))
+    if ! curl -s --connect-timeout 1 "http://127.0.0.1:$p/health" > /dev/null 2>&1; then
       echo "[VLM] FATAL: port $p never became healthy"
       exit 1
     fi
@@ -90,6 +95,9 @@ run_serial() {
   "$PYTHON" experiments/parallel_runner.py "$@" --workers 1 \
     --plan_model "$PLAN_MODEL" $(_run_args)
 }
+
+echo "[M0] compile .pyc (reduces subprocess startup latency)"
+"$PYTHON" -OO -m compileall -q cact/ experiments/ src/optimus1/ 2>/dev/null || true
 
 echo "[M0] health check and protocol release"
 "$PYTHON" experiments/health_check.py

@@ -19,7 +19,7 @@ from urllib.error import URLError
 class BatchProxy:
     """Accumulates VLM requests and dispatches in batches."""
 
-    def __init__(self, vlm_url: str, batch_window: float = 0.05):
+    def __init__(self, vlm_url: str, batch_window: float = 0.08):
         self.vlm_url = vlm_url.rstrip("/")
         self.batch_window = batch_window
         self._lock = threading.Lock()

@@ -5,7 +5,7 @@ defaults:
 # Hardest sub-population from E3: tech_tree(4) + failure_recovery(4) + interaction_stress(4)
 env:
   name: CACTTaskEnv-v0
-  max_minutes: 3
+  max_minutes: 2
   times: 1
   prefer_biome: forest
   initial_inventory: []

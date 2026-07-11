@@ -56,7 +56,7 @@ def _run_one(task_idx: int, seed: int, method: str, cfg: dict) -> dict:
     t0 = time.perf_counter()
     result = subprocess.run(
         cmd, capture_output=True, text=True,
-        timeout=cfg.get("timeout", 420),
+        timeout=cfg.get("timeout", 240),  # aligned with parallel_runner 180+60
         cwd=str(_PROJ),
         env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONPATH": os.pathsep.join(
             [str(_PROJ), str(_PROJ / "src"), str(_PROJ / "minerl")])},
