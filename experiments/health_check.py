@@ -46,11 +46,15 @@ def main():
 
     # 4. Java (for Minecraft)
     try:
+        import re
         result = subprocess.run(["java", "-version"], capture_output=True, text=True, timeout=10)
-        ok = result.returncode == 0
-        check("Java available", lambda: (ok, result.stderr.split("\n")[0] if ok else "not found"))
+        banner = (result.stderr or result.stdout).split("\n")[0]
+        match = re.search(r'version "(?:1\.)?(\d+)', banner)
+        major = int(match.group(1)) if match else 0
+        ok = result.returncode == 0 and major >= 21
+        check("Java >= 21", lambda: (ok, f"{banner} (major={major})"))
     except FileNotFoundError:
-        check("Java available", lambda: (False, "java not found in PATH"))
+        check("Java >= 21", lambda: (False, "java not found in PATH"))
 
     # 5. C-ACT modules
     check("C-ACT modules import", lambda: (

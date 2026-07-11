@@ -1,7 +1,7 @@
 {
   "schema_version": "cact.protocol_release.v1",
   "label": "protocol-candidate",
-  "created_utc": "2026-07-11T06:24:54.418284+00:00",
+  "created_utc": "2026-07-11T07:16:37.764882+00:00",
   "method": "C-ACT: Contextual Admission via Counterfactual Treatment Effects",
   "frozen_claims": [
     "reliable admission",
@@ -9,17 +9,23 @@
   ],
   "hashes": {
     "C-ACT_完整研究协议与论文写作手册-新.md": "7a4e3274791ae7342d2b3f681f67de98de9ba4dbf85545580bd7ae2129c19311",
-    "C-ACT\\cact\\protocol_v2.py": "ec0ffcfbe49050408aa04f81bff2e649d0e68431c80230ed30dee2040342211c",
-    "C-ACT\\experiments\\calibrate_v2.py": "46a276ae189468f6a0d0acfffdc779f1ca5a9b2b56bb900cd644d652188ddc47",
+    "C-ACT\\cact\\protocol_v2.py": "dac967f61f184d6f7d79b24ffc68624c93f4fe0d28ae4fe7671aceb332244a99",
+    "C-ACT\\experiments\\calibrate_v2.py": "9344ddc7e4cdf3df01355ed44ced179fd559ee74aef5e184ffece94714f94089",
     "C-ACT\\experiments\\parallel_runner.py": "406cabb5cafef22350555120ec3fb342820b697a33091b86b3594d09f7881482",
-    "C-ACT\\experiments\\run_all.sh": "4c0fd1ec743cec8446962863727e5f3ab97fc9afaf4c6b2cb84d7be7e483c6bb",
+    "C-ACT\\experiments\\run_all.sh": "ff0aafcc0ac4354675ba21b872b3dccc9138ffc336a1f3051cf82fb76c2e277d",
     "C-ACT\\paper\\PAPER_SUBMISSION_DRAFT_NEW.md": "ddef8cdb6108b527b46bb7adbc7b56f1e228bed6f361222f1d4f17ad99b0aed9",
     "C-ACT\\paper\\PAPER_SUBMISSION_DRAFT_V2.md": "654e60c82930cb1124d60953a328ea330e7b6b148ad4372b1d8d16b2ab369698",
-    "C-ACT\\cact\\preference_gate.py": "b6fb14e4cec0274246128a54a6609c1b6a5b22511ad4a3e12bd8d5c8de9add7e",
-    "C-ACT\\experiments\\train_pairwise.py": "6e09384dc99dba467f43d6289ea1d4d451f48dd2e5c68e0a314940696c0c5970",
-    "C-ACT\\cact\\metrics.py": "d5fe08abdbb3a6d8335daea39832619a6b1ad25cbeb8b8b21e56b85bd56b8aa8",
+    "C-ACT\\cact\\preference_gate.py": "87e71742da27a19350a89bb735f11224039d2789e0c3af34909341811367a8e3",
+    "C-ACT\\experiments\\train_pairwise.py": "540cfd7162bdbb6e14b4bd1ff9aac548ec5b6e38066c4afc218fbba366ec8e76",
+    "C-ACT\\cact\\metrics.py": "5c6d87c69a5c5c1016b5fda3225d1a60a65585134e24f46557597512ae53b77a",
     "C-ACT\\analysis\\bootstrap.py": "76918cf33e4bf3ba978c6db4e634a67029eaac14488492bba17c17099bd0c3a4",
     "C-ACT\\analysis\\split_audit.py": "0129999729c07346067d6118a06c0c18a19df6cc0eb705dbed62b46a5c6adbfd",
+    "C-ACT\\analysis\\validate_task_cards.py": "6ea72a4cc4865a2b0061f015027c9edcf44e18948b5b73d12f5814aa92efbbfb",
+    "C-ACT\\experiments\\e2_direct_select.py": "3f456ca3bffb9c00991b5767296af582bd168b755adbbe80915736e96c652b5b",
+    "C-ACT\\experiments\\online_runner.py": "ac04fcd5ba551d6d7527d85e77afbc6304a25ca9c1f914fb4ecd685063a1cc84",
+    "C-ACT\\experiments\\release_protocol.py": "fda3a180f2bb58c322a3b84951ff5b633749b9981f670ec6eba486be9cbe69e1",
+    "C-ACT\\experiments\\health_check.py": "5be267b431879de0f5915f59a6f0c55738ce578877d7d1a4ceca44d3ba3afeae",
+    "C-ACT\\tests\\test_controller_ledger.py": "72af36e36f11c3cceac54eeb6445b83086a822ba85bde85f0098f92d35fc9db0",
     "C-ACT\\docs\\UBUNTU_PERFORMANCE.md": "87942fa8102bfeb55636808e48fa990a8775fefe366e24804d7b2c93f6e21275"
   },
   "seeds": {

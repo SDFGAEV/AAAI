@@ -33,6 +33,8 @@ def main():
     ap.add_argument("--select-glob", nargs="+", required=True)
     ap.add_argument("--audit-glob", nargs="+", required=True)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--direct-selection", default="",
+                    help="E2 matched-risk selection artifact; overrides kappa per family")
     args = ap.parse_args()
 
     fit, fit_paths = collect(args.fit_glob)
@@ -79,6 +81,18 @@ def main():
     if not full_policy.audit_passed or not pointwise_policy.audit_passed:
         raise SystemExit("D_audit failed for at least one controller family; no deployable policy was written")
 
+    selection_source = "aipw_select"
+    if args.direct_selection:
+        direct = json.loads(Path(args.direct_selection).read_text(encoding="utf-8"))
+        selected = direct.get("selection", {})
+        for family, obj in (("full", full_policy), ("pointwise", pointwise_policy)):
+            if family not in selected or "kappa" not in selected[family]:
+                raise SystemExit(f"direct selection missing {family} kappa")
+            obj.kappa = float(selected[family]["kappa"])
+            obj = PolicyCalibrator().audit(obj, audit_est)
+            if not obj.audit_passed:
+                raise SystemExit(f"D_audit failed after direct {family} kappa selection")
+        selection_source = "e2_direct_matched_risk"
     policy = full_policy
     artifact = policy.to_dict()
     artifact["families"] = {"full": full_policy.to_dict(), "pointwise": pointwise_policy.to_dict()}
@@ -88,6 +102,7 @@ def main():
         "fit_rows": len(fit), "select_rows": len(select), "audit_rows": len(audit),
         "fit_hash": digest(fit_paths), "select_hash": digest(select_paths),
         "audit_hash": digest(audit_paths),
+        "selection_source": selection_source,
         "estimator": {"name": "episode_clustered_cross_fitted_aipw",
                       "folds": 5, "fold_seeds": [17, 29, 41]},
     })

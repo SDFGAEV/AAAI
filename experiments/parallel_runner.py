@@ -60,6 +60,10 @@ class ExperimentConfig:
     run_id: str = ""
     snapshot_path: str = ""
     protocol_path: str = ""
+    branch_mode: str = ""
+    branch_target_opportunity: str = ""
+    branch_parent_id: str = ""
+    branch_prefix_assignment: int = 0
 
 
 def _clone_snapshot(src: str, dst: str) -> None:
@@ -221,6 +225,11 @@ class ParallelRunner:
             cmd.append("+cact_frozen=true")
         if cfg.active_calib_rate:
             cmd.append(f"+cact_active_calib_rate={cfg.active_calib_rate}")
+        if cfg.branch_mode:
+            cmd.append(f"+cact_branch_mode={cfg.branch_mode}")
+            cmd.append(f"+cact_branch_target_opportunity={cfg.branch_target_opportunity}")
+            cmd.append(f"+cact_branch_parent_id={cfg.branch_parent_id}")
+            cmd.append(f"+cact_branch_prefix_assignment={cfg.branch_prefix_assignment}")
 
         def store_hash(path):
             h = hashlib.sha256()
@@ -511,6 +520,10 @@ def main():
     parser.add_argument("--store_path", default="")
     parser.add_argument("--snapshot_path", default="")
     parser.add_argument("--protocol_path", default="")
+    parser.add_argument("--branch_mode", choices=["", "reuse", "base"], default="")
+    parser.add_argument("--branch_target_opportunity", default="")
+    parser.add_argument("--branch_parent_id", default="")
+    parser.add_argument("--branch_prefix_assignment", type=int, default=0)
     parser.add_argument("--print_grid", action="store_true",
                        help="Print experiment grid without running")
 
@@ -551,6 +564,10 @@ def main():
         if args.snapshot_path:
             cfg.snapshot_path = args.snapshot_path
         cfg.protocol_path = args.protocol_path
+        cfg.branch_mode = args.branch_mode
+        cfg.branch_target_opportunity = args.branch_target_opportunity
+        cfg.branch_parent_id = args.branch_parent_id
+        cfg.branch_prefix_assignment = args.branch_prefix_assignment
     runner._t_start = time.perf_counter()
     runner.run(
         benchmark=args.benchmark,

@@ -35,7 +35,11 @@ def parse_tasks(path):
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--out", default=str(ROOT / "protocol_release")); ap.add_argument("--label", default="protocol-candidate"); args = ap.parse_args()
     out = Path(args.out); out.mkdir(parents=True, exist_ok=True)
-    files = [MANUAL, ROOT/"cact/protocol_v2.py", ROOT/"experiments/calibrate_v2.py", ROOT/"experiments/parallel_runner.py", ROOT/"experiments/run_all.sh", ROOT/"paper/PAPER_SUBMISSION_DRAFT_NEW.md", ROOT/"paper/PAPER_SUBMISSION_DRAFT_V2.md", ROOT/"cact/preference_gate.py", ROOT/"experiments/train_pairwise.py", ROOT/"cact/metrics.py", ROOT/"analysis/bootstrap.py", ROOT/"analysis/split_audit.py", ROOT/"docs/UBUNTU_PERFORMANCE.md"]
+    files = [MANUAL, ROOT/"cact/protocol_v2.py", ROOT/"experiments/calibrate_v2.py", ROOT/"experiments/parallel_runner.py", ROOT/"experiments/run_all.sh", ROOT/"paper/PAPER_SUBMISSION_DRAFT_NEW.md", ROOT/"paper/PAPER_SUBMISSION_DRAFT_V2.md", ROOT/"cact/preference_gate.py", ROOT/"experiments/train_pairwise.py", ROOT/"cact/metrics.py", ROOT/"analysis/bootstrap.py", ROOT/"analysis/split_audit.py", ROOT/"analysis/validate_task_cards.py",
+           ROOT/"experiments/e2_direct_select.py", ROOT/"experiments/online_runner.py",
+           ROOT/"experiments/release_protocol.py", ROOT/"experiments/health_check.py",
+           ROOT/"tests/test_controller_ledger.py",
+           ROOT/"docs/UBUNTU_PERFORMANCE.md"]
     manifest = {"schema_version":"cact.protocol_release.v1", "label":args.label, "created_utc":datetime.now(timezone.utc).isoformat(), "method":"C-ACT: Contextual Admission via Counterfactual Treatment Effects", "frozen_claims":["reliable admission", "applicability boundary and adaptive risk-coverage"], "hashes":{str(p.relative_to(ROOT.parent)):sha256(p) for p in files if p.exists()}, "seeds":{"E0":[1001,1002],"E1a":list(range(2001,2006)),"E1b":list(range(2101,2106)),"D_select":list(range(3001,3009)),"D_audit":list(range(3011,3019)),"E3":list(range(4001,4009)),"E4":list(range(5001,5006)),"E5":[6001,6002,6003,6004,6005]}, "budgets":{"delta":.05,"eps_abs":.10,"eps_inc":.02,"kappas":[0,.5,1,1.5,2,2.5,3],"support_n":12,"ess":24}}
     (out/"manifest.json").write_text(json.dumps(manifest,indent=2,ensure_ascii=False),encoding="utf-8")
     benchmarks = {}

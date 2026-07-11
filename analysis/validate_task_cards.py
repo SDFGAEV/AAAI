@@ -12,7 +12,20 @@ def main():
     ap = argparse.ArgumentParser(); ap.add_argument("cards", nargs="+", type=Path); ap.add_argument("--out", type=Path, required=True)
     args = ap.parse_args(); errors = []
     for path in args.cards:
-        data = json.loads(path.read_text(encoding="utf-8")) if path.suffix == ".json" else {}
+        if path.suffix.lower() == ".json":
+            data = json.loads(path.read_text(encoding="utf-8"))
+        elif path.suffix.lower() in {".yaml", ".yml"}:
+            try:
+                import yaml
+            except ModuleNotFoundError as exc:
+                raise SystemExit("PyYAML is required to validate YAML task cards; refusing silent skip") from exc
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        else:
+            errors.append({"file": str(path), "missing": "unsupported_card_format"})
+            data = {}
+        if not isinstance(data, dict):
+            errors.append({"file": str(path), "missing": "task_card_mapping"})
+            data = {}
         for field in REQUIRED:
             if field not in data or data[field] in (None, "", {}): errors.append({"file": str(path), "missing": field})
     result = {"files": len(args.cards), "errors": errors, "passed": not errors}

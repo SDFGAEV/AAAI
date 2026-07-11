@@ -50,7 +50,7 @@ else
 fi
 export CACT_PREFERENCE_PATH="$PREFERENCE_FILE"
 
-"$PYTHON" experiments/calibrate_v2.py --fit-glob "$RESULTS/cact_logs/cact_train_C-ACT_seed*_task[0-9]*/opportunities.jsonl" --select-glob "$RESULTS/cact_logs/cact_calib_C-ACT_seed*_task[0-5]/opportunities.jsonl" --audit-glob "$RESULTS/cact_logs/cact_calib_C-ACT_seed*_task[6-9]/opportunities.jsonl" "$RESULTS/cact_logs/cact_calib_C-ACT_seed*_task1[01]/opportunities.jsonl" --out "$POLICY_FILE"
+"$PYTHON" experiments/calibrate_v2.py --fit-glob "$RESULTS/cact_logs/cact_train_C-ACT_seed*_task[0-9]*/opportunities.jsonl" --select-glob "$RESULTS/cact_logs/cact_calib_C-ACT_seed*_task[0-5]/opportunities.jsonl" --audit-glob "$RESULTS/cact_logs/cact_calib_C-ACT_seed*_task[6-9]/opportunities.jsonl" "$RESULTS/cact_logs/cact_calib_C-ACT_seed*_task1[01]/opportunities.jsonl" --direct-selection "$RESULTS/e2_direct_selection.json" --out "$POLICY_FILE"
 
 # E3: 36 conditions × 8 seeds × six preregistered methods, strict frozen.
 run --benchmark cact_p3 --task_indices 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35 --seeds 4001-4008 --methods NoKnowledge NoGate FixedBayes PairwisePreferenceGate C-ACT-Pointwise C-ACT --frozen --snapshot_path "$CAL_STORE" --protocol_path "$POLICY_FILE"

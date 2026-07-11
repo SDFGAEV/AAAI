@@ -54,7 +54,9 @@ class CactMemory:
                  store_path: str = None, frozen: bool = False,
                  active_calib_rate: float = 0.0, log_dir: str = None,
                  calibration_path: str = None, protocol_path: str = None,
-                 protocol_seed: int = 0):
+                 protocol_seed: int = 0, branch_mode: str = "",
+                 branch_target_opportunity: str = "", branch_parent_id: str = "",
+                 branch_prefix_assignment: int = 0):
         self._mem = xenon_memory
         requested_method = method
         method = validate_method_name(method, allow_legacy=True)
@@ -131,6 +133,13 @@ class CactMemory:
         self.requested_method = requested_method
         self.frozen = frozen
         self.active_calib_rate = active_calib_rate
+        self.branch_mode = str(branch_mode or "").lower()
+        if self.branch_mode not in {"", "reuse", "base"}:
+            raise ValueError("branch_mode must be empty, 'reuse', or 'base'")
+        self.branch_target_opportunity = str(branch_target_opportunity or "")
+        self.branch_parent_id = str(branch_parent_id or "")
+        self.branch_prefix_assignment = int(bool(branch_prefix_assignment))
+        self._branch_triggered = False
         self.log_dir = log_dir
         if self._protocol_enabled and log_dir:
             self._v2_logger = OpportunityLogger(os.path.join(log_dir, "opportunities.jsonl"))
@@ -259,6 +268,7 @@ class CactMemory:
         self._supervision_blocked = False
         self._episode_counter += 1
         self._episode_id = f"ep_{self._current_seed}_{self._episode_counter}"
+        self._branch_triggered = False
         self._current_difficulty = difficulty
         self._current_group = group
 
@@ -535,7 +545,11 @@ class CactMemory:
         # Reuse decision log (TABLE 152)
         self.reuse_logs.append({
             "decision_id": f"{waypoint}_{self._current_seed}_{self._reuse_count + self._fallback_count}",
+            "opportunity_id": getattr(self._v2_pending, "opportunity_id", "") if self._v2_pending else "",
             "episode_id": f"ep_{waypoint}_{self._current_seed}_{self.method}",
+            "branch_parent_id": self.branch_parent_id,
+            "branch_mode": self.branch_mode,
+            "branch_triggered": bool(self._branch_triggered),
             "waypoint": waypoint, "kid": kid, "ctx": ctx,
             "method": self.method, "frozen": self.frozen,
             "success": is_success, "task_group": task_grp,
@@ -792,6 +806,19 @@ class CactMemory:
             if not provisional.eligible or not applicable:
                 assignment, propensity, random_seed = 0, 0.5, 0
                 gate = {"decision": "FALLBACK", "reason": provisional.eligibility_reason if not provisional.eligible else "inapplicable", "depth": None}
+            elif self.branch_mode:
+                target = (not self.branch_target_opportunity or
+                          provisional.opportunity_id == self.branch_target_opportunity)
+                if target and not self._branch_triggered:
+                    assignment = int(self.branch_mode == "reuse")
+                    self._branch_triggered = True
+                    reason = f"paired_branch_{self.branch_mode}"
+                else:
+                    assignment = self.branch_prefix_assignment
+                    reason = "paired_prefix"
+                propensity, random_seed = 0.5, 0
+                gate = {"decision": "ADMIT" if assignment else "FALLBACK",
+                        "reason": reason, "depth": None}
             elif self.frozen and self._v2_policy is not None:
                 gate = self._v2_policy.decide(provisional, applicable=applicable)
                 assignment, propensity, random_seed = int(gate["decision"] == "ADMIT"), 0.5, 0
