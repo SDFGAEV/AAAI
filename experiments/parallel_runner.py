@@ -32,11 +32,40 @@ from pathlib import Path
 
 _PROJ = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, _PROJ)
+from cact.protocol_v2 import (E4_ABLATION_METHODS, MAIN_METHODS,
+                              ONLINE_MAIN_METHODS, validate_method_name)
 
 # ── Defaults ──
 DEFAULT_METHODS = ["NoKnowledge", "NoGate", "FixedBayes",
                    "PairwisePreferenceGate", "C-ACT-Pointwise", "C-ACT"]
 DEFAULT_SEEDS = [4001, 4002, 4003, 4004, 4005, 4006, 4007, 4008]
+E0_METHODS = ("NoKnowledge", "NoGate")
+TRAIN_CALIB_METHODS = ("C-ACT", "C-ACT-Pointwise",
+                       "Online-C-ACT", "Online-C-ACT-Pointwise")
+
+
+def _allowed_methods_for_benchmark(benchmark: str) -> Tuple[str, ...]:
+    if benchmark == "cact_e0":
+        return E0_METHODS
+    if benchmark == "cact_p3":
+        return MAIN_METHODS
+    if benchmark == "cact_ablation":
+        return E4_ABLATION_METHODS
+    if benchmark in {"cact_online_stream", "cact_online_retention",
+                     "cact_online_hard_transfer"}:
+        return ONLINE_MAIN_METHODS
+    if benchmark in {"cact_train", "cact_calib"}:
+        return TRAIN_CALIB_METHODS
+    return MAIN_METHODS
+
+
+def _validate_methods_for_benchmark(benchmark: str, methods: List[str]) -> List[str]:
+    allowed = _allowed_methods_for_benchmark(benchmark)
+    return [validate_method_name(method, allowed=allowed) for method in methods]
+
+
+def _default_methods_for_benchmark(benchmark: str) -> List[str]:
+    return list(_allowed_methods_for_benchmark(benchmark))
 
 
 @dataclass
@@ -118,6 +147,48 @@ class ParallelRunner:
                 return p
         raise RuntimeError(f"No free ports in range {start}-{start+max_attempts}")
 
+    @staticmethod
+    def _artifact_hash(path: str) -> str:
+        """Hash a file or directory artifact; empty string means absent."""
+        if not path or not os.path.exists(path):
+            return ""
+        h = hashlib.sha256()
+        if os.path.isdir(path):
+            for root, _, files in os.walk(path):
+                for name in sorted(files):
+                    fp = os.path.join(root, name)
+                    h.update(os.path.relpath(fp, path).encode())
+                    with open(fp, "rb") as fh:
+                        h.update(fh.read())
+        else:
+            h.update(os.path.basename(path).encode())
+            with open(path, "rb") as fh:
+                h.update(fh.read())
+        return h.hexdigest()
+
+    @classmethod
+    def _frozen_audit_fields(cls, cfg: ExperimentConfig,
+                             store_before: Optional[str],
+                             policy_before: Optional[str]) -> Dict:
+        if not cfg.frozen:
+            return {
+                "frozen_store_hash": None,
+                "frozen_policy_hash": None,
+                "frozen_error": "",
+            }
+        store_after = cls._artifact_hash(cfg.store_path)
+        policy_after = cls._artifact_hash(cfg.protocol_path)
+        errors = []
+        if store_before != store_after:
+            errors.append("frozen store mutated")
+        if policy_before != policy_after:
+            errors.append("frozen policy artifact mutated")
+        return {
+            "frozen_store_hash": store_after,
+            "frozen_policy_hash": policy_after,
+            "frozen_error": "; ".join(errors),
+        }
+
     # ── Checkpoint / resume ──
     def _load_checkpoint(self):
         """Load previously completed (task, seed, method) pairs."""
@@ -126,8 +197,20 @@ class ParallelRunner:
             try:
                 with open(ckpt_file) as f:
                     data = json.load(f)
-                self._completed = {tuple(e) for e in data.get("completed", [])}
                 self._results = data.get("results", [])
+                raw_completed = {tuple(e) for e in data.get("completed", [])}
+                result_status = {
+                    tuple(row["key"]): row.get("status")
+                    for row in self._results
+                    if isinstance(row, dict) and "key" in row
+                }
+                if result_status:
+                    self._completed = {
+                        key for key in raw_completed
+                        if result_status.get(key, "success") == "success"
+                    }
+                else:
+                    self._completed = raw_completed
                 print(f"[Resume] Loaded {len(self._completed)} completed runs, "
                       f"{len(self._results)} results")
             except Exception as e:
@@ -137,8 +220,15 @@ class ParallelRunner:
         """Save progress to checkpoint file."""
         ckpt_file = os.path.join(self.checkpoint_dir, "completed.json")
         with open(ckpt_file, "w") as f:
+            failed = [
+                list(tuple(row["key"])) for row in self._results
+                if isinstance(row, dict)
+                and row.get("key") is not None
+                and row.get("status") not in ("success", "skipped")
+            ]
             json.dump({
                 "completed": [list(c) for c in self._completed],
+                "failed": failed,
                 "results": self._results,
                 "updated": time.strftime("%Y-%m-%dT%H:%M:%S"),
             }, f, indent=2)
@@ -237,19 +327,8 @@ class ParallelRunner:
             cmd.append(f"+cact_branch_parent_id={cfg.branch_parent_id}")
             cmd.append(f"+cact_branch_prefix_assignment={cfg.branch_prefix_assignment}")
 
-        def store_hash(path):
-            h = hashlib.sha256()
-            if path and os.path.isdir(path):
-                for root, _, files in os.walk(path):
-                    for name in sorted(files):
-                        fp = os.path.join(root, name)
-                        h.update(os.path.relpath(fp, path).encode())
-                        with open(fp, "rb") as fh:
-                            h.update(fh.read())
-            return h.hexdigest()
-
-        frozen_hash_before = store_hash(cfg.store_path) if cfg.frozen else None
-        protocol_hash_before = store_hash(cfg.protocol_path) if (cfg.frozen and cfg.protocol_path and os.path.isfile(cfg.protocol_path)) else None
+        frozen_hash_before = self._artifact_hash(cfg.store_path) if cfg.frozen else None
+        protocol_hash_before = self._artifact_hash(cfg.protocol_path) if cfg.frozen else None
         t0 = time.perf_counter()
         try:
             runner_log_dir = os.path.join(_PROJ, "exp_results", "runner_logs")
@@ -272,17 +351,9 @@ class ParallelRunner:
                     stderr_tail = fh.read()
             except OSError:
                 stderr_tail = ""
-            success = result.returncode == 0
-            frozen_hash_after = store_hash(cfg.store_path) if cfg.frozen else None
-            protocol_hash_after = store_hash(cfg.protocol_path) if (cfg.frozen and cfg.protocol_path and os.path.isfile(cfg.protocol_path)) else None
-            if cfg.frozen and frozen_hash_before != frozen_hash_after:
-                success = False
-                frozen_error = "frozen store mutated"
-            elif cfg.frozen and protocol_hash_before != protocol_hash_after:
-                success = False
-                frozen_error = "frozen policy artifact mutated"
-            else:
-                frozen_error = ""
+            audit = self._frozen_audit_fields(
+                cfg, frozen_hash_before, protocol_hash_before)
+            success = result.returncode == 0 and not audit["frozen_error"]
             task_success = None
             if cfg.run_id:
                 episode_file = os.path.join(_PROJ, "exp_results", "cact_logs",
@@ -308,21 +379,25 @@ class ParallelRunner:
                 "stdout_log": stdout_path,
                 "stderr_log": stderr_path,
                 "task_success": task_success,
-                "frozen_store_hash": frozen_hash_after if cfg.frozen else None,
-                "frozen_policy_hash": protocol_hash_after if cfg.frozen else None,
-                "frozen_error": frozen_error,
+                **audit,
             }
         except subprocess.TimeoutExpired:
+            audit = self._frozen_audit_fields(
+                cfg, frozen_hash_before, protocol_hash_before)
             return {
                 "key": key, "task": cfg.task, "seed": cfg.seed,
                 "method": cfg.method, "status": "timeout",
                 "elapsed_sec": cfg.timeout + 120,
+                **audit,
             }
         except Exception as e:
+            audit = self._frozen_audit_fields(
+                cfg, frozen_hash_before, protocol_hash_before)
             return {
                 "key": key, "task": cfg.task, "seed": cfg.seed,
                 "method": cfg.method, "status": "error",
                 "error": str(e),
+                **audit,
             }
 
     # ── Build experiment grid ──
@@ -331,6 +406,7 @@ class ParallelRunner:
                     plan_model: str = "Qwen/Qwen2.5-VL-7B-Instruct",
                     task_indices: List[int] = None) -> List[ExperimentConfig]:
         """Build the full experiment grid from benchmark YAML config."""
+        methods = _validate_methods_for_benchmark(benchmark, methods)
         bench_path = os.path.join(_PROJ, "src", "optimus1", "conf",
                                   "benchmark", f"{benchmark}.yaml")
         try:
@@ -392,11 +468,11 @@ class ParallelRunner:
         """
         if grid is not None:
             seeds = seeds or DEFAULT_SEEDS
-            methods = methods or DEFAULT_METHODS
+            methods = methods or _default_methods_for_benchmark(benchmark)
             plan_model = plan_model or "Qwen/Qwen2.5-VL-7B-Instruct"
         else:
             seeds = seeds or DEFAULT_SEEDS
-            methods = methods or DEFAULT_METHODS
+            methods = methods or _default_methods_for_benchmark(benchmark)
             plan_model = plan_model or "Qwen/Qwen2.5-VL-7B-Instruct"
 
         if resume:
@@ -443,7 +519,8 @@ class ParallelRunner:
                 for future in as_completed(futures):
                     result = future.result()
                     key = result["key"]
-                    self._completed.add(key)
+                    if result.get("status") == "success":
+                        self._completed.add(key)
                     self._results.append(result)
 
                     completed += 1
@@ -511,7 +588,7 @@ def main():
     parser.add_argument("--seeds", default="4001-4008",
                        help="Seed range, e.g. '4001-4008' or '4001,4002,4003'")
     parser.add_argument("--methods", nargs="*", default=None,
-                       help="Methods to run (default: all 7)")
+                       help="Methods to run (default: benchmark allowlist)")
     parser.add_argument("--workers", type=int, default=4,
                        help="Number of parallel workers (default: 4)")
     parser.add_argument("--vlm_port", type=int, default=12345,
@@ -558,7 +635,8 @@ def main():
     )
 
     if args.print_grid:
-        grid = runner._build_grid(args.benchmark, seeds, args.methods or DEFAULT_METHODS, task_indices=task_indices)
+        methods = args.methods or _default_methods_for_benchmark(args.benchmark)
+        grid = runner._build_grid(args.benchmark, seeds, methods, task_indices=task_indices)
         print(f"Grid: {len(grid)} episodes")
         for cfg in grid[:20]:
             print(f"  task={cfg.task} seed={cfg.seed} method={cfg.method}")
@@ -566,7 +644,8 @@ def main():
             print(f"  ... and {len(grid)-20} more")
         return
 
-    grid = runner._build_grid(args.benchmark, seeds, args.methods or DEFAULT_METHODS,
+    methods = args.methods or _default_methods_for_benchmark(args.benchmark)
+    grid = runner._build_grid(args.benchmark, seeds, methods,
                              plan_model=args.plan_model, task_indices=task_indices)
     for cfg in grid:
         cfg.frozen = args.frozen
@@ -585,7 +664,7 @@ def main():
     runner.run(
         benchmark=args.benchmark,
         seeds=seeds,
-        methods=args.methods,
+        methods=methods,
         plan_model=args.plan_model,
         resume=args.resume,
         grid=grid,
