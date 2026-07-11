@@ -84,13 +84,16 @@ class ParallelRunner:
 
     def __init__(self, workers: int = 4, vlm_port: int = 12345,
                  mc_base_port: int = 15000, checkpoint_dir: str = None,
-                 batch_proxy_port: int = 12346):
+                 batch_proxy_port: int = 12346, vlm_ports: str = ""):
         self.workers = workers
         self.vlm_port = vlm_port
         self.mc_base_port = mc_base_port
         self.batch_proxy_port = batch_proxy_port
         self.checkpoint_dir = checkpoint_dir or os.path.join(
             _PROJ, "exp_results", "ckpt")
+        self._vlm_ports: List[int] = []
+        if vlm_ports:
+            self._vlm_ports = [int(x) for x in vlm_ports.split(",") if x]
         self._completed: set = set()
         self._results: List[Dict] = []
         self._server_procs: Dict[int, subprocess.Popen] = {}
@@ -417,13 +420,17 @@ class ParallelRunner:
             print("[Done] All episodes already completed. Nothing to run.")
             return self._results
 
-        # Start VLM server + batch proxy
-        self._start_vlm_server(plan_model)
+        # Start VLM server + batch proxy (skip if ports provided externally)
+        if self._vlm_ports:
+            print(f"[VLM] Using external VLM pool: {self._vlm_ports}")
+        else:
+            self._start_vlm_server(plan_model)
         self._start_batch_proxy()
 
-        # Assign ports to workers
-        for cfg in grid:
-            cfg.vlm_port = self.vlm_port
+        # Assign ports to workers: round-robin across VLM pool
+        ports = self._vlm_ports if self._vlm_ports else [self.vlm_port]
+        for i, cfg in enumerate(grid):
+            cfg.vlm_port = ports[i % len(ports)]
             cfg.plan_model = plan_model
 
         try:
@@ -509,6 +516,8 @@ def main():
                        help="Number of parallel workers (default: 4)")
     parser.add_argument("--vlm_port", type=int, default=12345,
                        help="VLM server port (default: 12345)")
+    parser.add_argument("--vlm_ports", type=str, default="",
+                       help="Comma-separated VLM ports for multi-GPU pool (e.g. 12345,12346,12347)")
     parser.add_argument("--plan_model", default="Qwen/Qwen2.5-VL-7B-Instruct",
                        help="VLM model name")
     parser.add_argument("--resume", action="store_true",
@@ -544,6 +553,7 @@ def main():
     runner = ParallelRunner(
         workers=args.workers,
         vlm_port=args.vlm_port,
+        vlm_ports=args.vlm_ports,
         checkpoint_dir=args.checkpoint_dir,
     )
 

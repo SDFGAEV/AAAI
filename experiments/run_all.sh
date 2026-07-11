@@ -4,6 +4,7 @@ PROJ="$(cd "$(dirname "$0")/.." && pwd)"
 PYTHON="${PYTHON:-python3}"
 WORKERS="${CACT_WORKERS:-4}"
 VLM_PORT="${CACT_VLM_PORT:-12345}"
+VLM_PORTS="${CACT_VLM_PORTS:-}"
 PLAN_MODEL="Qwen/Qwen2.5-VL-7B-Instruct"
 RESULTS="$PROJ/exp_results"
 CAL_STORE="$RESULTS/calibration_store"
@@ -15,8 +16,79 @@ cd "$PROJ"
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
 export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
-run() { "$PYTHON" experiments/parallel_runner.py "$@" --workers "$WORKERS" --vlm_port "$VLM_PORT" --plan_model "$PLAN_MODEL"; }
-run_serial() { "$PYTHON" experiments/parallel_runner.py "$@" --workers 1 --vlm_port "$VLM_PORT" --plan_model "$PLAN_MODEL"; }
+
+# ── Multi-GPU VLM pool ───────────────────────────────────────────────
+# Usage: CUDA_VISIBLE_DEVICES is ignored; instead set CACT_GPUS="0,1,2,3".
+# Each GPU gets one VLM server on port 12345 + gpu_index.
+# Workers are distributed round-robin across ports.
+# On exit (or error), all VLM servers are killed automatically.
+VLM_PID_LIST=()
+_gpu_list() {
+  local gpus="${CACT_GPUS:-0}"
+  echo "$gpus" | tr ',' '\n'
+}
+_start_vlm_pool() {
+  local idx=0
+  for gpu in $(_gpu_list); do
+    local port=$((VLM_PORT + idx))
+    echo "[VLM] GPU $gpu → port $port"
+    CUDA_VISIBLE_DEVICES="$gpu" "$PYTHON" app.py --port "$port" --plan_model "$PLAN_MODEL" \
+      > "$RESULTS/vlm_gpu${gpu}_port${port}.log" 2>&1 &
+    VLM_PID_LIST+=($!)
+    idx=$((idx + 1))
+  done
+  # Build comma-separated port list for parallel_runner.
+  local ports=()
+  for ((i=0; i<idx; i++)); do ports+=($((VLM_PORT + i))); done
+  VLM_PORTS=$(IFS=,; echo "${ports[*]}")
+  export VLM_PORTS
+  # Wait for every VLM to accept /health.
+  for ((i=0; i<idx; i++)); do
+    local p=$((VLM_PORT + i))
+    echo "[VLM] waiting for port $p ..."
+    for _ in $(seq 1 180); do
+      if curl -s --connect-timeout 2 "http://127.0.0.1:$p/health" > /dev/null 2>&1; then break; fi
+      sleep 2
+    done
+    if ! curl -s --connect-timeout 2 "http://127.0.0.1:$p/health" > /dev/null 2>&1; then
+      echo "[VLM] FATAL: port $p never became healthy"
+      exit 1
+    fi
+    echo "[VLM] port $p ready"
+  done
+}
+_kill_vlm_pool() {
+  for pid in "${VLM_PID_LIST[@]:-}"; do
+    kill "$pid" 2>/dev/null || true
+  done
+  # Also kill any stray app.py processes under the project venv.
+  pkill -f "app.py.*--port" 2>/dev/null || true
+}
+trap _kill_vlm_pool EXIT
+
+# Start multi-GPU VLM pool.  Single-GPU path stays backwards-compatible.
+if [ -n "${CACT_GPUS:-}" ] && [ "${CACT_GPUS:-}" != "0" ]; then
+  _start_vlm_pool
+fi
+
+# ── Runners ────────────────────────────────────────────────────────────
+_run_args() {
+  local extra=()
+  if [ -n "${VLM_PORTS:-}" ]; then
+    extra+=(--vlm_ports "$VLM_PORTS")
+  else
+    extra+=(--vlm_port "$VLM_PORT")
+  fi
+  echo "${extra[@]}"
+}
+run() {
+  "$PYTHON" experiments/parallel_runner.py "$@" --workers "$WORKERS" \
+    --plan_model "$PLAN_MODEL" $(_run_args)
+}
+run_serial() {
+  "$PYTHON" experiments/parallel_runner.py "$@" --workers 1 \
+    --plan_model "$PLAN_MODEL" $(_run_args)
+}
 
 echo "[M0] health check and protocol release"
 "$PYTHON" experiments/health_check.py

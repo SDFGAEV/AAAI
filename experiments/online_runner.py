@@ -52,9 +52,11 @@ class OnlineRunner:
     """Multi-round online self-evolution with retention + hard-transfer."""
 
     def __init__(self, workers: int = 4, vlm_port: int = 12345,
-                 rounds: int = DEFAULT_ROUNDS, protocol_path: str = ""):
+                 rounds: int = DEFAULT_ROUNDS, protocol_path: str = "",
+                 vlm_ports: str = ""):
         self.workers = workers
         self.vlm_port = vlm_port
+        self.vlm_ports = vlm_ports
         self.rounds = rounds
         self.protocol_path = protocol_path
         self._store_root = os.path.join(_PROJ, "exp_results", "online_stores")
@@ -96,7 +98,8 @@ class OnlineRunner:
         """Run one phase (accumulation/calibration/evaluation) via parallel_runner."""
         from experiments.parallel_runner import ParallelRunner
 
-        runner = ParallelRunner(workers=1 if trust_store_path else self.workers, vlm_port=self.vlm_port)
+        runner = ParallelRunner(workers=1 if trust_store_path else self.workers,
+                                vlm_port=self.vlm_port, vlm_ports=self.vlm_ports)
         runner._t_start = time.perf_counter()
 
         ckpt = os.path.join(self._results_root, f"{method}_{phase}")
