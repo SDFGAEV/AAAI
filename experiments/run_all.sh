@@ -60,9 +60,10 @@ _start_vlm_pool() {
 _kill_vlm_pool() {
   for pid in "${VLM_PID_LIST[@]:-}"; do
     kill "$pid" 2>/dev/null || true
+    # Wait briefly, then force-kill if still alive.
+    sleep 2
+    kill -9 "$pid" 2>/dev/null || true
   done
-  # Also kill any stray app.py processes under the project venv.
-  pkill -f "app.py.*--port" 2>/dev/null || true
 }
 trap _kill_vlm_pool EXIT
 
