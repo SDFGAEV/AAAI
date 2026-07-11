@@ -56,6 +56,12 @@ def shutdown():
     return {"message": "Server is stopping..."}
 
 
+@app.get("/health")
+def health():
+    """Light probe: return 200 once the server process is up.  Model loading
+    may still be in progress; the multi-GPU launcher polls this endpoint."""
+    return {"status": "ok"}
+
 @app.get("/reset")
 def reset() -> MCResponse:
     global agent
