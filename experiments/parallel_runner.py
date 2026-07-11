@@ -200,7 +200,7 @@ class ParallelRunner:
             return {"key": key, "status": "skipped", "reason": "already_completed"}
 
         cmd = [
-            sys.executable, "-m", "optimus1.main_planning",
+            sys.executable, "-OO", "-m", "optimus1.main_planning",
             f"server.port={cfg.vlm_port}",
             f"server.url=http://127.0.0.1",
             f"benchmark={cfg.benchmark}",

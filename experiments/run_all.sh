@@ -91,6 +91,9 @@ run_serial() {
     --plan_model "$PLAN_MODEL" $(_run_args)
 }
 
+echo "[M0] compile .pyc (reduces subprocess startup latency)"
+"$PYTHON" -OO -m compileall -q cact/ experiments/ src/optimus1/ 2>/dev/null || true
+
 echo "[M0] health check and protocol release"
 "$PYTHON" experiments/health_check.py
 "$PYTHON" experiments/release_protocol.py --label protocol-candidate
