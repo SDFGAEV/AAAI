@@ -4,7 +4,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from cact.protocol_v2 import AdmissionPolicyV2, CalibratedPolicy, Opportunity
 
-KEY = "FAM|skill|mining|none|low|ordinary|applicable"
+KEY = "FAM|skill|mining|none|low|ordinary|early|0"
 
 def opp(eid="ep", boundary="applicable", eligible=True):
     return Opportunity(episode_id=eid, opportunity_id=eid + "-o", round=0,

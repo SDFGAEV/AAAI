@@ -51,7 +51,8 @@ def main():
         assert MAIN_METHODS == ("NoKnowledge", "NoGate", "FixedBayes",
                                 "PairwisePreferenceGate", "C-ACT-Pointwise", "C-ACT")
         policy.estimates = {
-            "FAM|action_remedy|mining|wrong_tool|low|ordinary|applicable": {
+            # g0: 8-field key matching new hierarchy (§7.1)
+            "FAM|action_remedy|mining|wrong_tool|low|ordinary|early|0": {
                 "supported": True, "n": 40, "delta_y": 0.20, "se_y": 0.0,
                 "risk_abs": 0.01, "se_abs": 0.0, "risk_inc": 0.03, "se_inc": 0.0,
             }

@@ -1,1 +1,11 @@
 date,proposer,stage,original_protocol,change,reason,outcome_seen,scope,approver
+2026-07-12,audit,protocol,"name=C-ACT: Contracted Adaptive Counterfactual Trust","name=C-ACT: Contextual Admission via Counterfactual Treatment Effects","finalized name per §1.1",no,code+paper,
+2026-07-12,audit,protocol,"E5 accumulation=12 per protocol §19.1","E5 accumulation=16 in code","data sufficiency tuning before protocol freeze",no,code,
+2026-07-12,audit,code,"hierarchy g0 uses boundary_status per legacy AIPW","hierarchy g0 uses episode_phase+prior_admission_bin per §7.1","aligned with protocol specification",no,code,
+2026-07-12,audit,code,"AIPW features missing 5 history fields","added §8.2 history features","aligned with protocol specification",no,code,
+2026-07-12,audit,code,"Parent heterogeneity penalty tau2 not implemented","implemented in aggregate() SE computation","§7.3 requirement",no,code,
+2026-07-12,audit,protocol,"Synthetic study not implemented","created analysis/synthetic_study.py","§16.4 requirement",no,analysis,
+2026-07-12,audit,protocol,"Power analysis not implemented","created analysis/power_analysis.py","§17.3 requirement",no,analysis,
+2026-07-12,audit,protocol,"Holm correction not implemented","added holm_correction() to analysis/bootstrap.py","§22.2 requirement",no,analysis,
+2026-07-12,audit,protocol,"E4 ablation methods were NoContract/NoAdaptiveTau/NoActiveCalib","changed to NoApplicability + Global-Risk + w/o Ledger","§18 alignment",no,code+run_all,
+2026-07-12,audit,protocol,"Task YAMLs use flat naming vs TR01/SEL01/ID01 protocol convention","YAML tasks kept; ID/OOD/Boundary annotated via layer field","backward compat with XENON benchmark format",no,benchmark,

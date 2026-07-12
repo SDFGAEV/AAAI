@@ -34,6 +34,7 @@ DEFAULT_BUDGET = 0.05
 DEFAULT_KAPPAS = (0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0)
 MIN_ARM_SUPPORT = 12
 MIN_ESS = 24.0
+K_COLLECT = 4  # §6.1/§9.7: max randomized exposure per episode
 
 def canonical_method_name(method: str) -> str:
     return METHOD_ALIASES.get(str(method), str(method))
@@ -286,9 +287,12 @@ class GroupEstimate:
         return asdict(self)
 
 class AIPWEstimator:
+    # Protocol §8.2: knowledge + task + state + history features
     FEATURE_FIELDS = ("source", "type", "task_group", "failure_type",
                       "risk_tier", "resource_scarcity", "boundary_status",
-                      "inventory_signature")
+                      "inventory_signature",
+                      "episode_phase", "prior_admission_bin", "prior_fallback_bin",
+                      "prior_harm_flag", "remaining_critical_resource_ratio")
     def __init__(self, n_folds: int = 5, seed: int = 17, ridge: float = 1.0):
         self.n_folds, self.seed, self.ridge = int(n_folds), int(seed), float(ridge)
     def _features(self, rows: Sequence[Opportunity]) -> np.ndarray:
@@ -364,10 +368,11 @@ class AIPWEstimator:
         return float(np.std(means, ddof=1) / math.sqrt(len(means))) if len(means) >= 2 else float("inf")
     def aggregate(self, pseudo: Sequence[Mapping[str, Any]]) -> List[GroupEstimate]:
         if not pseudo: return []
+        # Protocol §7.1: 4-level hierarchy (g0=8 fields, g1=6, g2=4, g3=2)
         groups = {
-            "g0": lambda r: f"{r['source']}|{r['type']}|{r['task_group']}|{r.get('failure_type', 'none')}|{r['risk_tier']}|{r.get('resource_scarcity', 'ordinary')}|{r['boundary_status']}",
-            "g1": lambda r: f"{r['source']}|{r['type']}|{r['task_group']}|{r.get('failure_type', 'none')}|{r['risk_tier']}",
-            "g2": lambda r: f"{r['source']}|{r['type']}|{r['task_group']}",
+            "g0": lambda r: f"{r['source']}|{r['type']}|{r['task_group']}|{r.get('failure_type','none')}|{r['risk_tier']}|{r.get('resource_scarcity','ordinary')}|{r.get('episode_phase','early')}|{r.get('prior_admission_bin','0')}",
+            "g1": lambda r: f"{r['source']}|{r['type']}|{r['task_group']}|{r.get('failure_type','none')}|{r['risk_tier']}|{r.get('episode_phase','early')}",
+            "g2": lambda r: f"{r['source']}|{r['type']}|{r['task_group']}|{r.get('resource_scarcity','ordinary')}",
             "g3": lambda r: f"{r['source']}|{r['type']}",
         }
         estimates = []
@@ -469,9 +474,10 @@ class AdmissionPolicyV2:
                     "risk_inc_ucb": 0.0, "risk_charge": 0.0,
                     "budget_before": budget_before, "budget_after": budget_before}
         candidates = [
-            ("g0", f"{opportunity.source}|{opportunity.type}|{opportunity.task_group}|{opportunity.failure_type}|{opportunity.risk_tier}|{opportunity.resource_scarcity}|{opportunity.boundary_status}"),
-            ("g1", f"{opportunity.source}|{opportunity.type}|{opportunity.task_group}|{opportunity.failure_type}|{opportunity.risk_tier}"),
-            ("g2", f"{opportunity.source}|{opportunity.type}|{opportunity.task_group}"),
+            # Protocol §7.1: g0(8) → g1(6) → g2(4) → g3(2)
+            ("g0", f"{opportunity.source}|{opportunity.type}|{opportunity.task_group}|{opportunity.failure_type}|{opportunity.risk_tier}|{opportunity.resource_scarcity}|{opportunity.episode_phase}|{opportunity.prior_admission_bin}"),
+            ("g1", f"{opportunity.source}|{opportunity.type}|{opportunity.task_group}|{opportunity.failure_type}|{opportunity.risk_tier}|{opportunity.episode_phase}"),
+            ("g2", f"{opportunity.source}|{opportunity.type}|{opportunity.task_group}|{opportunity.resource_scarcity}"),
             ("g3", f"{opportunity.source}|{opportunity.type}")]
         for depth, key in candidates:
             row = self._est.get(key)

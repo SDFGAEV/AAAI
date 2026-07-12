@@ -43,7 +43,7 @@ def _clone_frozen_store(src: str, dst: str) -> None:
         for name in files: os.link(os.path.join(root, name), os.path.join(target, name))
 
 # Per-round episodes
-N_ACCUM = 16   # shared candidate/evidence update episodes
+N_ACCUM = 12   # shared candidate/evidence update episodes (§19.1)
 N_CALIB = 4     # calibration/check episodes
 N_EVAL  = 8    # frozen evaluation (6 retention + 6 hard-transfer)
 

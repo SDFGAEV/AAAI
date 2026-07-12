@@ -47,3 +47,15 @@ def paired_hierarchical_bootstrap(rows: Sequence[Mapping], statistic: Callable[[
         return {"estimate": point, "low": float("nan"), "high": float("nan"), "replicates": len(finite)}
     return {"estimate": point, "low": float(np.quantile(finite, .025)),
             "high": float(np.quantile(finite, .975)), "replicates": len(finite)}
+
+def holm_correction(p_values: list[float, ...]) -> list[bool, ...]:
+    """Holm-Bonferroni correction (§22.2). Returns per-hypothesis rejection decisions."""
+    n = len(p_values)
+    indexed = sorted(enumerate(p_values), key=lambda x: x[1])
+    decisions = [False] * n
+    for k, (idx, p) in enumerate(indexed):
+        if p <= 0.05 / (n - k):
+            decisions[idx] = True
+        else:
+            break
+    return decisions

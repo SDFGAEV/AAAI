@@ -1,6 +1,6 @@
 """
-C-ACT: Contracted Adaptive Counterfactual Trust
-================================================
+C-ACT: Contextual Admission via Counterfactual Treatment Effects
+=================================================================
 
 A decision-time admission layer that certifies whether retrieved
 self-evolved knowledge is allowed to affect the next action.
