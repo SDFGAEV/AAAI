@@ -75,8 +75,11 @@ class CactMemory:
         self._use_thompson = True
         self._use_sanitizer = True
         self._use_decay = True
+        self._use_applicability = True  # E4: w/o Applicability ablation
 
         # Parse method name for ablation variants
+        if "NoApplicability" in method:
+            self._use_applicability = False
         if "NoContract" in method or "no_Contract" in method:
             self._use_contract = False
         if "NoAdaptiveTau" in method or "no_AdaptiveTau" in method:
@@ -814,7 +817,8 @@ class CactMemory:
                 raise FileNotFoundError(
                     f"frozen {self.method} requires a readable v2 policy artifact: {self.requested_method}")
             applicable = True
-            if contract:
+            # E4 w/o Applicability ablation: skip knowledge-specific boundary check (§18)
+            if self._use_applicability and contract:
                 contract_obj = self._controller._dict_to_contract(contract)
                 scope_ok = self._checker.check_scope_match(contract_obj, context)
                 pre_ok = self._checker.check_preconditions(contract_obj, state)[0]

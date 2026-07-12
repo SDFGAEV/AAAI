@@ -102,8 +102,36 @@ def main():
         full_policy, pointwise_policy = direct_policies["full"], direct_policies["pointwise"]
         selection_source = "e2_direct_matched_risk"
     policy = full_policy
+    # Global-Risk Only (§18): select κ using overall constraints (no per-stratum)
+    from cact.protocol_v2 import DEFAULT_KAPPAS, DEFAULT_EPS_ABS, DEFAULT_EPS_INC
+    global_policy = None
+    best_cov = -1.0
+    for k in DEFAULT_KAPPAS:
+        cov_g = 0; hrr_g = 0; eahr_g = 0; n_g = 0
+        for e in full_policy.estimates.values():
+            n = int(e.get("n", 0))
+            if n < 20: continue
+            cov_g += n
+            hrr_g += float(e.get("risk_abs", 0.5)) * n
+            eahr_g += float(e.get("risk_inc", 0.5)) * n
+            n_g += n
+        if not n_g: continue
+        hrr_g /= n_g; eahr_g /= n_g
+        if hrr_g <= DEFAULT_EPS_ABS and eahr_g <= DEFAULT_EPS_INC and cov_g > best_cov:
+            best_cov = cov_g
+            global_policy = PolicyCalibrator(kappas=(k,)).select(select_est)
+            global_policy.kappa = k  # retain overall-only kappa
+    if global_policy is not None:
+        direct_policies["global_only"] = global_policy
+
     artifact = policy.to_dict()
-    artifact["families"] = {"full": full_policy.to_dict(), "pointwise": pointwise_policy.to_dict()}
+    families = {"full": full_policy.to_dict(), "pointwise": pointwise_policy.to_dict()}
+    if "global_only" in direct_policies:
+        families["global_only"] = direct_policies["global_only"].to_dict()
+        global_out = Path(args.out).with_stem(Path(args.out).stem + "_global_only")
+        global_out.parent.mkdir(parents=True, exist_ok=True)
+        global_out.write_text(json.dumps(direct_policies["global_only"].to_dict(), indent=2, sort_keys=True), encoding="utf-8")
+    artifact["families"] = families
     artifact["family_selection"] = {"full": "independent_select_audit", "pointwise": "independent_select_audit"}
     artifact.update({
         "schema_version": "cact.v2.policy",

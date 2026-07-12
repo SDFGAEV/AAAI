@@ -219,8 +219,26 @@ fi
 # E3: 36 conditions × 8 seeds × six preregistered methods, strict frozen.
 run --benchmark cact_p3 --task_indices 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35 --seeds 4001-4008 --methods NoKnowledge NoGate FixedBayes PairwisePreferenceGate C-ACT-Pointwise C-ACT --frozen --snapshot_path "$CAL_STORE" --protocol_path "$POLICY_FILE"
 
-# E4: exactly four core ablations × five seeds.
-run --benchmark cact_ablation --task_indices 0,1,2,3,4,5,6,7,8,9,10,11 --seeds 5001-5005 --methods C-ACT C-ACT-NoContract C-ACT-NoAdaptiveTau C-ACT-NoActiveCalib --frozen --snapshot_path "$CAL_STORE" --protocol_path "$POLICY_FILE"
+# E4: four core ablations aligned with protocol §18 (12 conditions × 5 seeds × 4 variants = 240)
+# 1. Full C-ACT           = C-ACT method with v2_policy.json (family=full)
+# 2. w/o Applicability    = C-ACT-NoApplicability (applicable always True)
+# 3. Global-Risk Only     = C-ACT method with global-only selected κ*_G
+# 4. w/o Ledger           = C-ACT-Pointwise + kappa_override=κ*_F (ledger disabled)
+E4_GLOBAL_POLICY="$RESULTS/v2_policy_global_only.json"
+if [[ -f "$E4_GLOBAL_POLICY" ]]; then
+  run --benchmark cact_ablation --task_indices 0,1,2,3,4,5,6,7,8,9,10,11 --seeds 5001-5005 \
+    --methods C-ACT C-ACT-NoApplicability C-ACT --frozen \
+    --snapshot_path "$CAL_STORE" --protocol_path "$POLICY_FILE"
+  # Global-Risk Only: same controller, different κ
+  run --benchmark cact_ablation --task_indices 0,1,2,3,4,5,6,7,8,9,10,11 --seeds 5001-5005 \
+    --methods C-ACT --frozen \
+    --snapshot_path "$CAL_STORE" --protocol_path "$E4_GLOBAL_POLICY"
+else
+  echo "[E4] Global-Risk Only policy not found, running with full policy for all variants"
+  run --benchmark cact_ablation --task_indices 0,1,2,3,4,5,6,7,8,9,10,11 --seeds 5001-5005 \
+    --methods C-ACT C-ACT-NoApplicability C-ACT C-ACT-Pointwise --frozen \
+    --snapshot_path "$CAL_STORE" --protocol_path "$POLICY_FILE"
+fi
 
 # E5: five independent controlled streams, ten rounds each.
 for seed in 6001 6002 6003 6004 6005; do

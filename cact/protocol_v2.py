@@ -16,8 +16,9 @@ MAIN_METHODS = ("NoKnowledge", "NoGate", "FixedBayes",
                 "PairwisePreferenceGate", "C-ACT-Pointwise", "C-ACT")
 ONLINE_MAIN_METHODS = ("Online-NoGate", "Online-FixedBayes",
                        "Online-C-ACT-Pointwise", "Online-C-ACT")
-E4_ABLATION_METHODS = ("C-ACT", "C-ACT-NoContract",
-                       "C-ACT-NoAdaptiveTau", "C-ACT-NoActiveCalib")
+E4_ABLATION_METHODS = ("C-ACT", "C-ACT-NoApplicability")
+# Note: Global-Risk Only and w/o Ledger are controller-family/kappa variants
+# selected at calibration time, not separate method names.
 TRAIN_CALIB_METHODS = ("C-ACT",)
 LEGACY_METHODS = ("XENON-Original", "BankCuration", "LifecycleSuccessGate",
                   "SuccessLifecycle", "ACT", "C-ACT-Full", "OracleGate",
@@ -457,10 +458,16 @@ class AdmissionPolicyV2:
         return self._budget_by_episode.setdefault(episode_id, self.initial_budget)
     def decide(self, opportunity: Opportunity, applicable: bool = True) -> Dict[str, Any]:
         budget_before = self._budget_before(opportunity.episode_id)
+        base = {"episode_id": opportunity.episode_id,
+                "opportunity_id": opportunity.opportunity_id,
+                "candidate_id": opportunity.knowledge_id,
+                "applicable": bool(applicable)}
         if not opportunity.eligible or not applicable:
-            return {"decision":"FALLBACK", "reason":"ineligible_or_inapplicable", "depth":None,
-                    "budget_before": budget_before, "budget_after": budget_before,
-                    "risk_charge": 0.0}
+            return {**base,
+                    "decision":"FALLBACK", "reason":"ineligible_or_inapplicable", "depth":None,
+                    "support_level": None, "benefit_lcb": 0.0, "risk_abs_ucb": 0.0,
+                    "risk_inc_ucb": 0.0, "risk_charge": 0.0,
+                    "budget_before": budget_before, "budget_after": budget_before}
         candidates = [
             ("g0", f"{opportunity.source}|{opportunity.type}|{opportunity.task_group}|{opportunity.failure_type}|{opportunity.risk_tier}|{opportunity.resource_scarcity}|{opportunity.boundary_status}"),
             ("g1", f"{opportunity.source}|{opportunity.type}|{opportunity.task_group}|{opportunity.failure_type}|{opportunity.risk_tier}"),
@@ -487,16 +494,22 @@ class AdmissionPolicyV2:
             else:
                 budget_after = budget_before - charge if self.use_ledger else budget_before
                 self._budget_by_episode[opportunity.episode_id] = budget_after
-                return {"decision":"ADMIT", "reason":"admit", "depth":depth, "key":key,
+                return {**base,
+                        "decision":"ADMIT", "reason":"admit", "depth":depth,
+                        "support_level": depth, "key":key,
                         "benefit_lcb":benefit, "risk_abs_ucb":abs_risk,
                         "risk_inc_ucb":inc_risk, "risk_charge": charge,
                         "budget_before": budget_before, "budget_after": budget_after}
             if benefit >= self.policy.delta and abs_risk <= self.policy.eps_abs and inc_risk <= self.policy.eps_inc:
-                return {"decision":"FALLBACK", "reason":reason, "depth":depth, "key":key,
+                return {**base,
+                        "decision":"FALLBACK", "reason":reason, "depth":depth,
+                        "support_level": depth, "key":key,
                         "benefit_lcb":benefit, "risk_abs_ucb":abs_risk,
                         "risk_inc_ucb":inc_risk, "risk_charge": charge,
                         "budget_before": budget_before, "budget_after": budget_before}
-        return {"decision":"FALLBACK", "reason":"unsupported", "depth":None,
-                "budget_before": budget_before, "budget_after": budget_before,
-                "risk_charge": 0.0}
+        return {**base,
+                "decision":"FALLBACK", "reason":"unsupported", "depth":None,
+                "support_level": None, "benefit_lcb": 0.0, "risk_abs_ucb": 0.0,
+                "risk_inc_ucb": 0.0, "risk_charge": 0.0,
+                "budget_before": budget_before, "budget_after": budget_before}
 

@@ -98,6 +98,29 @@ def select(rows, eps_inc=0.02, eps_abs=0.10):
                                   "mean_delta_success": best[1],
                                   "mean_incremental_eahr": best[4], "mean_hrr": best[5],
                                   "cells": len(cells)}
+    # Global-Risk Only (§18): same 7 Full rollouts, overall constraints only.
+    gr_candidates = []
+    for kappa in KAPPAS:
+        method = f"Full:{kappa:g}"
+        all_hrr, all_eahr, all_delta, all_cov = [], [], [], []
+        for methods in cells.values():
+            base_row = methods["Base"]
+            cand_row = methods[method]
+            all_hrr.append(float(cand_row["hrr"]))
+            all_eahr.append(float(cand_row["eahr"]) - float(base_row["eahr"]))
+            all_delta.append(float(cand_row["success"]) - float(base_row["success"]))
+            all_cov.append(float(cand_row["coverage"]))
+        m_hrr = sum(all_hrr) / len(all_hrr)
+        m_eahr = sum(all_eahr) / len(all_eahr)
+        if m_hrr <= eps_abs and m_eahr <= eps_inc:
+            gr_candidates.append((sum(all_cov)/len(all_cov), sum(all_delta)/len(all_delta),
+                                  -kappa, kappa, m_eahr, m_hrr))
+    if gr_candidates:
+        best_gr = max(gr_candidates)
+        chosen["global_only"] = {"kappa": best_gr[3], "mean_coverage": best_gr[0],
+                                 "mean_delta_success": best_gr[1],
+                                 "mean_incremental_eahr": best_gr[4], "mean_hrr": best_gr[5],
+                                 "cells": len(cells)}
     return chosen
 
 def main():
