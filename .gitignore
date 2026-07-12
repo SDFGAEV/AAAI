@@ -35,3 +35,6 @@ checkpoints/
 ckpt/
 *.tar.gz
 cact_ckpt/
+.codex_xenon_patch.py
+.codex_xenon_patch2.py
+.xenon_patch_probe
