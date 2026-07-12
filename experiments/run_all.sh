@@ -2,6 +2,9 @@
 set -euo pipefail
 PROJ="$(cd "$(dirname "$0")/.." && pwd)"
 PYTHON="${PYTHON:-python3}"
+# Prefer the venv python if it exists (avoids fastapi/transformers import errors
+# when the VLM pool starts under system python).
+if [ -x "$PROJ/venv310/bin/python3" ]; then PYTHON="$PROJ/venv310/bin/python3"; fi
 WORKERS="${CACT_WORKERS:-4}"
 VLM_PORT="${CACT_VLM_PORT:-12345}"
 VLM_PORTS="${CACT_VLM_PORTS:-}"
