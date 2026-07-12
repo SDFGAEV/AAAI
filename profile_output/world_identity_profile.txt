@@ -1,0 +1,22 @@
+﻿Sun Jul 12 22:08:34 2026    F:\open-world agent\C-ACT\profile_output\world_identity.prof
+
+         34367 function calls (34079 primitive calls) in 0.040 seconds
+
+   Ordered by: cumulative time
+   List reduced from 451 to 12 due to restriction <12>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+     21/1    0.000    0.000    0.040    0.040 {built-in method builtins.exec}
+        1    0.000    0.000    0.040    0.040 F:\open-world agent\C-ACT\experiments\collect_world_snapshots.py:1(<module>)
+     30/7    0.000    0.000    0.029    0.004 <frozen importlib._bootstrap>:1349(_find_and_load)
+     30/7    0.000    0.000    0.029    0.004 <frozen importlib._bootstrap>:1304(_find_and_load_unlocked)
+     26/8    0.000    0.000    0.027    0.003 <frozen importlib._bootstrap>:911(_load_unlocked)
+     19/8    0.000    0.000    0.027    0.003 <frozen importlib._bootstrap_external>:1017(exec_module)
+    61/15    0.000    0.000    0.023    0.002 <frozen importlib._bootstrap>:480(_call_with_frames_removed)
+        1    0.000    0.000    0.018    0.018 F:\open-world agent\C-ACT\experiments\collect_world_snapshots.py:53(main)
+       19    0.000    0.000    0.012    0.001 <frozen importlib._bootstrap_external>:1090(get_code)
+       19    0.000    0.000    0.009    0.000 <frozen importlib._bootstrap_external>:1211(get_data)
+        7    0.000    0.000    0.008    0.001 D:\python\Lib\argparse.py:1468(add_argument)
+        1    0.000    0.000    0.008    0.008 D:\python\Lib\argparse.py:1793(__init__)
+
+

@@ -21,8 +21,8 @@
 
 ## Remaining empirical blockers (intentional)
 
-1. The repository does not contain the sealed task-card registry required by the protocol. `cact_calib.yaml` has 12 generic entries and does not provide all required fields (template hash, generator version, inventory, constraints, predicate, trigger, budget, and randomization state) for a disjoint 8-task D_select/8-task D_audit design. `run_all.sh` now stops at M0 unless `CACT_TASK_CARDS` points to validated JSON/YAML cards.
-2. Real matched-risk E2 output still must be collected with the actual Minecraft/VLM stack and a `world_snapshot_manifest`; no synthetic table is accepted.
+1. The sealed task-card registry is now committed at `protocol_inputs/task_cards.json` (8 disjoint D_select and 8 D_audit cards) and validated at M0. The remaining blocker is empirical: the actual Minecraft/VLM stack must execute the registered cells before any paper result is claimed.
+2. Real matched-risk E2 output still must be collected with the actual Minecraft/VLM stack. XENON uses a seed-derived procedural snapshot identity; filesystem-backed backends may use a `world_snapshot_manifest`. No synthetic rollout table is accepted.
 3. Real E1c output still must contain 320 non-tied paired opportunities from sealed branches. The generator checks prefix identity, target reachability, snapshot identity, and observed outcomes.
 4. D_audit still requires externally supplied direct rollouts for the four selected methods and at least 200 sealed paired audit opportunities. The validator is present; the generator is deliberately not allowed to invent these artifacts.
 5. The complete protocol has not been executed on an Ubuntu host with Java 21, Minecraft, CUDA, and the target VLM. Local smoke tests are not evidence of scientific results.
@@ -41,7 +41,7 @@
 ## Deep-pass additions
 
 - Parallel execution now checkpoints only successful/skipped episodes and raises on any failed/timeout/error batch; a resume cannot silently skip a failed episode.
-- Frozen protocol runs can require a canonical `task_id|world_seed -> snapshot_hash` manifest. `run_all.sh` enables this requirement by default and passes the manifest into E3/E4; missing hashes fail closed.
+- Frozen protocol runs propagate a canonical `task_id|world_seed -> snapshot_hash` identity. XENON derives it from seed plus pinned generator provenance; filesystem-backed worlds use canonical save-tree hashes. Missing identities still fail closed when strict mode is explicitly enabled.
 - Hydra branch-prefix JSON is quoted as a string, preventing a trace from being parsed as a structured override.
 - E2 and D_audit validators now require run/store identifiers, return code, matched-cell identity, finite [0,1] metrics, and paired snapshot agreement.
 - The main episode process returns nonzero for reset, timeout, exception, or environment-logger failures; genuine task failure remains a recorded outcome rather than infrastructure success.
@@ -58,4 +58,4 @@ A remaining environment-level risk is that `preferred_spawn_biome` must be verif
 - `build_task_card_registry.py` regenerates the registry deterministically without reading outcomes.
 - `collect_world_snapshots.py` hashes real Minecraft save trees with a documented canonical-tree rule and refuses missing/empty worlds.
 - `run_e2_audit_rollouts.py` collects the four selected direct audit methods and invokes the real paired-branch collector for the >=200-row audit.
-- `setup_and_run.sh` checks dependencies, prepares the registry/manifest, enables real E2/E1c/D_audit collection, and delegates to `run_all.sh`. It still requires either an existing manifest or a real world-root template; no world state is invented.
+- `setup_and_run.sh` checks dependencies, prepares the registry and XENON procedural identity manifest (or a filesystem manifest when a world-root template is supplied), enables real E2/E1c/D_audit collection, and delegates to `run_all.sh`. It never invents rollout outcomes or labels.

@@ -722,7 +722,7 @@ class _MultiAgentEnv(gym.Env):
                 # Try to disconnect gracefully.
                 try:
                     comms.send_message(instance.client_socket, "<Disconnect/>".encode())
-                except:
+                except Exception:
                     pass
                 instance.client_socket.shutdown(socket.SHUT_RDWR)
                 instance.client_socket.close()

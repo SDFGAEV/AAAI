@@ -50,6 +50,8 @@ def validate_pairs(rows):
     for row in rows:
         reuse = row.get("reuse") if isinstance(row.get("reuse"), dict) else {}
         task = row.get("task_id", reuse.get("task_id")); seed = row.get("world_seed", reuse.get("world_seed"))
+        if task is None or seed is None:
+            raise ValueError(f"paired audit row lacks task_id/world_seed: {row.get('pair_id', 'unknown')}")
         row["snapshot_hash"] = str(row.get("snapshot_hash") or derive_snapshot_hash(task, seed))
         for branch in (row.get("reuse"), row.get("base")):
             if isinstance(branch, dict): branch["snapshot_hash"] = str(branch.get("snapshot_hash") or row["snapshot_hash"])

@@ -3,10 +3,24 @@ import argparse
 
 import numpy as np
 import requests
+import os
+from requests.adapters import HTTPAdapter
 from omegaconf import DictConfig
 
 from .image import img2base64, img_lst2base64
 from .thread import MultiThreadServerAPI
+
+_HTTP = requests.Session()
+_HTTP.mount("http://", HTTPAdapter(pool_connections=32, pool_maxsize=32, max_retries=0))
+_HTTP.mount("https://", HTTPAdapter(pool_connections=8, pool_maxsize=8, max_retries=0))
+
+
+def _headers() -> Dict[str, str]:
+    token = os.getenv("CACT_API_TOKEN", "")
+    return {"X-CACT-Token": token} if token else {}
+
+
+_HTTP.headers.update(_headers())
 
 
 class ServerAPI:
@@ -25,7 +39,7 @@ class ServerAPI:
 
     @staticmethod
     def _reset(server_cfg: DictConfig):
-        res = requests.get(
+        res = _HTTP.get(
             f"{server_cfg['url']}:{server_cfg['port']}/reset",
             timeout=600, # 10 minutes
         )
@@ -38,7 +52,7 @@ class ServerAPI:
         thread.start()
         return thread
 
-        # res = requests.get(
+        # res = _HTTP.get(
         #     f"{server_cfg['url']}:{server_cfg['port']}/reset",
         #     timeout=server_cfg["timeout"],
         # )
@@ -69,7 +83,7 @@ class ServerAPI:
             "hydra_path": hydra_path,
             "run_uuid": run_uuid,
         }
-        res = requests.post(
+        res = _HTTP.post(
             f"{server_cfg['url']}:{server_cfg['port']}/chat",
             json=data,
             timeout=server_cfg["timeout"],
@@ -104,7 +118,7 @@ class ServerAPI:
             "hydra_path": hydra_path,
             "run_uuid": run_uuid,
         }
-        res = requests.post(
+        res = _HTTP.post(
             f"{server_cfg['url']}:{server_cfg['port']}/chat",
             json=data,
             timeout=server_cfg["timeout"],
@@ -136,7 +150,7 @@ class ServerAPI:
             "hydra_path": hydra_path,
             "run_uuid": run_uuid,
         }
-        res = requests.post(
+        res = _HTTP.post(
             f"{server_cfg['url']}:{server_cfg['port']}/chat",
             json=data,
             timeout=server_cfg["timeout"],
@@ -176,7 +190,7 @@ class ServerAPI:
             "hydra_path": hydra_path,
             "run_uuid": run_uuid,
         }
-        res = requests.post(
+        res = _HTTP.post(
             f"{server_cfg['url']}:{server_cfg['port']}/chat",
             json=data,
             timeout=server_cfg["timeout"],
@@ -208,7 +222,7 @@ class ServerAPI:
             "hydra_path": hydra_path,
             "run_uuid": run_uuid,
         }
-        res = requests.post(
+        res = _HTTP.post(
             f"{server_cfg['url']}:{server_cfg['port']}/chat",
             json=data,
             timeout=server_cfg["timeout"],
@@ -254,7 +268,7 @@ class ServerAPI:
             "hydra_path": hydra_path,
             "run_uuid": run_uuid,
         }
-        res = requests.post(
+        res = _HTTP.post(
             f"{server_cfg['url']}:{server_cfg['port']}/chat",
             json=data,
             timeout=server_cfg["timeout"],
@@ -301,7 +315,7 @@ class ServerAPI:
             "hydra_path": hydra_path,
             "run_uuid": run_uuid,
         }
-        res = requests.post(
+        res = _HTTP.post(
             f"{server_cfg['url']}:{server_cfg['port']}/chat",
             json=data,
             timeout=server_cfg["timeout"],
@@ -338,7 +352,7 @@ class ServerAPI:
     def shutdown_server(
         url: str, port: int, timeout: int = 60
     ):
-        res = requests.post(
+        res = _HTTP.post(
             f"{url}:{port}/shutdown",  # Use the /shutdown endpoint
             timeout=timeout,
         )

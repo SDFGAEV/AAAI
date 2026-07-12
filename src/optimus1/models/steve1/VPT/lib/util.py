@@ -45,7 +45,7 @@ class FanInInitReLULayer(nn.Module):
         layer_type: str = "conv",
         init_scale: int = 1,
         batch_norm: bool = False,
-        batch_norm_kwargs: Dict = {},
+        batch_norm_kwargs: Optional[Dict] = None,
         group_norm_groups: Optional[int] = None,
         layer_norm: bool = False,
         use_activation=True,
@@ -53,6 +53,7 @@ class FanInInitReLULayer(nn.Module):
         **layer_kwargs,
     ):
         super().__init__()
+        batch_norm_kwargs = dict(batch_norm_kwargs or {})
 
         # Normalization
         self.norm = None

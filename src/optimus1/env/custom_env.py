@@ -41,7 +41,7 @@ class CustomBaseEnvSpec(HumanSurvival):
         inventory: Sequence[dict] = (),
         preferred_spawn_biome: str = "plains",
     ) -> None:
-        self.inventory = inventory  # Used by minerl.util.docs to construct Sphinx docs.
+        self.inventory = tuple(inventory or ())  # immutable; prevents cross-episode mutation
         self.preferred_spawn_biome = preferred_spawn_biome
         self.demo_server_experiment_name = demo_server_experiment_name
         super().__init__(
@@ -178,17 +178,20 @@ class CustomEnvSpec(CustomBaseEnvSpec):
     def __init__(
         self,
         env_name: str,
-        max_mintues: float = 2.0,
+        max_minutes: float = 2.0,
         prefer_biome: str = "forest",  # https://minecraft.fandom.com/wiki/Biome#Biome_IDs
-        initial_inventory=[],
+        initial_inventory=None,
+        max_mintues: float | None = None,  # backward-compatible alias
         world_seed: int = 0,
     ) -> None:
+        if max_mintues is not None:
+            max_minutes = max_mintues
         super().__init__(
             name=env_name,
             demo_server_experiment_name=env_name,
             max_episode_steps=600 * MINUTE
-            if max_mintues == -1
-            else max_mintues * MINUTE,  # type: ignore
+            if max_minutes == -1
+            else max_minutes * MINUTE,  # type: ignore
             preferred_spawn_biome=prefer_biome,
             inventory=initial_inventory,
         )

@@ -22,10 +22,11 @@ class CnnBasicBlock(nn.Module):
         inchan: int,
         init_scale: float = 1,
         log_scope="",
-        init_norm_kwargs: Dict = {},
+        init_norm_kwargs: Optional[Dict] = None,
         **kwargs,
     ):
         super().__init__()
+        init_norm_kwargs = dict(init_norm_kwargs or {})
         self.inchan = inchan
         s = math.sqrt(init_scale)
         self.conv0 = FanInInitReLULayer(
@@ -75,11 +76,12 @@ class CnnDownStack(nn.Module):
         pool: bool = True,
         post_pool_groups: Optional[int] = None,
         log_scope: str = "",
-        init_norm_kwargs: Dict = {},
+        init_norm_kwargs: Optional[Dict] = None,
         first_conv_norm=False,
         **kwargs,
     ):
         super().__init__()
+        init_norm_kwargs = dict(init_norm_kwargs or {})
         self.inchan = inchan
         self.outchan = outchan
         self.pool = pool
@@ -151,12 +153,14 @@ class ImpalaCNN(nn.Module):
         chans: List[int],
         outsize: int,
         nblock: int,
-        init_norm_kwargs: Dict = {},
-        dense_init_norm_kwargs: Dict = {},
+        init_norm_kwargs: Optional[Dict] = None,
+        dense_init_norm_kwargs: Optional[Dict] = None,
         first_conv_norm=False,
         **kwargs,
     ):
         super().__init__()
+        init_norm_kwargs = dict(init_norm_kwargs or {})
+        dense_init_norm_kwargs = dict(dense_init_norm_kwargs or {})
         h, w, c = inshape
         curshape = (c, h, w)
         self.stacks = nn.ModuleList()

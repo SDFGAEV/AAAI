@@ -1,11 +1,39 @@
 import base64
+import binascii
 import logging
 import os
+import re
 from typing import Any, Dict, List
 
-import shortuuid
+try:
+    import shortuuid
+except ModuleNotFoundError:  # minimal fallback for lean server images
+    import uuid
+
+    class _ShortUUID:
+        @staticmethod
+        def uuid():
+            return uuid.uuid4().hex
+
+    shortuuid = _ShortUUID()
 
 logger = logging.getLogger(__name__)
+_MAX_IMAGE_BYTES = int(os.getenv("CACT_MAX_IMAGE_BYTES", str(8 * 1024 * 1024)))
+
+
+def _safe_component(value: str, default: str = "item") -> str:
+    value = re.sub(r"[^A-Za-z0-9_.-]", "_", str(value))[:128]
+    return value or default
+
+
+def _decode_image(value: str) -> bytes:
+    try:
+        data = base64.b64decode(value, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise ValueError("invalid base64 image") from exc
+    if len(data) > _MAX_IMAGE_BYTES:
+        raise ValueError("image exceeds CACT_MAX_IMAGE_BYTES")
+    return data
 
 
 def base64lst2img_path(base64_lst: List[str] | None, image_root: str):
@@ -27,7 +55,7 @@ def base64lst2img_path(base64_lst: List[str] | None, image_root: str):
 
     for idx, image_byte in enumerate(base64_lst):
         uuid = shortuuid.uuid()
-        imgdata = base64.b64decode(image_byte)
+        imgdata = _decode_image(image_byte)
         image_file = os.path.join(image_root, f"{uuid}_{idx}.jpg")
 
         with open(image_file, "wb") as f:
@@ -58,12 +86,12 @@ def base64_to_image(
 
     """
     os.makedirs(image_root, exist_ok=True)
-    task = task.replace(" ", "_")
+    task = _safe_component(task, "task")
     image = rgb_images[-1]
     uuid = shortuuid.uuid()[:5]
 
     image_byte = image["image"]
-    imgdata = base64.b64decode(image_byte)
+    imgdata = _decode_image(image_byte)
     image_file = os.path.join(image_root, f"{task}_{uuid}_{step}.jpg")
 
     with open(image_file, "wb") as f:
@@ -85,7 +113,7 @@ def base64_to_image2(
 
     image = rgb_images[-1]  # 获取最后一张图像的数据
     image_byte = image["image"]
-    imgdata = base64.b64decode(image_byte)
+    imgdata = _decode_image(image_byte)
 
     # 构建文件名
     if "yaw" in image and "pitch" in image:

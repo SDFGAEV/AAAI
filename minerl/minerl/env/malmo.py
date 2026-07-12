@@ -31,6 +31,7 @@ from enum import IntEnum
 import shutil
 import socket
 import struct
+import select
 import collections
 import subprocess
 import sys
@@ -252,7 +253,7 @@ class InstanceManager:
                 time.sleep(InstanceManager.KEEP_ALIVE_PYRO_FREQUENCY)
                 try:
                     keep_alive_proxy.call()
-                except:
+                except Exception:
                     bad_insts = [inst for inst in cls._instance_pool if inst.owner == client_pid]
                     for inst in bad_insts:
                         inst.close()
@@ -432,9 +433,22 @@ class MinecraftInstance(object):
             client_ready = False
             server_ready = False
 
+            startup_timeout = float(os.environ.get("MINERL_STARTUP_TIMEOUT", "180"))
+            deadline = time.monotonic() + startup_timeout
             while True:
+                if time.monotonic() >= deadline:
+                    try:
+                        self.minecraft_process.kill()
+                    except psutil.NoSuchProcess:
+                        pass
+                    raise TimeoutError(f"Minecraft startup timed out after {startup_timeout:.1f}s")
                 mine_log_encoding = locale.getpreferredencoding(False)
-                line = self.minecraft_process.stdout.readline().decode(mine_log_encoding)
+                stdout = self.minecraft_process.stdout
+                if sys.platform.startswith("linux") and stdout is not None:
+                    ready, _, _ = select.select([stdout], [], [], min(1.0, max(0.0, deadline - time.monotonic())))
+                    if not ready:
+                        continue
+                line = stdout.readline().decode(mine_log_encoding) if stdout is not None else b""
 
                 # Check for failures and print useful messages!
                 _check_for_launch_errors(line)
@@ -655,12 +669,10 @@ class MinecraftInstance(object):
             self.running = False
             self._starting = False
 
-            # Wait for the process to start.
-            time.sleep(1)
-
-            if self._kill_minecraft_via_malmoenv(self.host, self.port):
-                # Let the minecraft process term on its own terms.
-                time.sleep(2)
+            if self.minecraft_process is not None and self.minecraft_process.is_running():
+                time.sleep(float(os.environ.get("MINERL_KILL_GRACE", "0.5")))
+                if self._kill_minecraft_via_malmoenv(self.host, self.port):
+                    time.sleep(float(os.environ.get("MINERL_EXIT_GRACE", "1.0")))
 
             # Now lets try and end the process if anything is laying around
             try:
@@ -799,7 +811,7 @@ def launch_instance_manager():
         print("Removing the performance directory!")
         try:
             shutil.rmtree(InstanceManager.STATUS_DIR)
-        except:
+        except Exception:
             pass
         finally:
             if not os.path.exists(InstanceManager.STATUS_DIR):

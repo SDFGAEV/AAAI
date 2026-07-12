@@ -42,8 +42,32 @@ The release runner validates sealed task cards before spending GPU time. Set
 `CACT_TASK_CARDS` to a whitespace-separated list of JSON/YAML card files (or
 set `CACT_REQUIRE_TASK_CARDS=0` only for a non-claiming dry run). E2 additionally
 requires `CACT_WORLD_SNAPSHOT_MANIFEST`, and E1c/D_audit require real sealed
-artifacts; these gates must not be bypassed for paper results.
+artifacts; these gates must not be bypassed for paper results. XENON procedural
+mode does not require a pre-existing save manifest; it records a seed-derived
+identity with generator provenance.
 
 For a VLM pool, set `CACT_GPUS=0,1,2,3`. The runner exports the corresponding
 ports to E5 via `--vlm_ports`; do not launch a second server on those ports.
-For frozen E3/E4 runs, the same `CACT_WORLD_SNAPSHOT_MANIFEST` is required by default; its keys must be `task_id|world_seed`, and each hash is propagated into the episode logs.
+For frozen E3/E4 runs, the same procedural identity (or filesystem manifest hash)
+is propagated into episode logs. All methods in a matched cell must use the same identity.
+
+
+## Runtime security and Minecraft lifecycle
+
+The VLM service binds to 127.0.0.1 by default. A non-loopback bind is refused
+unless CACT_API_TOKEN is set. Recommended server settings:
+
+~~~bash
+export CACT_HOST=127.0.0.1
+export CACT_API_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+export CACT_HTTP_MAX_CONCURRENCY=64
+export CACT_MAX_REQUEST_BYTES=$((16*1024*1024))
+export CACT_MAX_IMAGE_BYTES=$((8*1024*1024))
+export MINERL_STARTUP_TIMEOUT=180
+export MINERL_KILL_GRACE=0.5
+export MINERL_EXIT_GRACE=1.0
+~~~
+
+MineRL startup uses a bounded Linux log wait and kills the process group on
+failure. The batch proxy uses a threaded local server and event-based waiting;
+it no longer serializes concurrent workers or busy-waits at 5 ms intervals.

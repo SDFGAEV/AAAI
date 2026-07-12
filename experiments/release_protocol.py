@@ -39,7 +39,14 @@ def main():
            ROOT/"experiments/e2_direct_select.py", ROOT/"experiments/run_e2_select_rollouts.py",
            ROOT/"experiments/generate_pair_train.py", ROOT/"experiments/build_task_card_registry.py", ROOT/"experiments/collect_world_snapshots.py",
            ROOT/"experiments/run_e2_audit_rollouts.py", ROOT/"experiments/validate_e2_audit.py", ROOT/"experiments/world_identity.py",
-           ROOT/"experiments/online_runner.py",
+           ROOT/"experiments/online_runner.py", ROOT/"experiments/batch_proxy.py",
+           ROOT/"app.py", ROOT/"src/optimus1/util/server_api.py",
+           ROOT/"src/optimus1/server/api/utils.py", ROOT/"src/optimus1/env/__init__.py",
+           ROOT/"src/optimus1/env/custom_env.py", ROOT/"minerl/minerl/env/malmo.py",
+           ROOT/"src/optimus1/models/steve1/embed_conditioned_policy.py",
+           ROOT/"src/optimus1/models/steve1/VPT/lib/policy.py",
+           ROOT/"src/optimus1/models/steve1/VPT/lib/impala_cnn.py",
+           ROOT/"src/optimus1/models/steve1/VPT/lib/util.py", ROOT/"minerl/minerl/env/_multiagent.py",
            ROOT/"experiments/release_protocol.py", ROOT/"experiments/health_check.py",
            ROOT/"tests/test_controller_ledger.py",
            ROOT/"docs/UBUNTU_PERFORMANCE.md"]
@@ -51,6 +58,9 @@ def main():
         if path.exists(): benchmarks[name] = {"hash":sha256(path),"tasks":parse_tasks(path)}
     (out/"task_registry.json").write_text(json.dumps({"benchmarks":benchmarks},indent=2,ensure_ascii=False),encoding="utf-8")
     (out/"substrate_manifest.json").write_text(json.dumps({"schema_version":"cact.substrate.v1","commit":"unknown","benchmarks":{k:v["hash"] for k,v in benchmarks.items()},"planner":"same base planner","retriever":"fixed top-1","environment":"CACTTaskEnv-v0"},indent=2),encoding="utf-8")
-    with (out/"deviation_log.csv").open("w",newline="",encoding="utf-8") as f: csv.writer(f).writerow(["date","proposer","stage","original_protocol","change","reason","outcome_seen","scope","approver"])
+    deviation_log = out / "deviation_log.csv"
+    if not deviation_log.exists():
+        with deviation_log.open("w", newline="", encoding="utf-8") as f:
+            csv.writer(f).writerow(["date","proposer","stage","original_protocol","change","reason","outcome_seen","scope","approver"])
     print(json.dumps({"release":str(out),"files":len(manifest["hashes"]),"benchmarks":len(benchmarks)},ensure_ascii=False))
 if __name__ == "__main__": main()

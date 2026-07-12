@@ -11,7 +11,7 @@ Usage (auto-started by parallel_runner.py):
 """
 
 import json, time, threading, sys, os, argparse
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.request import Request, urlopen
 from urllib.error import URLError
 
@@ -29,7 +29,7 @@ class BatchProxy:
 
     def submit(self, request_data: dict) -> dict:
         """Submit a single VLM request. Blocks until batch result is ready."""
-        result_holder = {"ready": False, "response": None}
+        result_holder = {"event": threading.Event(), "response": None}
         with self._lock:
             self._queue.append((request_data, result_holder))
             self._request_count += 1
@@ -38,9 +38,8 @@ class BatchProxy:
                 threading.Timer(self.batch_window, self._flush).start()
 
         # Wait for result (with timeout)
-        deadline = time.time() + 30
-        while not result_holder["ready"] and time.time() < deadline:
-            time.sleep(0.005)
+        if not result_holder["event"].wait(timeout=30):
+            return {"error": "batch proxy timeout"}
         return result_holder["response"]
 
     def _flush(self):
@@ -57,13 +56,13 @@ class BatchProxy:
         if len(requests_data) == 1:
             resp = self._post_single(requests_data[0])
             result_holders[0]["response"] = resp
-            result_holders[0]["ready"] = True
+            result_holders[0]["event"].set()
         else:
             self._batch_count += 1
             responses = self._post_batch(requests_data)
             for i, rh in enumerate(result_holders):
                 rh["response"] = responses[i] if i < len(responses) else {"error": "missing"}
-                rh["ready"] = True
+                rh["event"].set()
 
         # Restart timer if new requests arrived during flush.
         # Set _timer_running BEFORE checking queue to avoid TOCTOU race
@@ -78,8 +77,10 @@ class BatchProxy:
         """Forward a single request to /chat."""
         try:
             body = json.dumps(data).encode()
-            req = Request(f"{self.vlm_url}/chat", body,
-                         headers={"Content-Type": "application/json"})
+            headers = {"Content-Type": "application/json"}
+            if os.getenv("CACT_API_TOKEN"):
+                headers["X-CACT-Token"] = os.environ["CACT_API_TOKEN"]
+            req = Request(f"{self.vlm_url}/chat", body, headers=headers)
             with urlopen(req, timeout=120) as resp:
                 return json.loads(resp.read())
         except Exception as e:
@@ -89,8 +90,10 @@ class BatchProxy:
         """Send batch to /batch_chat."""
         try:
             body = json.dumps(data_list).encode()
-            req = Request(f"{self.vlm_url}/batch_chat", body,
-                         headers={"Content-Type": "application/json"})
+            headers = {"Content-Type": "application/json"}
+            if os.getenv("CACT_API_TOKEN"):
+                headers["X-CACT-Token"] = os.environ["CACT_API_TOKEN"]
+            req = Request(f"{self.vlm_url}/batch_chat", body, headers=headers)
             with urlopen(req, timeout=120) as resp:
                 return json.loads(resp.read())
         except Exception as e:
@@ -109,7 +112,14 @@ class ProxyHandler(BaseHTTPRequestHandler):
     proxy: BatchProxy = None
 
     def do_POST(self):
-        length = int(self.headers.get("Content-Length", 0))
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except ValueError:
+            self._respond(400, {"error": "invalid content length"})
+            return
+        if length < 0 or length > int(os.getenv("CACT_MAX_REQUEST_BYTES", str(16 * 1024 * 1024))):
+            self._respond(413, {"error": "request too large"})
+            return
         body = self.rfile.read(length)
         try:
             data = json.loads(body)
@@ -145,7 +155,8 @@ def run_proxy(port: int, vlm_url: str, batch_window: float = 0.05):
     proxy = BatchProxy(vlm_url, batch_window)
     ProxyHandler.proxy = proxy
 
-    server = HTTPServer(("127.0.0.1", port), ProxyHandler)
+    server = ThreadingHTTPServer(("127.0.0.1", port), ProxyHandler)
+    server.daemon_threads = True
     print(f"[BatchProxy] Listening on 127.0.0.1:{port}, forwarding to {vlm_url}")
     try:
         server.serve_forever()

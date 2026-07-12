@@ -166,7 +166,7 @@ if [[ -z "${E2_DIRECT_JSONL:-}" ]]; then
   "$PYTHON" experiments/run_e2_select_rollouts.py \
     --benchmark cact_p3 --task-indices "${CACT_E2_TASK_INDICES:-0,1,2,3,4,5,6,7}" \
     --seeds "${CACT_E2_SEEDS:-3001-3008}" --workers "$WORKERS" --vlm-port "$VLM_PORT" \
-    --snapshot-path "$CAL_STORE" --world-snapshot-manifest "${CACT_WORLD_SNAPSHOT_MANIFEST:?set CACT_WORLD_SNAPSHOT_MANIFEST}" \
+    --snapshot-path "$CAL_STORE" \
     --protocol-path "$PROVISIONAL_POLICY" --out "$E2_DIRECT_JSONL"
 fi
 "$PYTHON" experiments/e2_direct_select.py --input "$E2_DIRECT_JSONL" \
@@ -186,7 +186,6 @@ if (( ${#PAIR_FILES[@]} == 0 )); then
   "$PYTHON" experiments/generate_pair_train.py \
     --pilot-task-indices "${CACT_E1C_TASK_INDICES:-0,1,2,3,4,5,6,7,8,9,10,11}" \
     --pilot-seeds "${CACT_E1C_SEEDS:-2101-2115}" --workers 1 \
-    --world-snapshot-manifest "${CACT_WORLD_SNAPSHOT_MANIFEST:?set CACT_WORLD_SNAPSHOT_MANIFEST}" \
     --out "$RESULTS/cact_pair_train/generated/pairs.jsonl"
   PAIR_FILES=("$RESULTS/cact_pair_train/generated/pairs.jsonl")
 fi
@@ -212,7 +211,6 @@ if [[ "${CACT_REQUIRE_E2_AUDIT:-1}" == "1" ]]; then
     "$PYTHON" experiments/run_e2_audit_rollouts.py \
       --benchmark cact_p3 --task-indices "${CACT_DAUDIT_TASK_INDICES:-8,9,10,11,12,13,14,15}" \
       --seeds "${CACT_DAUDIT_SEEDS:-3011-3018}" --snapshot-path "$CAL_STORE" \
-      --world-snapshot-manifest "${CACT_WORLD_SNAPSHOT_MANIFEST:?set CACT_WORLD_SNAPSHOT_MANIFEST}" \
       --protocol-path "$POLICY_FILE" --policy-path "$POLICY_FILE" \
       --out-rollouts "$E2_AUDIT_JSONL" --out-pairs "$E2_AUDIT_PAIRS_JSONL" --workers "$WORKERS"
   fi

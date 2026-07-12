@@ -4,12 +4,17 @@ import signal
 import time
 import argparse
 import base64
+import binascii
+import hmac
+import re
 import random
+from pathlib import Path
 import numpy as np
 import torch
 import transformers
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 import uvicorn
 
 from optimus1.server.agent import AgentFactory
@@ -20,6 +25,41 @@ import time
 
 app = FastAPI()
 agent = None
+_PROJECT_ROOT = Path(__file__).resolve().parent
+_API_TOKEN = os.getenv("CACT_API_TOKEN", "")
+_MAX_REQUEST_BYTES = int(os.getenv("CACT_MAX_REQUEST_BYTES", str(16 * 1024 * 1024)))
+_MAX_RETRIES = max(1, int(os.getenv("CACT_MAX_RETRIES", "5")))
+
+
+@app.middleware("http")
+async def _request_guard(request: Request, call_next):
+    content_length = request.headers.get("content-length")
+    try:
+        content_length_value = int(content_length) if content_length else 0
+    except ValueError:
+        return JSONResponse({"detail": "invalid content-length"}, status_code=400)
+    if content_length_value > _MAX_REQUEST_BYTES:
+        return JSONResponse({"detail": "request too large"}, status_code=413)
+    if _API_TOKEN and request.url.path != "/health":
+        provided = request.headers.get("X-CACT-Token", "")
+        if not hmac.compare_digest(provided, _API_TOKEN):
+            return JSONResponse({"detail": "unauthorized"}, status_code=401)
+    return await call_next(request)
+
+
+def _safe_image_root(hydra_path: str | None, run_uuid: str | None) -> str:
+    root = Path(os.getenv("CACT_IMAGE_ROOT", str(_PROJECT_ROOT / "exp_results" / "api_images"))).resolve()
+    if os.getenv("CACT_ALLOW_CLIENT_IMAGE_ROOT") == "1" and hydra_path:
+        requested = Path(hydra_path).expanduser().resolve()
+        allowed = [Path(x).expanduser().resolve() for x in os.getenv("CACT_ALLOWED_IMAGE_ROOTS", str(_PROJECT_ROOT)).split(os.pathsep) if x]
+        if any(requested == item or item in requested.parents for item in allowed):
+            root = requested
+    safe_uuid = re.sub(r"[^A-Za-z0-9_.-]", "_", str(run_uuid or "anonymous"))[:128] or "anonymous"
+    target = (root / safe_uuid / "imgs").resolve()
+    if target != root and root not in target.parents:
+        raise ValueError("image path escaped configured root")
+    target.mkdir(parents=True, exist_ok=True)
+    return str(target)
 
 
 def _img2base64(img_path: str):
@@ -86,8 +126,9 @@ def chat(req: MCRequest) -> MCResponse:
     hydra_path = req.hydra_path
     run_uuid = req.run_uuid
 
-    image_root = os.path.join(hydra_path, run_uuid)
-    image_root = os.path.join(image_root, "imgs")
+    image_root = _safe_image_root(hydra_path, run_uuid)
+    if agent is None:
+        agent = AgentFactory.reset()
     rgb_obs = base64_to_image(
         req.rgb_images,
         image_root=image_root,
@@ -95,10 +136,11 @@ def chat(req: MCRequest) -> MCResponse:
         step=req.current_step,
     )
     # print(f"HERE req.type: {req.type}")
+    response = None
     match req.type:
         case "decomposed_plan":
             retry = 0
-            while True:
+            while retry < _MAX_RETRIES:
                 try:
                     plans, prompt = agent.decomposed_plan(
                         req.waypoint,
@@ -108,12 +150,12 @@ def chat(req: MCRequest) -> MCResponse:
                     )
                     response = MCResponse(response=plans, message=prompt)
                     break
-                except:
+                except Exception as exc:
                     retry += 1
                     print("connection error, retry: ", retry)
         case "context_aware_reasoning":
             retry = 0
-            while True:
+            while retry < _MAX_RETRIES:
                 try:
                     reasoning, visual_description = agent.context_aware_reasoning(
                         req.task_or_instruction,
@@ -122,12 +164,12 @@ def chat(req: MCRequest) -> MCResponse:
                     )
                     response = MCResponse(response=reasoning, message=visual_description)
                     break
-                except:
+                except Exception as exc:
                     retry += 1
                     print("connection error, retry: ", retry)
         case "retrieval":
             retry = 0
-            while True:
+            while retry < _MAX_RETRIES:
                 try:
                     plans_retrieval = agent.retrieve(
                         req.task_or_instruction,
@@ -135,12 +177,12 @@ def chat(req: MCRequest) -> MCResponse:
                     )
                     response = MCResponse(response=plans_retrieval)
                     break
-                except:
+                except Exception as exc:
                     retry += 1
                     print("connection error while retrieval, retry: ", retry)
         case "plan":
             retry = 0
-            while True:
+            while retry < _MAX_RETRIES:
                 try:
                     plans = agent.plan(
                         req.task_or_instruction,
@@ -151,7 +193,7 @@ def chat(req: MCRequest) -> MCResponse:
                     )
                     response = MCResponse(response=plans)
                     break
-                except:
+                except Exception as exc:
                     retry += 1
                     print("connection error, retry: ", retry)
         case "fixjson":
@@ -166,7 +208,7 @@ def chat(req: MCRequest) -> MCResponse:
                     )
                     response = MCResponse(response=fixed_json)
                     break
-                except:
+                except Exception as exc:
                     retry += 1
                     print("connection error, retry: ", retry)
 
@@ -210,7 +252,7 @@ def chat(req: MCRequest) -> MCResponse:
                         response=reflection, appendix=_img2base64(old_obs)
                     )
                     break
-                except:
+                except Exception as exc:
                     retry += 1
                     time.sleep(1)
                     print("connection error while reflection, retry: ", retry)
@@ -234,6 +276,8 @@ def chat(req: MCRequest) -> MCResponse:
                     print(f"connection error while replan {e}, retry: {retry}")
         case _:
             response = MCResponse(message=f"{req.type} not support...", status_code=400)
+    if response is None:
+        response = MCResponse(status_code=503, message="VLM inference failed after bounded retries")
     # Attach cumulative token stats from the plan model
     if hasattr(agent.plan_model, 'token_stats'):
         response.tokens = agent.plan_model.token_stats
@@ -254,6 +298,8 @@ def batch_chat(reqs: list[MCRequest]) -> list[MCResponse]:
 
     if not reqs:
         return []
+    if agent is None:
+        agent = AgentFactory.reset()
 
     instructions = []
     images_list = []
@@ -284,10 +330,15 @@ if __name__ == "__main__":
     parser.add_argument("--in_model", type=str, default="checkpoints/vpt/2x.model", help="Model for input.")
     parser.add_argument("--in_weights", type=str, default="checkpoints/steve1/steve1.weights", help="Weights for input.")
     parser.add_argument("--prior_weights", type=str, default="checkpoints/steve1/steve1_prior.pt", help="Weights for prior.")
+    parser.add_argument("--host", type=str, default=os.getenv("CACT_HOST", "127.0.0.1"), help="Bind address; loopback is the safe default.")
     parser.add_argument("--port", type=int, default=12345, help="Port to run the server on.")
+    parser.add_argument("--api-token", type=str, default=os.getenv("CACT_API_TOKEN", ""), help="Optional token for non-loopback deployments.")
     parser.add_argument("--seed", type=int, default=0)
 
     args = parser.parse_args()
+    _API_TOKEN = args.api_token
+    if args.host not in {"127.0.0.1", "localhost", "::1"} and not _API_TOKEN:
+        raise SystemExit("Refusing non-loopback bind without --api-token/CACT_API_TOKEN")
     print("Starting server...")
     print(f'args: {args}')
 
@@ -307,4 +358,4 @@ if __name__ == "__main__":
         prior_weights=args.prior_weights,
     )
 
-    uvicorn.run(app, host="0.0.0.0", port=args.port, timeout_keep_alive=600)
+    uvicorn.run(app, host=args.host, port=args.port, timeout_keep_alive=600, limit_concurrency=int(os.getenv("CACT_HTTP_MAX_CONCURRENCY", "64")), limit_max_requests=int(os.getenv("CACT_HTTP_MAX_REQUESTS", "0")) or None)

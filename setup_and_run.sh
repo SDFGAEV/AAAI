@@ -10,7 +10,7 @@ command -v "$PYTHON" >/dev/null || { echo "STOP: Python 3.10+ not found" >&2; ex
 import sys
 if sys.version_info < (3, 10):
     raise SystemExit("STOP: Python 3.10+ required")
-for name in ("torch", "transformers", "hydra", "omegaconf"):
+for name in ("torch", "transformers", "hydra", "omegaconf", "fastapi", "uvicorn", "requests", "psutil", "numpy", "gym", "Pyro4"):
     try: __import__(name)
     except Exception as exc: raise SystemExit(f"STOP: missing Python package {name}: {exc}")
 print("Python dependency check: PASS")

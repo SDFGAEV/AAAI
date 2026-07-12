@@ -43,7 +43,13 @@ def env_make(env_id: str, cfg: DictConfig, logger: logging.Logger) -> CustomEnvW
 
     """
     env = gym.make(env_id)
-    env.seed(cfg["seed"])
+    seed = int(cfg["seed"])
+    if hasattr(env, "seed"):
+        env.seed(seed)
+    else:
+        # Gymnasium-only environments expose seeding through reset(); avoid
+        # eagerly resetting MineRL because that launches Minecraft.
+        env.reset(seed=seed)
     env = CustomEnvWrapper(env, cfg, logger)
     return env
 
@@ -62,7 +68,8 @@ def register_custom_env(cfg: DictConfig) -> None:
         None
     """
     biome = cfg["env"]["prefer_biome"]
-    assert biome in ALL_BIOMES, f"Biome {biome} not found in {ALL_BIOMES}"
+    if biome not in ALL_BIOMES:
+        raise ValueError(f"Biome {biome} not found in {ALL_BIOMES}")
 
     CustomEnvSpec(
         env_name=cfg["env"]["name"],

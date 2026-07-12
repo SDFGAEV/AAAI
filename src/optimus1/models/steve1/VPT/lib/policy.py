@@ -58,11 +58,13 @@ class ImgObsProcess(nn.Module):
         self,
         cnn_outsize: int,
         output_size: int,
-        dense_init_norm_kwargs: Dict = {},
-        init_norm_kwargs: Dict = {},
+        dense_init_norm_kwargs: Optional[Dict] = None,
+        init_norm_kwargs: Optional[Dict] = None,
         **kwargs,
     ):
         super().__init__()
+        dense_init_norm_kwargs = dict(dense_init_norm_kwargs or {})
+        init_norm_kwargs = dict(init_norm_kwargs or {})
         self.cnn = ImpalaCNN(
             outsize=cnn_outsize,
             init_norm_kwargs=init_norm_kwargs,
@@ -104,8 +106,8 @@ class MinecraftPolicy(nn.Module):
         img_shape=None,
         scale_input_img=True,
         only_img_input=False,
-        init_norm_kwargs={},
-        impala_kwargs={},
+        init_norm_kwargs: Optional[Dict] = None,
+        impala_kwargs: Optional[Dict] = None,
         # Unused argument assumed by forc.
         input_shape=None,  # pylint: disable=unused-argument
         active_reward_monitors=None,
@@ -125,6 +127,8 @@ class MinecraftPolicy(nn.Module):
         **unused_kwargs,
     ):
         super().__init__()
+        init_norm_kwargs = dict(init_norm_kwargs or {})
+        impala_kwargs = dict(impala_kwargs or {})
         assert recurrence_type in [
             "multi_layer_lstm",
             "multi_layer_bilstm",

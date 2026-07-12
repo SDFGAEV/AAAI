@@ -57,15 +57,17 @@ java -version                         # must report Java 21+
 python experiments/health_check.py
 ```
 
-Before a claiming run, the setup script uses the sealed task-card registry and
-requires a canonical `task_id|world_seed` snapshot manifest. If the manifest is
-not already present, set `CACT_WORLD_ROOT_TEMPLATE`, `CACT_SNAPSHOT_TASK_INDICES`,
-and `CACT_SNAPSHOT_SEEDS` so it can hash real Minecraft saves. E2/E1c/D_audit
-are then collected from real rollouts; missing evidence still stops the pipeline:
+Before a claiming run, the setup script uses the sealed task-card registry.
+For XENON native mode (`DefaultWorldGenerator(force_reset=True)`), it derives a
+procedural snapshot ID from the declared seed and pinned generator provenance; no
+pre-existing save directory is required. Filesystem-backed worlds may instead set
+`CACT_WORLD_ROOT_TEMPLATE` or provide `CACT_WORLD_SNAPSHOT_MANIFEST`. E2/E1c/D_audit
+are collected from real rollouts; missing evidence still stops the pipeline:
 
 ```bash
 export CACT_TASK_CARDS="/data/cact/task_cards.json"
-export CACT_WORLD_SNAPSHOT_MANIFEST="/data/cact/world_snapshot_manifest.json"
+# Optional for XENON procedural mode; filesystem mode may set this explicitly.
+# export CACT_WORLD_SNAPSHOT_MANIFEST="/data/cact/world_snapshot_manifest.json"
 export CACT_WORKERS=4
 # Optional multi-GPU VLM pool:
 export CACT_GPUS=0,1,2,3
