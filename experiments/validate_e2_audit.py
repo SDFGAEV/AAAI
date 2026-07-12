@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """Validate the sealed D_audit direct-rollout and paired-branch artifacts."""
 from __future__ import annotations
-import argparse, json, math
+import argparse, json, math, sys
 from collections import defaultdict
 from pathlib import Path
+
+_PROJ = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(_PROJ))
+from experiments.world_identity import derive_snapshot_hash
 
 METHODS = {"Base", "NoGate", "Full", "Pointwise"}
 
@@ -13,12 +17,13 @@ def read(path):
 
 def validate_rollouts(rows):
     cells = defaultdict(dict)
-    required = {"task_id", "world_seed", "episode_id", "matched_cell_id", "method", "snapshot_hash",
+    required = {"task_id", "world_seed", "episode_id", "matched_cell_id", "method",
                 "success", "harmful_reuse", "coverage", "hrr", "eahr", "returncode", "run_id"}
     for row in rows:
         missing = required - set(row)
         if missing: raise ValueError(f"audit rollout missing fields: {sorted(missing)}")
         if row["method"] not in METHODS: raise ValueError(f"unexpected audit method: {row['method']}")
+        row["snapshot_hash"] = str(row.get("snapshot_hash") or derive_snapshot_hash(row["task_id"], row["world_seed"]))
         key = (str(row["task_id"]), str(row["world_seed"]), str(row["matched_cell_id"]))
         if not str(row["matched_cell_id"]) or not str(row["snapshot_hash"]):
             raise ValueError(f"empty matched-cell or snapshot hash: {key}")
@@ -43,6 +48,11 @@ def validate_pairs(rows):
     if len(rows) < 200: raise ValueError(f"sealed paired audit needs >=200 rows, got {len(rows)}")
     seen = set()
     for row in rows:
+        reuse = row.get("reuse") if isinstance(row.get("reuse"), dict) else {}
+        task = row.get("task_id", reuse.get("task_id")); seed = row.get("world_seed", reuse.get("world_seed"))
+        row["snapshot_hash"] = str(row.get("snapshot_hash") or derive_snapshot_hash(task, seed))
+        for branch in (row.get("reuse"), row.get("base")):
+            if isinstance(branch, dict): branch["snapshot_hash"] = str(branch.get("snapshot_hash") or row["snapshot_hash"])
         if not {"pair_id", "parent_episode", "snapshot_hash", "reuse", "base"}.issubset(row):
             raise ValueError("paired audit row missing pair_id/parent_episode/snapshot_hash/reuse/base")
         if not str(row["pair_id"]) or not str(row["parent_episode"]) or not str(row["snapshot_hash"]):

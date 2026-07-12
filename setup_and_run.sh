@@ -33,18 +33,19 @@ if [[ -z "${CACT_WORLD_SNAPSHOT_MANIFEST:-}" ]]; then
   export CACT_WORLD_SNAPSHOT_MANIFEST="$PROJ/protocol_inputs/world_snapshot_manifest.json"
 fi
 if [[ ! -f "$CACT_WORLD_SNAPSHOT_MANIFEST" ]]; then
+  export CACT_SNAPSHOT_TASK_INDICES="${CACT_SNAPSHOT_TASK_INDICES:-0-35}"
+  export CACT_SNAPSHOT_SEEDS="${CACT_SNAPSHOT_SEEDS:-3001-3008,3011-3018,4001-4008,5001-5005,6001-6005}"
   if [[ -n "${CACT_WORLD_ROOT_TEMPLATE:-}" ]]; then
-    export CACT_SNAPSHOT_TASK_INDICES="${CACT_SNAPSHOT_TASK_INDICES:-0-35}"
-    export CACT_SNAPSHOT_SEEDS="${CACT_SNAPSHOT_SEEDS:-3001-3008,3011-3018,4001-4008,5001-5005,6001-6005}"
+    "$PYTHON" experiments/collect_world_snapshots.py \
+      --world-root-template "$CACT_WORLD_ROOT_TEMPLATE" \
+      --task-indices "$CACT_SNAPSHOT_TASK_INDICES" --seeds "$CACT_SNAPSHOT_SEEDS" \
+      --out "$CACT_WORLD_SNAPSHOT_MANIFEST"
+  else
+    echo "[XENON] no pre-existing save supplied; deriving procedural snapshot IDs from seed + generator provenance"
+    "$PYTHON" experiments/collect_world_snapshots.py --procedural \
+      --task-indices "$CACT_SNAPSHOT_TASK_INDICES" --seeds "$CACT_SNAPSHOT_SEEDS" \
+      --out "$CACT_WORLD_SNAPSHOT_MANIFEST"
   fi
-  if [[ -z "${CACT_WORLD_ROOT_TEMPLATE:-}" || -z "${CACT_SNAPSHOT_TASK_INDICES:-}" || -z "${CACT_SNAPSHOT_SEEDS:-}" ]]; then
-    echo "STOP: provide CACT_WORLD_SNAPSHOT_MANIFEST, or set CACT_WORLD_ROOT_TEMPLATE, CACT_SNAPSHOT_TASK_INDICES, and CACT_SNAPSHOT_SEEDS." >&2
-    exit 2
-  fi
-  "$PYTHON" experiments/collect_world_snapshots.py \
-    --world-root-template "$CACT_WORLD_ROOT_TEMPLATE" \
-    --task-indices "$CACT_SNAPSHOT_TASK_INDICES" --seeds "$CACT_SNAPSHOT_SEEDS" \
-    --out "$CACT_WORLD_SNAPSHOT_MANIFEST"
 fi
 
 export CACT_AUTO_GENERATE_E2="${CACT_AUTO_GENERATE_E2:-1}"

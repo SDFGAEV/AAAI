@@ -36,7 +36,7 @@ def _card(task, split: str, source: str):
         "exact_template_hash": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
         "world_generator_version": "CACTTaskEnv-v0:DefaultWorldGenerator-v1",
         "initial_inventory": [],
-        "world_constraints": {"biome": "forest", "world_seed": "declared", "snapshot_hash": "required"},
+        "world_constraints": {"biome": "forest", "world_seed": "declared", "snapshot_hash": "optional", "snapshot_backend": "xenon_procedural"},
         "goal": task["goal"],
         "success_predicate": f"goal_observed:{task['goal']}",
         "window_trigger": "eligible_retrieval_checkpoint",

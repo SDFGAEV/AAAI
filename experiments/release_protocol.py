@@ -38,7 +38,7 @@ def main():
     files = [MANUAL, ROOT/"README.md", ROOT/"protocol_inputs/task_cards.json", ROOT/"setup_and_run.sh", ROOT/"cact/protocol_v2.py", ROOT/"experiments/calibrate_v2.py", ROOT/"experiments/parallel_runner.py", ROOT/"experiments/run_all.sh", ROOT/"paper/main.tex", ROOT/"paper/PAPER_SUBMISSION_DRAFT.md", ROOT/"paper/PAPER_SUBMISSION_DRAFT_NEW.md", ROOT/"paper/PAPER_SUBMISSION_DRAFT_V2.md", ROOT/"cact/preference_gate.py", ROOT/"experiments/train_pairwise.py", ROOT/"cact/metrics.py", ROOT/"analysis/bootstrap.py", ROOT/"analysis/split_audit.py", ROOT/"analysis/validate_task_cards.py",
            ROOT/"experiments/e2_direct_select.py", ROOT/"experiments/run_e2_select_rollouts.py",
            ROOT/"experiments/generate_pair_train.py", ROOT/"experiments/build_task_card_registry.py", ROOT/"experiments/collect_world_snapshots.py",
-           ROOT/"experiments/run_e2_audit_rollouts.py", ROOT/"experiments/validate_e2_audit.py",
+           ROOT/"experiments/run_e2_audit_rollouts.py", ROOT/"experiments/validate_e2_audit.py", ROOT/"experiments/world_identity.py",
            ROOT/"experiments/online_runner.py",
            ROOT/"experiments/release_protocol.py", ROOT/"experiments/health_check.py",
            ROOT/"tests/test_controller_ledger.py",

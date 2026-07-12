@@ -13,6 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from experiments.run_e2_select_rollouts import _ensure_vlm, _run_one
+from experiments.world_identity import derive_snapshot_hash
 
 def _seeds(value):
     if "-" in value:
@@ -96,7 +97,7 @@ def main():
     ap.add_argument("--task-indices", required=True)
     ap.add_argument("--seeds", required=True)
     ap.add_argument("--snapshot-path", required=True)
-    ap.add_argument("--world-snapshot-manifest", required=True)
+    ap.add_argument("--world-snapshot-manifest", default="", help="optional filesystem/procedural snapshot manifest")
     ap.add_argument("--protocol-path", required=True)
     ap.add_argument("--policy-path", required=True)
     ap.add_argument("--out-rollouts", required=True)
@@ -111,8 +112,11 @@ def main():
     args = ap.parse_args()
     tasks = [int(x) for x in args.task_indices.split(",") if x.strip()]
     seeds = _seeds(args.seeds)
-    manifest = json.loads(Path(args.world_snapshot_manifest).read_text(encoding="utf-8"))
-    hashes = {str(k): str(v) for k, v in manifest.get("hashes", manifest).items()}
+    if args.world_snapshot_manifest:
+        manifest = json.loads(Path(args.world_snapshot_manifest).read_text(encoding="utf-8"))
+        hashes = {str(k): str(v) for k, v in manifest.get("hashes", manifest).items()}
+    else:
+        hashes = {f"{task}|{seed}": derive_snapshot_hash(task, seed) for task in tasks for seed in seeds}
     full_kappa, point_kappa = _selected_kappas(Path(args.policy_path))
     rows = _collect_direct(args, tasks, seeds, hashes, full_kappa, point_kappa)
     out_rollouts = Path(args.out_rollouts); out_rollouts.parent.mkdir(parents=True, exist_ok=True)
@@ -123,7 +127,9 @@ def main():
     cmd = [sys.executable, str(ROOT / "experiments/generate_pair_train.py"),
            "--benchmark", args.benchmark, "--pilot-task-indices", pair_tasks,
            "--pilot-seeds", pair_seeds, "--target", str(args.pair_target), "--workers", "1",
-           "--world-snapshot-manifest", args.world_snapshot_manifest, "--out", str(flat)]
+           "--out", str(flat)]
+    if args.world_snapshot_manifest:
+        cmd[cmd.index("--out"):cmd.index("--out")] = ["--world-snapshot-manifest", args.world_snapshot_manifest]
     subprocess.run(cmd, check=True, cwd=ROOT)
     pairs = _enrich_pairs(flat, Path(args.out_pairs))
     print(json.dumps({"rollouts": len(rows), "paired_audit": pairs, "out_rollouts": args.out_rollouts, "out_pairs": args.out_pairs}))

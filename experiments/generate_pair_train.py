@@ -19,6 +19,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from experiments.parallel_runner import ExperimentConfig, ParallelRunner
+from experiments.world_identity import derive_snapshot_hash
 
 def _read_jsonl(path: Path) -> List[Dict[str, Any]]:
     if not path.exists(): return []
@@ -38,11 +39,10 @@ def _pilot_candidates(log_root: Path, runs: Iterable[Dict[str, Any]]) -> List[Di
                 continue
             if str(row.get("risk_tier", "")).lower() not in {"low", "medium"}:
                 continue
-            if not row.get("snapshot_hash"):
-                raise RuntimeError(f"missing snapshot_hash in {path}")
             row["pilot_run_id"] = run["run_id"]
             row["task_idx"] = run["task_idx"]
             row["seed"] = run["seed"]
+            row["snapshot_hash"] = str(row.get("snapshot_hash") or derive_snapshot_hash(row["task_idx"], row["seed"]))
             rows.append(row)
     # One opportunity per parent episode/target; stable hash ordering avoids
     # outcome-dependent selection.
@@ -98,7 +98,7 @@ def main() -> None:
     ap.add_argument("--target", type=int, default=320)
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--out", default=str(ROOT / "exp_results/cact_pair_train/paired/pairs.jsonl"))
-    ap.add_argument("--world-snapshot-manifest", required=True)
+    ap.add_argument("--world-snapshot-manifest", default="", help="optional filesystem/procedural snapshot manifest")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
     task_indices = [int(x) for x in args.pilot_task_indices.split(",") if x]
@@ -110,9 +110,12 @@ def main() -> None:
     if args.dry_run:
         print(json.dumps({"pilot_episodes": len(task_indices) * len(seeds),
                           "target_pairs": args.target, "branch_episodes": args.target * 2}, ensure_ascii=False)); return
-    manifest = json.loads(Path(args.world_snapshot_manifest).read_text(encoding="utf-8"))
-    hashes = manifest.get("hashes", manifest)
-    if not isinstance(hashes, dict): raise SystemExit("world snapshot manifest must be a JSON mapping")
+    if args.world_snapshot_manifest:
+        manifest = json.loads(Path(args.world_snapshot_manifest).read_text(encoding="utf-8"))
+        hashes = manifest.get("hashes", manifest)
+        if not isinstance(hashes, dict): raise SystemExit("world snapshot manifest must be a JSON mapping")
+    else:
+        hashes = {f"{task}|{seed}": derive_snapshot_hash(task, seed) for task in task_indices for seed in seeds}
     root = ROOT / "exp_results" / "cact_pair_train"
     pilot_root = root / "pilot_stores"; log_root = ROOT / "exp_results" / "cact_logs"
     runner = ParallelRunner(workers=max(1, args.workers), vlm_port=12345)
@@ -148,7 +151,7 @@ def main() -> None:
             branch_cfgs.append(_cfg(args.benchmark, int(row["task_idx"]), int(row["seed"]),
                                     "C-ACT", run_id, root / "branch_stores" / run_id,
                                     snapshot, parent, mode, str(row["opportunity_id"]),
-                                    snapshot_hash=str(row.get("snapshot_hash", "")),
+                                    snapshot_hash=str(row.get("snapshot_hash") or derive_snapshot_hash(row["task_idx"], row["seed"])),
                                     prefix_trace=prefix_trace))
             branch_meta.append((run_id, parent, mode, row))
     runner = ParallelRunner(workers=1, vlm_port=12345)

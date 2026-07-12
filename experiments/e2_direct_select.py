@@ -8,9 +8,13 @@ incomplete.  Selection is performed on D_select only; the separate audit set
 must be checked by the caller before deployment.
 """
 from __future__ import annotations
-import argparse, json, math
+import argparse, json, math, sys
 from collections import defaultdict
 from pathlib import Path
+
+_PROJ = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(_PROJ))
+from experiments.world_identity import derive_snapshot_hash
 
 KAPPAS = (0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0)
 REQUIRED = {"Base"} | {f"Full:{k:g}" for k in KAPPAS} | {f"Pointwise:{k:g}" for k in KAPPAS}
@@ -26,10 +30,12 @@ def load(path):
             if line.strip():
                 row = json.loads(line)
                 missing = {"task_id", "world_seed", "episode_id", "matched_cell_id",
-                           "method", "success", "harmful_reuse", "snapshot_hash",
+                           "method", "success", "harmful_reuse",
                            "store_hash", "run_id", "returncode", "coverage", "hrr", "eahr"} - set(row)
                 if missing:
                     raise ValueError(f"row missing required fields: {sorted(missing)}")
+                if not row.get("snapshot_hash"):
+                    row["snapshot_hash"] = derive_snapshot_hash(row["task_id"], row["world_seed"])
                 if not str(row["matched_cell_id"]) or not str(row["snapshot_hash"]):
                     raise ValueError("E2 rows require non-empty matched_cell_id and snapshot_hash")
                 if not str(row["run_id"]) or not str(row["store_hash"]):

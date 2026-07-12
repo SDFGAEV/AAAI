@@ -40,7 +40,7 @@
       "window_trigger": "eligible_retrieval_checkpoint",
       "world_constraints": {
         "biome": "forest",
-        "snapshot_hash": "required",
+        "snapshot_hash": "optional",
         "world_seed": "declared"
       },
       "world_generator_version": "CACTTaskEnv-v0:DefaultWorldGenerator-v1"
@@ -75,7 +75,7 @@
       "window_trigger": "eligible_retrieval_checkpoint",
       "world_constraints": {
         "biome": "forest",
-        "snapshot_hash": "required",
+        "snapshot_hash": "optional",
         "world_seed": "declared"
       },
       "world_generator_version": "CACTTaskEnv-v0:DefaultWorldGenerator-v1"
@@ -110,7 +110,7 @@
       "window_trigger": "eligible_retrieval_checkpoint",
       "world_constraints": {
         "biome": "forest",
-        "snapshot_hash": "required",
+        "snapshot_hash": "optional",
         "world_seed": "declared"
       },
       "world_generator_version": "CACTTaskEnv-v0:DefaultWorldGenerator-v1"
@@ -145,7 +145,7 @@
       "window_trigger": "eligible_retrieval_checkpoint",
       "world_constraints": {
         "biome": "forest",
-        "snapshot_hash": "required",
+        "snapshot_hash": "optional",
         "world_seed": "declared"
       },
       "world_generator_version": "CACTTaskEnv-v0:DefaultWorldGenerator-v1"
@@ -180,7 +180,7 @@
       "window_trigger": "eligible_retrieval_checkpoint",
       "world_constraints": {
         "biome": "forest",
-        "snapshot_hash": "required",
+        "snapshot_hash": "optional",
         "world_seed": "declared"
       },
       "world_generator_version": "CACTTaskEnv-v0:DefaultWorldGenerator-v1"
@@ -215,7 +215,7 @@
       "window_trigger": "eligible_retrieval_checkpoint",
       "world_constraints": {
         "biome": "forest",
-        "snapshot_hash": "required",
+        "snapshot_hash": "optional",
         "world_seed": "declared"
       },
       "world_generator_version": "CACTTaskEnv-v0:DefaultWorldGenerator-v1"
@@ -250,7 +250,7 @@
       "window_trigger": "eligible_retrieval_checkpoint",
       "world_constraints": {
         "biome": "forest",
-        "snapshot_hash": "required",
+        "snapshot_hash": "optional",
         "world_seed": "declared"
       },
       "world_generator_version": "CACTTaskEnv-v0:DefaultWorldGenerator-v1"
@@ -285,7 +285,7 @@
       "window_trigger": "eligible_retrieval_checkpoint",
       "world_constraints": {
         "biome": "forest",
-        "snapshot_hash": "required",
+        "snapshot_hash": "optional",
         "world_seed": "declared"
       },
       "world_generator_version": "CACTTaskEnv-v0:DefaultWorldGenerator-v1"
@@ -320,7 +320,7 @@
       "window_trigger": "eligible_retrieval_checkpoint",
       "world_constraints": {
         "biome": "forest",
-        "snapshot_hash": "required",
+        "snapshot_hash": "optional",
         "world_seed": "declared"
       },
       "world_generator_version": "CACTTaskEnv-v0:DefaultWorldGenerator-v1"
@@ -355,7 +355,7 @@
       "window_trigger": "eligible_retrieval_checkpoint",
       "world_constraints": {
         "biome": "forest",
-        "snapshot_hash": "required",
+        "snapshot_hash": "optional",
         "world_seed": "declared"
       },
       "world_generator_version": "CACTTaskEnv-v0:DefaultWorldGenerator-v1"
@@ -390,7 +390,7 @@
       "window_trigger": "eligible_retrieval_checkpoint",
       "world_constraints": {
         "biome": "forest",
-        "snapshot_hash": "required",
+        "snapshot_hash": "optional",
         "world_seed": "declared"
       },
       "world_generator_version": "CACTTaskEnv-v0:DefaultWorldGenerator-v1"
@@ -425,7 +425,7 @@
       "window_trigger": "eligible_retrieval_checkpoint",
       "world_constraints": {
         "biome": "forest",
-        "snapshot_hash": "required",
+        "snapshot_hash": "optional",
         "world_seed": "declared"
       },
       "world_generator_version": "CACTTaskEnv-v0:DefaultWorldGenerator-v1"
@@ -460,7 +460,7 @@
       "window_trigger": "eligible_retrieval_checkpoint",
       "world_constraints": {
         "biome": "forest",
-        "snapshot_hash": "required",
+        "snapshot_hash": "optional",
         "world_seed": "declared"
       },
       "world_generator_version": "CACTTaskEnv-v0:DefaultWorldGenerator-v1"
@@ -495,7 +495,7 @@
       "window_trigger": "eligible_retrieval_checkpoint",
       "world_constraints": {
         "biome": "forest",
-        "snapshot_hash": "required",
+        "snapshot_hash": "optional",
         "world_seed": "declared"
       },
       "world_generator_version": "CACTTaskEnv-v0:DefaultWorldGenerator-v1"
@@ -530,7 +530,7 @@
       "window_trigger": "eligible_retrieval_checkpoint",
       "world_constraints": {
         "biome": "forest",
-        "snapshot_hash": "required",
+        "snapshot_hash": "optional",
         "world_seed": "declared"
       },
       "world_generator_version": "CACTTaskEnv-v0:DefaultWorldGenerator-v1"
@@ -565,7 +565,7 @@
       "window_trigger": "eligible_retrieval_checkpoint",
       "world_constraints": {
         "biome": "forest",
-        "snapshot_hash": "required",
+        "snapshot_hash": "optional",
         "world_seed": "declared"
       },
       "world_generator_version": "CACTTaskEnv-v0:DefaultWorldGenerator-v1"

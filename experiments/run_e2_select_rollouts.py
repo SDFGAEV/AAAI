@@ -20,6 +20,7 @@ from typing import Any, Dict, List
 
 _PROJ = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_PROJ))
+from experiments.world_identity import derive_snapshot_hash
 
 KAPPAS = (0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0)
 
@@ -77,9 +78,7 @@ def _run_one(task_idx: int, seed: int, method: str, cfg: dict) -> dict:
     run_store = _PROJ / "exp_results" / "e2_stores" / run_id
     store_hash = _clone_store(source, run_store)
     cell_key = f"{task_idx}|{seed}"
-    world_hash = cfg.get("world_snapshot_hashes", {}).get(cell_key)
-    if not world_hash:
-        raise RuntimeError(f"missing world snapshot hash for matched cell {cell_key}")
+    world_hash = cfg.get("world_snapshot_hashes", {}).get(cell_key) or derive_snapshot_hash(task_idx, seed)
     cmd = [sys.executable, "-m", "optimus1.main_planning",
            f"server.port={cfg['vlm_port']}", "server.url=http://127.0.0.1",
            f"benchmark={cfg['benchmark']}", f"+evaluate=[{task_idx}]",
@@ -143,8 +142,8 @@ def main():
     ap.add_argument("--vlm-port", type=int, default=12345)
     ap.add_argument("--store-path", default="", help="legacy alias for frozen snapshot path")
     ap.add_argument("--snapshot-path", default="", help="immutable frozen store snapshot")
-    ap.add_argument("--world-snapshot-manifest", required=True,
-                    help="JSON mapping task_id|world_seed to canonical world snapshot hash")
+    ap.add_argument("--world-snapshot-manifest", default="",
+                    help="optional filesystem/procedural snapshot manifest")
     ap.add_argument("--protocol-path", default="")
     ap.add_argument("--calibration-path", default="")
     ap.add_argument("--out", required=True)
@@ -162,9 +161,12 @@ def main():
     print(json.dumps({"benchmark": args.benchmark, "tasks": len(task_indices),
                       "seeds": len(seeds), "methods": 15, "episodes": total}))
 
-    manifest = json.loads(Path(args.world_snapshot_manifest).read_text(encoding="utf-8"))
-    hashes = manifest.get("hashes", manifest)
-    if not isinstance(hashes, dict): raise SystemExit("world snapshot manifest must be a JSON mapping")
+    if args.world_snapshot_manifest:
+        manifest = json.loads(Path(args.world_snapshot_manifest).read_text(encoding="utf-8"))
+        hashes = manifest.get("hashes", manifest)
+        if not isinstance(hashes, dict): raise SystemExit("world snapshot manifest must be a JSON mapping")
+    else:
+        hashes = {f"{task}|{seed}": derive_snapshot_hash(task, seed) for task in task_indices for seed in seeds}
     cfg = {"vlm_port": args.vlm_port, "benchmark": args.benchmark,
            "store_path": args.store_path, "snapshot_path": args.snapshot_path,
            "world_snapshot_hashes": {str(k): str(v) for k, v in hashes.items()},

@@ -7,8 +7,12 @@ resolved from ``--world-root-template`` using ``{task_id}`` and
 The resulting manifest is an input to E2/E1c/E3/E4/E5 and must be frozen.
 """
 from __future__ import annotations
-import argparse, hashlib, json, os
+import argparse, hashlib, json, os, sys
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from experiments.world_identity import derive_snapshot_hash, generator_fingerprint
 
 VOLATILE_NAMES = {"session.lock", "uid.dat"}
 VOLATILE_DIRS = {"logs", "crash-reports", "debug"}
@@ -48,8 +52,10 @@ def parse_indices(value: str):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--world-root-template", required=True,
-                    help="Path template, e.g. /data/worlds/task_{task_id}_seed_{world_seed}")
+    ap.add_argument("--world-root-template", default="",
+                    help="Path template for filesystem snapshots; omit for XENON procedural mode")
+    ap.add_argument("--procedural", action="store_true",
+                    help="derive IDs from XENON seed and pinned generator provenance")
     ap.add_argument("--task-indices", required=True)
     ap.add_argument("--seeds", required=True)
     ap.add_argument("--out", required=True)
@@ -57,16 +63,25 @@ def main():
     args = ap.parse_args()
     tasks = parse_indices(args.task_indices)
     seeds = parse_indices(args.seeds)
+    if bool(args.world_root_template) == bool(args.procedural):
+        raise SystemExit("choose exactly one of --world-root-template or --procedural")
     hashes = {}
     sources = {}
     for task_id in tasks:
         for seed in seeds:
-            path = Path(args.world_root_template.format(task_id=task_id, world_seed=seed))
             key = f"{task_id}|{seed}"
-            hashes[key] = canonical_hash(path)
-            sources[key] = str(path)
-    payload = {"schema_version": "cact.world_snapshot_manifest.v1", "sealed": True,
-               "generator_version": args.generator_version, "hash_algorithm": "sha256-canonical-tree-v1",
+            if args.procedural:
+                hashes[key] = derive_snapshot_hash(task_id, seed)
+                sources[key] = f"xenon://DefaultWorldGenerator?task_id={task_id}&seed={seed}"
+            else:
+                path = Path(args.world_root_template.format(task_id=task_id, world_seed=seed))
+                hashes[key] = canonical_hash(path)
+                sources[key] = str(path)
+    payload = {"schema_version": "cact.world_snapshot_manifest.v2", "sealed": True,
+               "snapshot_backend": "xenon_procedural" if args.procedural else "filesystem",
+               "generator_version": args.generator_version,
+               "generator_fingerprint": generator_fingerprint() if args.procedural else args.generator_version,
+               "hash_algorithm": "sha256-procedural-identity-v1" if args.procedural else "sha256-canonical-tree-v1",
                "hashes": hashes, "sources": sources}
     out = Path(args.out); out.parent.mkdir(parents=True, exist_ok=True)
     tmp = out.with_suffix(out.suffix + ".tmp")

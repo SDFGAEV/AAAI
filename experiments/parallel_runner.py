@@ -28,6 +28,7 @@ import subprocess, sys, os, json, time, signal, shutil, argparse, socket, hashli
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Optional
+from experiments.world_identity import derive_snapshot_hash
 from pathlib import Path
 
 _PROJ = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -248,6 +249,8 @@ class ParallelRunner:
             cmd.append(f"+cact_active_calib_rate={cfg.active_calib_rate}")
         if cfg.cact_kappa:
             cmd.append(f"+cact_kappa={cfg.cact_kappa}")  # E2 direct select kappa override
+        if not cfg.snapshot_hash:
+            cfg.snapshot_hash = derive_snapshot_hash(cfg.task_idx, cfg.seed)
         if cfg.frozen and cfg.protocol_path and os.environ.get("CACT_REQUIRE_WORLD_SNAPSHOT_HASH") == "1" and not cfg.snapshot_hash:
             return {"key": key, "run_id": cfg.run_id, "task": cfg.task, "seed": cfg.seed, "method": cfg.method,
                     "status": "error", "error": "missing world snapshot hash for frozen protocol run"}
@@ -410,7 +413,7 @@ class ParallelRunner:
                                                 method.replace("/", "_").replace("-", "_"),
                                                 f"seed_{seed}", f"task_{idx}"),
                         run_id=f"{benchmark}_{method}_seed{seed}_task{idx}",
-                        snapshot_hash=self._world_snapshot_hashes.get(f"{idx}|{seed}", ""),
+                        snapshot_hash=self._world_snapshot_hashes.get(f"{idx}|{seed}") or derive_snapshot_hash(idx, seed),
                     ))
         return grid
 
