@@ -45,7 +45,7 @@ D_audit 只做一次封存审计；审计失败不允许写出可部署策略。
 - **E0 substrate validation:** 验证任务、retriever top-1、两分支可执行性、局部窗口和日志 schema。
 - **E1a/E1b:** 注册 applicability contract；在独立机会集合中验证随机 assignment、propensity、窗口和删失字段。
 - **E2:** 按 D_fit/D_select/D_audit 进行 policy selection、sealed audit 和 paired branch audit。
-- **E3 main:** 在三层冻结任务集上比较 NoKnowledge、NoGate、SuccessLifecycle、FixedBayes、ACT 和 C-ACT。报告 ID success rate、Comp-OOD HardSR、Boundary FAR、HRR、Coverage、UnsupportedFallbackRate、调用数和 token 成本。
+- **E3 main:** 在三层冻结任务集上比较 NoKnowledge、NoGate、FixedBayes、PairwisePreferenceGate、C-ACT-Pointwise 和 C-ACT。报告 ID success rate、Comp-OOD HardSR、Boundary FAR、HRR、Coverage、UnsupportedFallbackRate、调用数和 token 成本。
 - **E4 ablations:** 仅包含 NoContract、NoAdaptiveTau、NoActiveCalib 和完整 C-ACT 四个预注册变体。
 - **E5 streams:** 至少 5 个独立受控 stream，报告跨 stream 均值、标准差和最坏分层结果。
 

@@ -36,3 +36,14 @@ export CACT_FROZEN_HARDLINK=1
 ## Frozen-store hardlink safety
 
 `CACT_FROZEN_HARDLINK=1` is not sufficient by itself. Hardlinks are enabled only when `CACT_ALLOW_UNSAFE_HARDLINK=1` is also set; the safe default is a real copy. This prevents an accidental frozen write from mutating the calibration source store.
+## Release gates and multi-GPU E5
+
+The release runner validates sealed task cards before spending GPU time. Set
+`CACT_TASK_CARDS` to a whitespace-separated list of JSON/YAML card files (or
+set `CACT_REQUIRE_TASK_CARDS=0` only for a non-claiming dry run). E2 additionally
+requires `CACT_WORLD_SNAPSHOT_MANIFEST`, and E1c/D_audit require real sealed
+artifacts; these gates must not be bypassed for paper results.
+
+For a VLM pool, set `CACT_GPUS=0,1,2,3`. The runner exports the corresponding
+ports to E5 via `--vlm_ports`; do not launch a second server on those ports.
+For frozen E3/E4 runs, the same `CACT_WORLD_SNAPSHOT_MANIFEST` is required by default; its keys must be `task_id|world_seed`, and each hash is propagated into the episode logs.

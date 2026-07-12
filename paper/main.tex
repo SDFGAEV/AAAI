@@ -33,7 +33,7 @@
 \maketitle
 
 \begin{abstract}
-Self-evolving agents in open-world environments accumulate experience-derived knowledge, yet the decision of whether to reuse this knowledge is governed by heuristic gates that inspect surface features---success rates, format validity, semantic scores---without measuring whether reuse \emph{causes} improved outcomes. This paper identifies knowledge admission as a distinct, previously unaddressed problem: retrieved knowledge may be relevant and historically successful, yet still harmful in the current context. We propose \textsc{C-ACT} (Contracted Adaptive Counterfactual Trust), a decision-time admission layer that transforms self-evolved knowledge into falsifiable contracts and certifies reuse through Bayesian counterfactual uplift with adaptively calibrated risk bounds. \textsc{C-ACT} is not a skill generator; it is a lightweight governance layer asking whether already-retrieved knowledge may affect the next action. We instantiate \textsc{C-ACT} on a Minecraft agent with Qwen2.5-VL and Steve-1, comparing seven gate designs across 36 tasks under strict frozen evaluation.
+Self-evolving agents in open-world environments accumulate experience-derived knowledge, yet the decision of whether to reuse this knowledge is governed by heuristic gates that inspect surface features---success rates, format validity, semantic scores---without measuring whether reuse \emph{causes} improved outcomes. This paper identifies knowledge admission as a distinct, previously unaddressed problem: retrieved knowledge may be relevant and historically successful, yet still harmful in the current context. We propose \textsc{C-ACT} (Contracted Adaptive Counterfactual Trust), a decision-time admission layer that transforms self-evolved knowledge into falsifiable contracts and certifies reuse through Bayesian counterfactual uplift with adaptively calibrated risk bounds. \textsc{C-ACT} is not a skill generator; it is a lightweight governance layer asking whether already-retrieved knowledge may affect the next action. We instantiate \textsc{C-ACT} on a Minecraft agent with Qwen2.5-VL and Steve-1, comparing six preregistered gate designs across 36 tasks under strict frozen evaluation.
 
 \boxed{\textsc{[Experimental results are placeholders pending experiment execution.]}}
 \end{abstract}
@@ -62,7 +62,7 @@ We propose \textbf{\textsc{C-ACT}} (Contracted Adaptive Counterfactual Trust), a
     \item \textbf{Supervised reuse during Probation} allows knowledge with promising but uncertain evidence (3--5 observations) to be used under mandatory reflection verification, reducing false negatives while maintaining safety. Knowledge graduates to unrestricted Certified status only after accumulating sufficient evidence.
 \end{enumerate}
 
-We evaluate \textsc{C-ACT} on a Minecraft agent using Qwen2.5-VL-7B and Steve-1, comparing seven gate designs across 36 tasks under strict frozen evaluation. \textsc{C-ACT} reduces harmful reuse rate over retrieve-and-reuse baselines, achieves higher coverage at equivalent risk budgets compared to fixed-threshold Bayesian gates through adaptive calibration, and prevents knowledge pollution during five rounds of online evolution. Ablation confirms that the Knowledge Contract and adaptive calibration are the two largest contributors. All experimental results will be filled after experiment execution.
+We evaluate \textsc{C-ACT} on a Minecraft agent using Qwen2.5-VL-7B and Steve-1, comparing six preregistered gate designs across 36 tasks under strict frozen evaluation. The evaluation tests whether \textsc{C-ACT} reduces harmful reuse relative to retrieve-and-reuse baselines, improves risk--coverage at a fixed risk budget, and limits knowledge pollution during five rounds of online evolution. The ablation tests the contributions of the Knowledge Contract and adaptive calibration. All experimental results will be filled only after execution and artifact audit.
 
 \section{Related Work}
 
@@ -352,15 +352,15 @@ Interaction Stress (4) & cobble-vs-furnace, coal-vs-fuel, iron-pickaxe-vs-sword 
 
 \textbf{E0 (Sanity):} Verify base agent, wrappers, logging (24 episodes).
 
-\textbf{E1 (Accumulation):} Generate knowledge with active base logging (192 episodes).
+\textbf{E1 (Accumulation):} Generate knowledge with active base logging (240 episodes: 120 E1a plus 120 E1b).
 
-\textbf{E2 (Calibration):} Learn per-group thresholds from held-out set (96--144 episodes).
+\textbf{E2 (Calibration):} Collect 8 task templates \times 8 seeds \times 15 matched-risk policies (960 direct rollouts), with separate randomized fit/select/audit logs.
 
-\textbf{E3 (Main Evaluation):} Strict frozen---no test-time learning, no posterior updates, no new knowledge, no active logging, no Thompson probing. 36 tasks $\times$ 8 seeds $\times$ 7 methods = 2,016 episodes.
+\textbf{E3 (Main Evaluation):} Strict frozen---no test-time learning, no posterior updates, no new knowledge, no active logging, no Thompson probing. 36 tasks $\times$ 8 seeds $\times$ 6 methods = 1,728 episodes.
 
-\textbf{E4 (Ablation):} Remove each component independently. 12 tasks $\times$ 5 seeds $\times$ 8 variants = 480 episodes.
+\textbf{E4 (Ablation):} Remove each component independently. 12 tasks $\times$ 5 seeds $\times$ 4 variants = 240 episodes.
 
-\textbf{E5 (Online Evolution):} Five rounds of accumulation $\rightarrow$ calibration $\rightarrow$ frozen test. 3 methods $\times$ 5 rounds = 720 episodes.
+\textbf{E5 (Online Evolution):} Five independent streams, ten rounds each; every round has 20 shared update episodes and 8 frozen evaluation episodes per method (2,600 episodes total for four online methods).
 
 \subsection{Metrics}
 

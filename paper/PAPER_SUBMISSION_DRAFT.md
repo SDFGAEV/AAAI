@@ -6,7 +6,7 @@ Self-evolving agents accumulate skills, remedies, and procedural memories, but r
 
 C-ACT makes three design commitments. First, each item is represented by an auditable Knowledge Contract with preconditions, postconditions, and hard non-applicability boundaries. Second, the gate estimates reuse value against a randomized base-policy arm with recorded assignment propensity, rather than comparing reuse success with an uncontrolled historical average. Third, risk thresholds are selected on a calibration split and then frozen for held-out evaluation; probationary reuse is supervised and cannot bypass contract or postcondition checks. The design is intentionally modular: C-ACT does not generate knowledge and makes no claim about a particular upstream memory generator.
 
-We instantiate the protocol in Minecraft and evaluate C-ACT against Base-Only, NoGate, FixedBayes, and ACT on disjoint in-distribution, compositional-OOD, contract-boundary, ablation, and long-horizon stream splits. The primary endpoints are harmful-reuse rate and Coverage@Risk≤10%, with task success as a secondary endpoint. All comparisons are paired by task and world seed and analyzed with episode-clustered bootstrap confidence intervals. Numerical results are intentionally omitted from this preregistered draft; the submission version will populate tables only from the versioned artifact manifest produced by the protocol.
+We instantiate the protocol in Minecraft and evaluate six preregistered methods: NoKnowledge, NoGate, FixedBayes, PairwisePreferenceGate, C-ACT-Pointwise, and C-ACT on disjoint in-distribution, compositional-OOD, contract-boundary, ablation, and long-horizon stream splits. The primary endpoints are harmful-reuse rate and Coverage@Risk≤10%, with task success as a secondary endpoint. All comparisons are paired by task and world seed and analyzed with episode-clustered bootstrap confidence intervals. Numerical results are intentionally omitted from this preregistered draft; the submission version will populate tables only from the versioned artifact manifest produced by the protocol.
 
 ## 1. Introduction
 
@@ -59,11 +59,11 @@ Thresholds ((\tau,\delta,h)) are selected on `CAL-FIT` and `CAL-TUNE` by maximiz
 
 ### 4.1 Task splits
 
-The protocol uses immutable task IDs and an automated overlap report. `CAL-FIT` (8 tasks) and `CAL-TUNE` (4 tasks) are never reused for evaluation. `E1-ID` contains 8 held-out templates; `E2-COMP` contains 8 unseen target/resource compositions; `E3-BOUND` contains 8 applicable/non-applicable pairs. `E4-ABL` uses 8 dedicated templates. `E5-LONG` has three independent streams; each of ten rounds contains 8 accumulation, 4 calibration, and 8 frozen evaluation episodes. Stream evaluation and hard-transfer tasks are disjoint from accumulation and calibration.
+The protocol uses immutable task IDs and an automated overlap report. `CAL-FIT` (8 tasks) and `CAL-TUNE` (4 tasks) are never reused for evaluation. `E1-ID` contains 8 held-out templates; `E2-COMP` contains 8 unseen target/resource compositions; `E3-BOUND` contains 8 applicable/non-applicable pairs. `E4-ABL` uses 8 dedicated templates. `E5-LONG` has five independent streams; each of ten rounds contains 16 shared accumulation, 4 shared calibration, and 8 frozen evaluation episodes per online method. Stream evaluation and hard-transfer tasks are disjoint from accumulation and calibration.
 
 ### 4.2 Baselines
 
-The main comparison contains Base-Only, NoGate, FixedBayes, ACT, and C-ACT-Full. Base-Only never injects retrieved knowledge. NoGate always reuses an available candidate. FixedBayes shares the evidence representation but uses fixed thresholds and no contract/adaptive calibration. ACT uses the randomized uplift machinery but disables contracts. An external method is named only after an exact protocol reproduction; otherwise it is reported as a style ablation.
+The main comparison contains NoKnowledge, NoGate, FixedBayes, PairwisePreferenceGate, C-ACT-Pointwise, and C-ACT. NoKnowledge never injects retrieved knowledge. NoGate always reuses an available candidate. FixedBayes shares the evidence representation but uses fixed thresholds and no contract/adaptive calibration. PairwisePreferenceGate is trained only from sealed paired branches, while C-ACT-Pointwise uses the pointwise controller family. An external method is named only after an exact protocol reproduction; otherwise it is reported as a style ablation.
 
 ### 4.3 Metrics and statistics
 
@@ -89,7 +89,7 @@ No direction, significance statement, or safety claim is inserted until the corr
 
 ## 6. Limitations
 
-The evidence is limited to Minecraft and to the upstream knowledge representation available to the agent. Propensity-aware estimates require positivity; contexts with unsupported arms are reported as unsupported rather than extrapolated. Contract extraction can be conservative and may reject useful knowledge. The protocol measures empirical risk under a declared horizon and budget; it does not establish a universal or finite-sample safety guarantee. Long-horizon results are exploratory unless the three independent streams provide stable estimates.
+The evidence is limited to Minecraft and to the upstream knowledge representation available to the agent. Propensity-aware estimates require positivity; contexts with unsupported arms are reported as unsupported rather than extrapolated. Contract extraction can be conservative and may reject useful knowledge. The protocol measures empirical risk under a declared horizon and budget; it does not establish a universal or finite-sample safety guarantee. Long-horizon results are exploratory unless the five independent streams provide stable estimates.
 
 ## 7. Reproducibility and release checklist
 

@@ -20,6 +20,13 @@ def main():
                 rows.extend(json.loads(line) for line in fh if line.strip())
     if len(rows) != 320:
         raise SystemExit(f"D_pair-train requires exactly 320 paired opportunities, got {len(rows)}")
+    pair_ids = [str(r.get("pair_id", "")) for r in rows]
+    if any(not pair_id for pair_id in pair_ids):
+        raise SystemExit("D_pair-train requires a non-empty pair_id on every row")
+    if len(set(pair_ids)) != len(pair_ids):
+        raise SystemExit("D_pair-train pair_id values must be unique")
+    if any(r.get("preferred") not in (0, 1) for r in rows):
+        raise SystemExit("D_pair-train preferred must be binary (0 or 1) on every row")
     groups = sorted({str(r.get("parent_episode", r.get("episode_id", ""))) for r in rows})
     if len(groups) < 2 or "" in groups:
         raise SystemExit("D_pair-train requires non-empty parent episode IDs for leakage-safe splitting")

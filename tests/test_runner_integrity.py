@@ -25,7 +25,8 @@ def test_checkpoint_completed_contains_only_successful_runs(tmp_path, monkeypatc
     monkeypatch.setattr(runner, "_stop_vlm_server", lambda: None)
     monkeypatch.setattr(runner, "_run_one", fake_run_one)
 
-    runner.run(benchmark="cact_e0", grid=grid, resume=False)
+    with pytest.raises(RuntimeError, match="experiment episodes failed"):
+        runner.run(benchmark="cact_e0", grid=grid, resume=False)
 
     ckpt = json.loads((tmp_path / "ckpt" / "completed.json").read_text())
     assert ckpt["completed"] == [["taskA", 1001, "NoGate", False]]

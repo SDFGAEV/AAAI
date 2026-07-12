@@ -691,6 +691,7 @@ def main(cfg: DictConfig):
     logger.info(OmegaConf.to_yaml(cfg))
 
     times = cfg["env"]["times"]
+    infrastructure_failures = 0
     for task, goal, diff, grp in zip(running_tasks, running_goals, task_diffs, task_groups):
         action_memory.set_task_info(difficulty=diff, group=grp)
         monitors = []
@@ -703,6 +704,7 @@ def main(cfg: DictConfig):
 
             except Exception as e:
                 logger.error(f"Error during reset: {e}")
+                infrastructure_failures += 1
                 # wandb.finish(exit_code=1)
                 continue
 
@@ -760,6 +762,7 @@ def main(cfg: DictConfig):
             ServerAPI.reset_counters()
 
             if status == "env_malmo_logger_error":
+                infrastructure_failures += 1
                 logger.error("env_malmo_logger_error")
                 # wandb.finish(exit_code=1)
                 continue
@@ -774,6 +777,8 @@ def main(cfg: DictConfig):
                                         actual_done_final_task=done_final_task, biome=biome, run_uuid=run_uuid)
 
             status_detailed = copy.deepcopy(status)
+            if status in {"timeout", "exception"}:
+                infrastructure_failures += 1
             status = "failed" if status != "success" else status
 
             video_path = ""
@@ -885,7 +890,7 @@ def main(cfg: DictConfig):
             logger.info(monitor.get_metric())
             all_steps += monitor.all_steps()
         logger.info(f" All Steps: {all_steps}")
-    exit(0)
+    exit(2 if infrastructure_failures else 0)
 
 
 if __name__ == "__main__":

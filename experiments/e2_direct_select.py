@@ -8,7 +8,7 @@ incomplete.  Selection is performed on D_select only; the separate audit set
 must be checked by the caller before deployment.
 """
 from __future__ import annotations
-import argparse, json
+import argparse, json, math
 from collections import defaultdict
 from pathlib import Path
 
@@ -17,7 +17,7 @@ REQUIRED = {"Base"} | {f"Full:{k:g}" for k in KAPPAS} | {f"Pointwise:{k:g}" for 
 
 def _cell(row):
     return (str(row.get("task_id", "")), str(row.get("world_seed", row.get("seed", ""))),
-            str(row.get("episode_id", "")))
+            str(row.get("matched_cell_id", "")))
 
 def load(path):
     rows = []
@@ -27,9 +27,19 @@ def load(path):
                 row = json.loads(line)
                 missing = {"task_id", "world_seed", "episode_id", "matched_cell_id",
                            "method", "success", "harmful_reuse", "snapshot_hash",
-                           "coverage", "hrr", "eahr"} - set(row)
+                           "store_hash", "run_id", "returncode", "coverage", "hrr", "eahr"} - set(row)
                 if missing:
                     raise ValueError(f"row missing required fields: {sorted(missing)}")
+                if not str(row["matched_cell_id"]) or not str(row["snapshot_hash"]):
+                    raise ValueError("E2 rows require non-empty matched_cell_id and snapshot_hash")
+                if not str(row["run_id"]) or not str(row["store_hash"]):
+                    raise ValueError("E2 rows require non-empty run_id and store_hash")
+                if int(row["returncode"]) != 0:
+                    raise ValueError(f"E2 rollout failed: {row['run_id']}")
+                for name in ("success", "harmful_reuse", "coverage", "hrr", "eahr"):
+                    value = float(row[name])
+                    if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+                        raise ValueError(f"E2 metric {name} outside [0,1]: {row[name]}")
                 rows.append(row)
     if not rows:
         raise ValueError("D_select direct rollout file is empty")
@@ -50,6 +60,9 @@ def select(rows, eps_inc=0.02, eps_abs=0.10):
         hashes = {str(row["snapshot_hash"]) for row in methods.values()}
         if len(hashes) != 1:
             raise ValueError(f"matched cell has inconsistent snapshot hashes: {key}")
+        episode_ids = {str(row["episode_id"]) for row in methods.values()}
+        if len(episode_ids) != 1:
+            raise ValueError(f"matched cell has inconsistent episode IDs: {key}")
     incomplete = [key for key, methods in cells.items() if set(methods) != REQUIRED]
     if incomplete:
         raise ValueError(f"incomplete matched-risk cells: {len(incomplete)}")

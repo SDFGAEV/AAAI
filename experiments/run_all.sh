@@ -10,12 +10,14 @@ RESULTS="$PROJ/exp_results"
 CAL_STORE="$RESULTS/calibration_store"
 POLICY_FILE="$RESULTS/v2_policy.json"
 PREFERENCE_FILE="$RESULTS/d_pair_train_preference.json"
+CACT_TASK_CARDS="${CACT_TASK_CARDS:-$PROJ/protocol_inputs/task_cards.json}"
 mkdir -p "$RESULTS"
 cd "$PROJ"
 # Avoid BLAS/thread oversubscription when multiple Minecraft workers run.
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
 export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
+export CACT_REQUIRE_WORLD_SNAPSHOT_HASH="${CACT_REQUIRE_WORLD_SNAPSHOT_HASH:-1}"
 
 # ── Multi-GPU VLM pool ───────────────────────────────────────────────
 # Usage: CUDA_VISIBLE_DEVICES is ignored; instead set CACT_GPUS="0,1,2,3".
@@ -78,22 +80,40 @@ if [ -n "${CACT_GPUS:-}" ] && [ "${CACT_GPUS:-}" != "0" ]; then
 fi
 
 # ── Runners ────────────────────────────────────────────────────────────
-_run_args() {
+_runner_args() {
+  RUNNER_ARGS=()
+  if [ -n "${VLM_PORTS:-}" ]; then
+    RUNNER_ARGS+=(--vlm_ports "$VLM_PORTS")
+  else
+    RUNNER_ARGS+=(--vlm_port "$VLM_PORT")
+  fi
+  if [ -n "${CACT_WORLD_SNAPSHOT_MANIFEST:-}" ]; then
+    RUNNER_ARGS+=(--world_snapshot_manifest "$CACT_WORLD_SNAPSHOT_MANIFEST")
+  fi
+}
+run() {
+  _runner_args
+  "$PYTHON" experiments/parallel_runner.py "$@" --workers "$WORKERS" \
+    --plan_model "$PLAN_MODEL" "${RUNNER_ARGS[@]}"
+}
+run_serial() {
+  _runner_args
+  "$PYTHON" experiments/parallel_runner.py "$@" --workers 1 \
+    --plan_model "$PLAN_MODEL" "${RUNNER_ARGS[@]}"
+}
+run_online() {
   local extra=()
   if [ -n "${VLM_PORTS:-}" ]; then
     extra+=(--vlm_ports "$VLM_PORTS")
   else
     extra+=(--vlm_port "$VLM_PORT")
   fi
-  echo "${extra[@]}"
-}
-run() {
-  "$PYTHON" experiments/parallel_runner.py "$@" --workers "$WORKERS" \
-    --plan_model "$PLAN_MODEL" $(_run_args)
-}
-run_serial() {
-  "$PYTHON" experiments/parallel_runner.py "$@" --workers 1 \
-    --plan_model "$PLAN_MODEL" $(_run_args)
+  local manifest_args=()
+  if [ -n "${CACT_WORLD_SNAPSHOT_MANIFEST:-}" ]; then
+    manifest_args+=(--world_snapshot_manifest "$CACT_WORLD_SNAPSHOT_MANIFEST")
+  fi
+  "$PYTHON" experiments/online_runner.py "$@" --workers "$WORKERS" \
+    --protocol_path "$POLICY_FILE" "${manifest_args[@]}" "${extra[@]}"
 }
 
 echo "[M0] compile .pyc (reduces subprocess startup latency)"
@@ -102,6 +122,15 @@ echo "[M0] compile .pyc (reduces subprocess startup latency)"
 echo "[M0] health check and protocol release"
 "$PYTHON" experiments/health_check.py
 "$PYTHON" experiments/release_protocol.py --label protocol-candidate
+if [[ "${CACT_REQUIRE_TASK_CARDS:-1}" == "1" ]]; then
+  if [[ -z "${CACT_TASK_CARDS:-}" ]]; then
+    echo "STOP: CACT_TASK_CARDS must name the sealed task-card JSON/YAML files." >&2
+    exit 2
+  fi
+  read -r -a TASK_CARD_FILES <<< "$CACT_TASK_CARDS"
+  "$PYTHON" analysis/validate_task_cards.py "${TASK_CARD_FILES[@]}" --require-sealed \
+    --out "$RESULTS/task_card_validation.json"
+fi
 
 # E0: six substrate tasks × two seeds × NoKnowledge/NoGate.
 run_serial --benchmark cact_e0 --task_indices 0,1,2,3,4,5 --seeds 1001-1002 --methods NoKnowledge NoGate
@@ -131,7 +160,7 @@ if [[ -z "${E2_DIRECT_JSONL:-}" ]]; then
   fi
   E2_DIRECT_JSONL="$RESULTS/e2_select_rollouts.jsonl"
   "$PYTHON" experiments/run_e2_select_rollouts.py \
-    --benchmark cact_calib --task-indices "${CACT_E2_TASK_INDICES:-0,1,2,3,4,5,6,7}" \
+    --benchmark cact_p3 --task-indices "${CACT_E2_TASK_INDICES:-0,1,2,3,4,5,6,7}" \
     --seeds "${CACT_E2_SEEDS:-3001-3008}" --workers "$WORKERS" --vlm-port "$VLM_PORT" \
     --snapshot-path "$CAL_STORE" --world-snapshot-manifest "${CACT_WORLD_SNAPSHOT_MANIFEST:?set CACT_WORLD_SNAPSHOT_MANIFEST}" \
     --protocol-path "$PROVISIONAL_POLICY" --out "$E2_DIRECT_JSONL"
@@ -170,8 +199,18 @@ export CACT_PREFERENCE_PATH="$PREFERENCE_FILE"
 # D_audit: direct selected-policy rollout plus sealed paired audit.
 if [[ "${CACT_REQUIRE_E2_AUDIT:-1}" == "1" ]]; then
   if [[ -z "${E2_AUDIT_JSONL:-}" || -z "${E2_AUDIT_PAIRS_JSONL:-}" || ! -f "$E2_AUDIT_JSONL" || ! -f "$E2_AUDIT_PAIRS_JSONL" ]]; then
-    echo "STOP: provide E2_AUDIT_JSONL and E2_AUDIT_PAIRS_JSONL before E3." >&2
-    exit 2
+    if [[ "${CACT_AUTO_GENERATE_E2_AUDIT:-0}" != "1" ]]; then
+      echo "STOP: provide E2_AUDIT_JSONL/E2_AUDIT_PAIRS_JSONL or set CACT_AUTO_GENERATE_E2_AUDIT=1." >&2
+      exit 2
+    fi
+    E2_AUDIT_JSONL="$RESULTS/e2_audit_rollouts.jsonl"
+    E2_AUDIT_PAIRS_JSONL="$RESULTS/e2_audit_pairs.jsonl"
+    "$PYTHON" experiments/run_e2_audit_rollouts.py \
+      --benchmark cact_p3 --task-indices "${CACT_DAUDIT_TASK_INDICES:-8,9,10,11,12,13,14,15}" \
+      --seeds "${CACT_DAUDIT_SEEDS:-3011-3018}" --snapshot-path "$CAL_STORE" \
+      --world-snapshot-manifest "${CACT_WORLD_SNAPSHOT_MANIFEST:?set CACT_WORLD_SNAPSHOT_MANIFEST}" \
+      --protocol-path "$POLICY_FILE" --policy-path "$POLICY_FILE" \
+      --out-rollouts "$E2_AUDIT_JSONL" --out-pairs "$E2_AUDIT_PAIRS_JSONL" --workers "$WORKERS"
   fi
   "$PYTHON" experiments/validate_e2_audit.py --rollouts "$E2_AUDIT_JSONL" \
     --pairs "$E2_AUDIT_PAIRS_JSONL" --out "$RESULTS/e2_audit_validation.json"
@@ -185,6 +224,7 @@ run --benchmark cact_ablation --task_indices 0,1,2,3,4,5,6,7,8,9,10,11 --seeds 5
 
 # E5: five independent controlled streams, ten rounds each.
 for seed in 6001 6002 6003 6004 6005; do
-  "$PYTHON" experiments/online_runner.py --rounds 10 --seed "$seed" --workers "$WORKERS" --vlm_port "$VLM_PORT" --protocol_path "$POLICY_FILE" --methods Online-NoGate Online-FixedBayes Online-C-ACT-Pointwise Online-C-ACT
+  run_online --rounds 10 --seed "$seed" \
+    --methods Online-NoGate Online-FixedBayes Online-C-ACT-Pointwise Online-C-ACT
 done
 echo "C-ACT manual protocol complete. Results: $RESULTS"

@@ -69,6 +69,7 @@ def _clone_store(source: Path, destination: Path) -> str:
 def _run_one(task_idx: int, seed: int, method: str, cfg: dict) -> dict:
     """Run one frozen cell with an isolated store and common episode ID."""
     actual_method = ("NoKnowledge" if method == "Base" else
+                     "NoGate" if method == "NoGate" else
                      "C-ACT-Pointwise" if method.startswith("Pointwise:") else "C-ACT")
     cell_id = f"e2_cell_seed{seed}_task{task_idx}"
     run_id = f"e2_{method.replace(':', '_')}_seed{seed}_task{task_idx}"

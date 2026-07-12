@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Validate the sealed D_audit direct-rollout and paired-branch artifacts."""
 from __future__ import annotations
-import argparse, json
+import argparse, json, math
 from collections import defaultdict
 from pathlib import Path
 
@@ -13,13 +13,21 @@ def read(path):
 
 def validate_rollouts(rows):
     cells = defaultdict(dict)
-    required = {"task_id", "world_seed", "episode_id", "method", "snapshot_hash",
-                "success", "harmful_reuse", "coverage", "hrr", "eahr"}
+    required = {"task_id", "world_seed", "episode_id", "matched_cell_id", "method", "snapshot_hash",
+                "success", "harmful_reuse", "coverage", "hrr", "eahr", "returncode", "run_id"}
     for row in rows:
         missing = required - set(row)
         if missing: raise ValueError(f"audit rollout missing fields: {sorted(missing)}")
         if row["method"] not in METHODS: raise ValueError(f"unexpected audit method: {row['method']}")
-        key = (str(row["task_id"]), str(row["world_seed"]), str(row["episode_id"]))
+        key = (str(row["task_id"]), str(row["world_seed"]), str(row["matched_cell_id"]))
+        if not str(row["matched_cell_id"]) or not str(row["snapshot_hash"]):
+            raise ValueError(f"empty matched-cell or snapshot hash: {key}")
+        if int(row["returncode"]) != 0:
+            raise ValueError(f"failed audit rollout: {row.get('run_id', key)}")
+        for name in ("success", "harmful_reuse", "coverage", "hrr", "eahr"):
+            value = float(row[name])
+            if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+                raise ValueError(f"audit metric {name} outside [0,1]: {row[name]}")
         if row["method"] in cells[key]: raise ValueError(f"duplicate audit cell: {key} {row['method']}")
         cells[key][row["method"]] = row
     incomplete = [key for key, values in cells.items() if set(values) != METHODS]
@@ -27,6 +35,8 @@ def validate_rollouts(rows):
     for key, values in cells.items():
         if len({str(x["snapshot_hash"]) for x in values.values()}) != 1:
             raise ValueError(f"snapshot mismatch in audit cell: {key}")
+        if len({str(x["episode_id"]) for x in values.values()}) != 1:
+            raise ValueError(f"episode mismatch in audit cell: {key}")
     return len(cells)
 
 def validate_pairs(rows):
@@ -35,12 +45,18 @@ def validate_pairs(rows):
     for row in rows:
         if not {"pair_id", "parent_episode", "snapshot_hash", "reuse", "base"}.issubset(row):
             raise ValueError("paired audit row missing pair_id/parent_episode/snapshot_hash/reuse/base")
+        if not str(row["pair_id"]) or not str(row["parent_episode"]) or not str(row["snapshot_hash"]):
+            raise ValueError("paired audit identifiers and snapshot_hash must be non-empty")
+        if not isinstance(row["reuse"], dict) or not isinstance(row["base"], dict):
+            raise ValueError(f"paired audit branches must be objects: {row['pair_id']}")
         if row["pair_id"] in seen: raise ValueError(f"duplicate paired audit id: {row['pair_id']}")
         seen.add(row["pair_id"])
         if row["reuse"].get("branch_parent_id") != row["parent_episode"] or row["base"].get("branch_parent_id") != row["parent_episode"]:
             raise ValueError(f"branch parent mismatch: {row['pair_id']}")
         if row["reuse"].get("branch_mode") != "reuse" or row["base"].get("branch_mode") != "base":
             raise ValueError(f"branch mode mismatch: {row['pair_id']}")
+        if row["reuse"].get("snapshot_hash") != row["base"].get("snapshot_hash") or row["reuse"].get("snapshot_hash") != row.get("snapshot_hash"):
+            raise ValueError(f"snapshot mismatch in paired audit: {row['pair_id']}")
         if row.get("prefix_match") is not True: raise ValueError(f"unverified shared prefix: {row['pair_id']}")
     return len(rows)
 

@@ -71,7 +71,8 @@ class ExperimentConfig:
 
 def _clone_snapshot(src: str, dst: str) -> None:
     """Clone a frozen store; optional hardlinks avoid repeated Ubuntu copies."""
-    if os.environ.get("CACT_FROZEN_HARDLINK") != "1":
+    if (os.environ.get("CACT_FROZEN_HARDLINK") != "1"
+            or os.environ.get("CACT_ALLOW_UNSAFE_HARDLINK") != "1"):
         shutil.copytree(src, dst); return
     os.makedirs(dst, exist_ok=True)
     for root, dirs, files in os.walk(src):
@@ -86,7 +87,8 @@ class ParallelRunner:
 
     def __init__(self, workers: int = 4, vlm_port: int = 12345,
                  mc_base_port: int = 15000, checkpoint_dir: str = None,
-                 batch_proxy_port: int = 12346, vlm_ports: str = ""):
+                 batch_proxy_port: int = 12346, vlm_ports: str = "",
+                 world_snapshot_manifest: str = ""):
         self.workers = workers
         self.vlm_port = vlm_port
         self.mc_base_port = mc_base_port
@@ -96,6 +98,14 @@ class ParallelRunner:
         self._vlm_ports: List[int] = []
         if vlm_ports:
             self._vlm_ports = [int(x) for x in vlm_ports.split(",") if x]
+        self._world_snapshot_hashes: Dict[str, str] = {}
+        if world_snapshot_manifest:
+            with open(world_snapshot_manifest, encoding="utf-8") as handle:
+                payload = json.load(handle)
+            hashes = payload.get("hashes", payload) if isinstance(payload, dict) else {}
+            if not isinstance(hashes, dict):
+                raise ValueError("world snapshot manifest must be a JSON mapping")
+            self._world_snapshot_hashes = {str(k): str(v) for k, v in hashes.items() if str(v)}
         self._completed: set = set()
         self._results: List[Dict] = []
         self._server_procs: Dict[int, subprocess.Popen] = {}
@@ -238,6 +248,9 @@ class ParallelRunner:
             cmd.append(f"+cact_active_calib_rate={cfg.active_calib_rate}")
         if cfg.cact_kappa:
             cmd.append(f"+cact_kappa={cfg.cact_kappa}")  # E2 direct select kappa override
+        if cfg.frozen and cfg.protocol_path and os.environ.get("CACT_REQUIRE_WORLD_SNAPSHOT_HASH") == "1" and not cfg.snapshot_hash:
+            return {"key": key, "run_id": cfg.run_id, "task": cfg.task, "seed": cfg.seed, "method": cfg.method,
+                    "status": "error", "error": "missing world snapshot hash for frozen protocol run"}
         if cfg.snapshot_hash:
             cmd.append(f"+cact_snapshot_hash={cfg.snapshot_hash}")
         if cfg.branch_mode:
@@ -246,7 +259,7 @@ class ParallelRunner:
             cmd.append(f"+cact_branch_parent_id={cfg.branch_parent_id}")
             cmd.append(f"+cact_branch_prefix_assignment={cfg.branch_prefix_assignment}")
             if cfg.branch_prefix_trace:
-                cmd.append(f"+cact_branch_prefix_trace={cfg.branch_prefix_trace}")
+                cmd.append(f"+cact_branch_prefix_trace={json.dumps(cfg.branch_prefix_trace)}")
 
         def store_hash(path):
             h = hashlib.sha256()
@@ -379,6 +392,9 @@ class ParallelRunner:
                             current[key.strip()] = value
         grid = []
         allowed = set(task_indices) if task_indices is not None else None
+        if allowed and any(i < 0 or i >= len(tasks) for i in allowed):
+            invalid = sorted(i for i in allowed if i < 0 or i >= len(tasks))
+            raise ValueError(f"task_indices out of range for {benchmark}: {invalid}")
         for idx, task in enumerate(tasks):
             if allowed is not None and idx not in allowed:
                 continue
@@ -394,6 +410,7 @@ class ParallelRunner:
                                                 method.replace("/", "_").replace("-", "_"),
                                                 f"seed_{seed}", f"task_{idx}"),
                         run_id=f"{benchmark}_{method}_seed{seed}_task{idx}",
+                        snapshot_hash=self._world_snapshot_hashes.get(f"{idx}|{seed}", ""),
                     ))
         return grid
 
@@ -429,20 +446,21 @@ class ParallelRunner:
         print(f"  Seeds: {len(seeds)} ({seeds[0]}–{seeds[-1]})")
         print(f"  Total episodes: {len(grid)}")
         print(f"  Workers: {self.workers}")
-        print(f"  Already completed: {len(self._completed)}")
-        print(f"  To run: {len(grid) - len(self._completed)}")
+        pending = [cfg for cfg in grid if (cfg.task, cfg.seed, cfg.method, cfg.frozen) not in self._completed]
+        print(f"  Already completed: {len(grid) - len(pending)}")
+        print(f"  To run: {len(pending)}")
         print(f"{'='*60}\n")
 
-        if len(grid) - len(self._completed) == 0:
+        if not pending:
             print("[Done] All episodes already completed. Nothing to run.")
             return self._results
 
-        # Start VLM server + batch proxy (skip if ports provided externally)
+        # Start VLM server + batch proxy (skip both when a pool is external).
         if self._vlm_ports:
             print(f"[VLM] Using external VLM pool: {self._vlm_ports}")
         else:
             self._start_vlm_server(plan_model)
-        self._start_batch_proxy()
+            self._start_batch_proxy()
 
         # Assign ports to workers: round-robin across VLM pool
         ports = self._vlm_ports if self._vlm_ports else [self.vlm_port]
@@ -453,14 +471,18 @@ class ParallelRunner:
         try:
             # Run episodes in parallel
             completed = 0
-            to_run = len(grid) - len(self._completed)
+            to_run = len(pending)
 
+            batch_failures = []
             with ThreadPoolExecutor(max_workers=self.workers) as pool:
-                futures = {pool.submit(self._run_one, cfg): cfg for cfg in grid}
+                futures = {pool.submit(self._run_one, cfg): cfg for cfg in pending}
                 for future in as_completed(futures):
                     result = future.result()
                     key = result["key"]
-                    self._completed.add(key)
+                    if result.get("status") in {"success", "skipped"}:
+                        self._completed.add(key)
+                    else:
+                        batch_failures.append(result)
                     self._results.append(result)
 
                     completed += 1
@@ -484,6 +506,9 @@ class ParallelRunner:
             self._stop_vlm_server()
             self._save_checkpoint()
 
+        if batch_failures:
+            summary = ", ".join(f"{r.get('method', '?')}:{r.get('seed', '?')}/{r.get('task', '?')}={r.get('status')}" for r in batch_failures[:8])
+            raise RuntimeError(f"{len(batch_failures)} experiment episodes failed; refusing a partial-success exit: {summary}")
         return self._results
 
     # ── Summary ──
@@ -535,6 +560,8 @@ def main():
                        help="VLM server port (default: 12345)")
     parser.add_argument("--vlm_ports", type=str, default="",
                        help="Comma-separated VLM ports for multi-GPU pool (e.g. 12345,12346,12347)")
+    parser.add_argument("--world_snapshot_manifest", default="",
+                       help="JSON mapping task_id|world_seed to canonical world snapshot hash")
     parser.add_argument("--plan_model", default="Qwen/Qwen2.5-VL-7B-Instruct",
                        help="VLM model name")
     parser.add_argument("--resume", action="store_true",
@@ -571,6 +598,7 @@ def main():
         workers=args.workers,
         vlm_port=args.vlm_port,
         vlm_ports=args.vlm_ports,
+        world_snapshot_manifest=args.world_snapshot_manifest,
         checkpoint_dir=args.checkpoint_dir,
     )
 
