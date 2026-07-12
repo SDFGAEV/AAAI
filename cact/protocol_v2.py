@@ -444,8 +444,13 @@ class AdmissionPolicyV2:
              initial_budget: float = DEFAULT_BUDGET, family: str = "full"):
         with open(path, encoding="utf-8") as handle:
             data = json.load(handle)
-        if isinstance(data.get("families"), dict):
-            data = data["families"].get(family, data)
+        families = data.get("families")
+        if isinstance(families, dict):
+            if family not in families:
+                raise ValueError(f"policy artifact missing family '{family}'; available: {sorted(families)}")
+            data = families[family]
+        elif family != "full":
+            raise ValueError(f"policy artifact missing 'families' key; cannot load family '{family}'")
         return cls(CalibratedPolicy.from_dict(data),
                    use_ledger=use_ledger, initial_budget=initial_budget)
     def _budget_before(self, episode_id: str) -> float:

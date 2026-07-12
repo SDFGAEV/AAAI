@@ -46,6 +46,8 @@ def main():
         raise SystemExit("D_fit, D_select and D_audit paths overlap")
 
     fit_rows = [r for r in fit if r.y is not None and r.harm is not None]
+    if len(fit_rows) < 40:
+        raise SystemExit(f"D_fit has only {len(fit_rows)} labeled rows (need >=40); ensure E1b produced enough complete episodes with outcome labels")
     fold_seeds = (17, 29, 41)
 
     def ensemble(rows):
