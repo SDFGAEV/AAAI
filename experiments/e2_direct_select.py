@@ -9,7 +9,7 @@ must be checked by the caller before deployment.
 """
 from __future__ import annotations
 import argparse, json, math, sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 
 _PROJ = Path(__file__).resolve().parents[1]
@@ -69,6 +69,13 @@ def select(rows, eps_inc=0.02, eps_abs=0.10):
         episode_ids = {str(row["episode_id"]) for row in methods.values()}
         if len(episode_ids) != 1:
             raise ValueError(f"matched cell has inconsistent episode IDs: {key}")
+    cell_count = len(cells)
+    if cell_count not in {48, 64}:
+        raise ValueError(f"D_select must contain 48 cells (6 seeds) or 64 cells (8-seed expansion), got {cell_count}")
+    seeds_per_template = Counter(key[0] for key in cells)
+    expected_seeds = 6 if cell_count == 48 else 8
+    if set(seeds_per_template.values()) != {expected_seeds}:
+        raise ValueError("D_select cells must be balanced across the 8 preregistered templates")
     incomplete = [key for key, methods in cells.items() if set(methods) != REQUIRED]
     if incomplete:
         raise ValueError(f"incomplete matched-risk cells: {len(incomplete)}")
@@ -128,7 +135,10 @@ def main():
     ap.add_argument("--out", required=True); ap.add_argument("--eps-inc", type=float, default=0.02)
     ap.add_argument("--eps-abs", type=float, default=0.10)
     args = ap.parse_args()
+    rows = load(args.input)
     result = {"schema_version": "cact.e2.direct_select.v1", "source": str(Path(args.input)),
+              "design": {"allowed_cells": [48, 64], "observed_cells": len({_cell(r) for r in rows})},
+              "selection": select(rows, args.eps_inc, args.eps_abs)}
               "selection": select(load(args.input), args.eps_inc, args.eps_abs)}
     Path(args.out).write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
     print(json.dumps(result, ensure_ascii=False))

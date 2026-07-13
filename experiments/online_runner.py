@@ -2,18 +2,18 @@
 """
 C-ACT E5: Online Knowledge-Growth Evaluation.
 
-10 rounds of accumulation → calibration → frozen test.
-Each method+seed+round has persistent trust store.
-Evaluation split: 6 retention tasks + 6 hard-transfer tasks per round.
+10 rounds of accumulation -> calibration -> frozen test.
+Each method+seed+round has a persistent evaluation store; the update/calibration stream is shared across methods.
+Evaluation split: 4 retention tasks + 4 hard-transfer tasks per method and round.
 
 Methods:
   Online-SuccessLifecycle  — lifecycle gate only (baseline)
   Online-FixedBayes        — fixed-threshold Bayesian gate
-  Online-ACT               — counterfactual uplift, no contract
+  Online-C-ACT-Pointwise   - counterfactual uplift without the ledger
   Online-C-ACT             — full C-ACT pipeline
 
-Per-round: 16 shared update + 4 calibration + 8 frozen eval = 28 episodes
-Total per stream: 10 rounds × 20 episodes × 4 methods = 800 episodes
+Per-round: 12 shared update + 4 shared calibration + 8 frozen eval x 4 methods = 48 episodes
+Total per stream: 10 rounds x 48 episodes = 480; five independent streams = 2,400 episodes
 
 Usage:
   python experiments/online_runner.py --rounds 10 --workers 4
@@ -45,7 +45,7 @@ def _clone_frozen_store(src: str, dst: str) -> None:
 # Per-round episodes
 N_ACCUM = 12   # shared candidate/evidence update episodes (§19.1)
 N_CALIB = 4     # calibration/check episodes
-N_EVAL  = 8    # frozen evaluation (6 retention + 6 hard-transfer)
+N_EVAL  = 8    # frozen evaluation (4 retention + 4 hard-transfer)
 
 
 class OnlineRunner:
@@ -116,7 +116,7 @@ class OnlineRunner:
                 self._vlm_proc.kill()
             print(f"[VLM] Stopped")
 
-    # ── Per-phase runner ──
+    # -- Per-phase runner --
     def _run_phase(self, benchmark: str, seeds: List[int],
                    method: str, phase: str,
                    trust_store_path: str = None,
@@ -187,12 +187,12 @@ class OnlineRunner:
         gate.save_calibration(calibration_path)
         return store_path
 
-    # ── Run one round for one method ──
+    # -- Run one round for one method --
     def _run_round_for_method(self, method: str, seed: int,
                                round_num: int,
                                prev_store_path: str = None,
                                shared_update_store: str = None) -> Dict:
-        """Execute accumulation → calibration → evaluation for one (method, seed, round)."""
+        """Execute accumulation -> calibration -> evaluation for one (method, seed, round)."""
         store_path = self._trust_store_path(method, seed, round_num)
 
         # Copy previous round's store as starting point
@@ -204,7 +204,7 @@ class OnlineRunner:
             _clone_frozen_store(prev_store_path, store_path)
 
         if shared_update_store is None:
-            # Phase 1: Accumulation (8 episodes, updates trust store)
+            # Phase 1: Accumulation (12 episodes, updates shared trust store)
             self._run_phase(
                 benchmark="cact_online_stream",
                 seeds=[seed], method=method,
@@ -214,7 +214,7 @@ class OnlineRunner:
                 label=f"accum({N_ACCUM})"
             )
 
-            # Phase 2: Calibration (4 episodes, updates thresholds)
+            # Phase 2: Calibration (4 episodes, updates shared thresholds)
             self._run_phase(
                 benchmark="cact_calib",
                 seeds=[seed], method=method,
@@ -325,7 +325,7 @@ class OnlineRunner:
             "late_harm_rate": compute_late_harm_rate(rows) if rows else None,
         }
 
-    # ── Full experiment ──
+    # -- Full experiment --
     def run(self, methods: List[str] = None, seed: int = DEFAULT_SEED):
         methods = methods or DEFAULT_METHODS
 
@@ -335,8 +335,9 @@ class OnlineRunner:
         print(f"  Methods: {len(methods)} ({', '.join(methods)})")
         print(f"  Seed: {seed}")
         print(f"  Per round: {N_ACCUM} acc + {N_CALIB} cal + {N_EVAL} eval")
-        print(f"  Total: {self.rounds} × {N_ACCUM+N_CALIB+N_EVAL} × {len(methods)} = "
-              f"{self.rounds * (N_ACCUM+N_CALIB+N_EVAL) * len(methods)} episodes")
+        per_round_total = N_ACCUM + N_CALIB + N_EVAL * len(methods)
+        print(f"  Total: {self.rounds} x {per_round_total} = "
+              f"{self.rounds * per_round_total} episodes per stream")
         print(f"{'='*70}")
 
         self._start_vlm()
@@ -344,12 +345,12 @@ class OnlineRunner:
 
         try:
             # Track previous store paths per method for round-to-round persistence
-            prev_stores: Dict[str, str] = {}  # method → previous store path
+            prev_stores: Dict[str, str] = {}  # method -> previous store path
 
             for r in range(1, self.rounds + 1):
-                print(f"\n{'─'*70}")
+                print(f"\n{'-'*70}")
                 print(f"  ROUND {r}/{self.rounds}")
-                print(f"{'─'*70}")
+                print(f"{'-'*70}")
 
                 round_data = {}
                 shared_path = self._trust_store_path("SharedStream", seed, r)
@@ -383,7 +384,7 @@ class OnlineRunner:
 
         return all_results
 
-    # ── Final report ──
+    # -- Final report --
     def _compile_report(self, all_results: List[Dict], methods: List[str]):
         """Generate E5 metrics: RetentionSR, HardSR, SafetyDrift, KPR, AULC."""
         report_path = os.path.join(self._results_root, "e5_report.json")
@@ -451,7 +452,7 @@ class OnlineRunner:
         print(f"{'='*90}")
         header = f"  {'Method':<28} {'AULC':>7} {'EvalSR':>7} {'RetSR':>6} {'HTSR':>6} {'Safety':>7} {'KPR':>6} {'Cert':>5} {'Dep':>5}"
         print(header)
-        print(f"  {'─'*28} {'─'*7} {'─'*7} {'─'*6} {'─'*6} {'─'*7} {'─'*6} {'─'*5} {'─'*5}")
+        print(f"  {'-'*28} {'-'*7} {'-'*7} {'-'*6} {'-'*6} {'-'*7} {'-'*6} {'-'*5} {'-'*5}")
         def fmt(v, width=7):
             return f"{v:{width}.3f}" if isinstance(v, (int, float)) else f"{'n/a':>{width}}"
         for m in methods:

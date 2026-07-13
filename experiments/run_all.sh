@@ -16,6 +16,7 @@ PREFERENCE_FILE="$RESULTS/d_pair_train_preference.json"
 CACT_TASK_CARDS="${CACT_TASK_CARDS:-$PROJ/protocol_inputs/task_cards.json}"
 mkdir -p "$RESULTS"
 cd "$PROJ"
+export PYTHONPATH="$PROJ:$PROJ/src:$PROJ/minerl"
 # Avoid BLAS/thread oversubscription when multiple Minecraft workers run.
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
@@ -171,7 +172,7 @@ if [[ -z "${E2_DIRECT_JSONL:-}" ]]; then
   E2_DIRECT_JSONL="$RESULTS/e2_select_rollouts.jsonl"
   "$PYTHON" experiments/run_e2_select_rollouts.py \
     --benchmark cact_p3 --task-indices "${CACT_E2_TASK_INDICES:-0,1,2,3,4,5,6,7}" \
-    --seeds "${CACT_E2_SEEDS:-3001-3008}" --workers "$WORKERS" --vlm-port "$VLM_PORT" \
+    --seeds "${CACT_E2_SEEDS:-3001-3006}" --workers "$WORKERS" --vlm-port "$VLM_PORT" \
     --snapshot-path "$CAL_STORE" \
     --protocol-path "$PROVISIONAL_POLICY" --out "$E2_DIRECT_JSONL"
 fi
