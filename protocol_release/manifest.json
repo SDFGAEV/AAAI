@@ -1,7 +1,7 @@
 {
   "schema_version": "cact.protocol_release.v1",
   "label": "protocol-candidate",
-  "created_utc": "2026-07-12T14:46:18.743206+00:00",
+  "created_utc": "2026-07-13T00:22:46.006300+00:00",
   "method": "C-ACT: Contextual Admission via Counterfactual Treatment Effects",
   "frozen_claims": [
     "reliable admission",

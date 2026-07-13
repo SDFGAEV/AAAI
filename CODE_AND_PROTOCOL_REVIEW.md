@@ -59,3 +59,21 @@ A remaining environment-level risk is that `preferred_spawn_biome` must be verif
 - `collect_world_snapshots.py` hashes real Minecraft save trees with a documented canonical-tree rule and refuses missing/empty worlds.
 - `run_e2_audit_rollouts.py` collects the four selected direct audit methods and invokes the real paired-branch collector for the >=200-row audit.
 - `setup_and_run.sh` checks dependencies, prepares the registry and XENON procedural identity manifest (or a filesystem manifest when a world-root template is supplied), enables real E2/E1c/D_audit collection, and delegates to `run_all.sh`. It never invents rollout outcomes or labels.
+
+
+## Runtime hardening pass (2026-07-13)
+
+- VLM app defaults to loopback binding, requires a token for non-loopback
+  deployment, bounds request/image sizes, and sanitizes image output paths.
+- VLM retry loops are bounded; batch inference initializes the agent safely.
+- ServerAPI uses a shared connection pool and propagates the optional API token.
+- The local batch proxy is threaded and event-driven rather than single-threaded
+  with busy-wait polling.
+- MineRL/Minecraft startup has a bounded Linux log wait and configurable
+  process-group shutdown grace periods.
+- Steve-1/VPT/IMPALA constructors no longer use mutable dictionary defaults.
+- Release hashes now cover the VLM service, proxy, ServerAPI, XENON environment,
+  MineRL Java launcher, and Steve-1/VPT model code.
+- Synthetic profiling artifacts are under profile_output/. Real GPU/Java
+  measurements remain a server-only requirement because this host lacks CUDA,
+  nvidia-smi, perf, bash, and the target Minecraft runtime.
