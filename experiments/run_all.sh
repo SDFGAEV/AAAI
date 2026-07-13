@@ -22,7 +22,7 @@ export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
 export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
 export CACT_REQUIRE_WORLD_SNAPSHOT_HASH="${CACT_REQUIRE_WORLD_SNAPSHOT_HASH:-0}"
 
-# ── Multi-GPU VLM pool ───────────────────────────────────────────────
+# -- Multi-GPU VLM pool -----------------------------------------------
 # Usage: CUDA_VISIBLE_DEVICES is ignored; instead set CACT_GPUS="0,1,2,3".
 # Each GPU gets one VLM server on port 12345 + gpu_index.
 # Workers are distributed round-robin across ports.
@@ -83,7 +83,7 @@ if [ -n "${CACT_GPUS:-}" ] && [ "${CACT_GPUS:-}" != "0" ]; then
   _start_vlm_pool
 fi
 
-# ── Runners ────────────────────────────────────────────────────────────
+# -- Runners ------------------------------------------------------------
 _runner_args() {
   RUNNER_ARGS=()
   if [ -n "${VLM_PORTS:-}" ]; then
@@ -137,12 +137,12 @@ if [[ "${CACT_REQUIRE_TASK_CARDS:-1}" == "1" ]]; then
   read -r -a TASK_CARD_FILES <<< "$CACT_TASK_CARDS"
   "$PYTHON" analysis/validate_task_cards.py "${TASK_CARD_FILES[@]}" --require-sealed \
     --out "$RESULTS/task_card_validation.json"
-  "$PYTHON" analysis/validate_predicate_registry.py \
-    "$PROJ/protocol_inputs/predicate_registry.yaml" \
-    --out "$RESULTS/predicate_registry_validation.json"
 fi
+"$PYTHON" analysis/validate_predicate_registry.py \
+  "$PROJ/protocol_inputs/predicate_registry.yaml" \
+  --out "$RESULTS/predicate_registry_validation.json"
 
-# E0: six substrate tasks × two seeds × NoKnowledge/NoGate.
+# E0: six substrate tasks x two seeds x NoKnowledge/NoGate.
 run_serial --benchmark cact_e0 --task_indices 0,1,2,3,4,5 --seeds 1001-1002 --methods NoKnowledge NoGate
 
 # E1a freezes the shared knowledge store; E1b collects randomized opportunities.
@@ -224,16 +224,16 @@ if [[ "${CACT_REQUIRE_E2_AUDIT:-1}" == "1" ]]; then
     --pairs "$E2_AUDIT_PAIRS_JSONL" --out "$RESULTS/e2_audit_validation.json"
 fi
 
-# E3: 36 conditions × 8 seeds × six preregistered methods, strict frozen.
+# E3: 36 conditions x 8 seeds x six preregistered methods, strict frozen.
 run --benchmark cact_p3 --task_indices 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35 --seeds 4001-4008 --methods NoKnowledge NoGate FixedBayes PairwisePreferenceGate C-ACT-Pointwise C-ACT --frozen --snapshot_path "$CAL_STORE" --protocol_path "$POLICY_FILE"
 
-# E4: four core ablations aligned with protocol §18 (12 conditions × 5 seeds × 4 variants = 240)
+# E4: four core ablations aligned with protocol §18 (12 conditions x 5 seeds x 4 variants = 240)
 # 1. Full C-ACT           = C-ACT method with v2_policy.json (family=full)
 # 2. w/o Applicability    = C-ACT-NoApplicability (applicable always True)
 # 3. Global-Risk Only     = C-ACT method with global-only selected κ*_G
 # 4. w/o Ledger           = C-ACT-Pointwise + kappa_override=κ*_F (ledger disabled)
 E4_GLOBAL_POLICY="$RESULTS/v2_policy_global_only.json"
-FULL_KAPPA="$(sed -n "s/.*\\"kappa\\": *\\([0-9.]*\\).*/\\1/p" "$POLICY_FILE" | head -n1)"
+FULL_KAPPA="$($PYTHON -c 'import json,sys; print(json.load(open(sys.argv[1]))["families"]["full"]["kappa"])' "$POLICY_FILE")"
 CACT_CHECKPOINT_DIR="$RESULTS/ckpt/e4_full" run --benchmark cact_ablation --task_indices 0,1,2,3,4,5,6,7,8,9,10,11 --seeds 5001-5005 \
   --methods C-ACT C-ACT-NoApplicability --frozen --snapshot_path "$CAL_STORE" --protocol_path "$POLICY_FILE"
 CACT_CHECKPOINT_DIR="$RESULTS/ckpt/e4_pointwise" run --benchmark cact_ablation --task_indices 0,1,2,3,4,5,6,7,8,9,10,11 --seeds 5001-5005 \

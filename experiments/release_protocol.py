@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import argparse, csv, hashlib, json, re
+import argparse, csv, hashlib, json, os, re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -49,16 +49,54 @@ def main():
            ROOT/"src/optimus1/models/steve1/VPT/lib/util.py", ROOT/"minerl/minerl/env/_multiagent.py",
            ROOT/"experiments/release_protocol.py", ROOT/"experiments/health_check.py",
            ROOT/"analysis/validate_predicate_registry.py", ROOT/"protocol_inputs/predicate_registry.yaml",
+           ROOT/"src/optimus1/util/prompt.py", ROOT/"cact/cact_memory.py",
            ROOT/"tests/test_controller_ledger.py",
            ROOT/"docs/UBUNTU_PERFORMANCE.md"]
-    manifest = {"schema_version":"cact.protocol_release.v1", "label":args.label, "created_utc":datetime.now(timezone.utc).isoformat(), "method":"C-ACT: Contextual Admission via Counterfactual Treatment Effects", "frozen_claims":["reliable admission", "applicability boundary and adaptive risk-coverage"], "hashes":{str(p.relative_to(ROOT.parent)):sha256(p) for p in files if p.exists()}, "seeds":{"E0":[1001,1002],"E1a":list(range(2001,2006)),"E1b":list(range(2101,2106)),"D_select":list(range(3001,3009)),"D_audit":list(range(3011,3019)),"E3":list(range(4001,4009)),"E4":list(range(5001,5006)),"E5":[6001,6002,6003,6004,6005]}, "budgets":{"delta":.05,"eps_abs":.10,"eps_inc":.02,"kappas":[0,.5,1,1.5,2,2.5,3],"support_n":12,"ess":24}}
+    hashes = {p.relative_to(ROOT.parent).as_posix():sha256(p) for p in files if p.exists()}
+    manifest = {"schema_version":"cact.protocol_release.v1", "label":args.label, "created_utc":datetime.now(timezone.utc).isoformat(), "method":"C-ACT: Contextual Admission via Counterfactual Treatment Effects", "frozen_claims":["reliable admission", "applicability boundary and adaptive risk-coverage"], "hashes": hashes, "seeds":{"E0":[1001,1002],"E1a":list(range(2001,2006)),"E1b":list(range(2101,2106)),"D_select":list(range(3001,3009)),"D_audit":list(range(3011,3019)),"E3":list(range(4001,4009)),"E4":list(range(5001,5006)),"E5":[6001,6002,6003,6004,6005]}, "budgets":{"delta":.05,"eps_abs":.10,"eps_inc":.02,"kappas":[0,.5,1,1.5,2,2.5,3],"support_n":12,"ess":24}}
     (out/"manifest.json").write_text(json.dumps(manifest,indent=2,ensure_ascii=False),encoding="utf-8")
     benchmarks = {}
     for name in ("cact_e0","cact_train","cact_calib","cact_p3","cact_ablation","cact_online_stream","cact_online_retention","cact_online_hard_transfer"):
         path = ROOT/"src/optimus1/conf/benchmark"/f"{name}.yaml"
         if path.exists(): benchmarks[name] = {"hash":sha256(path),"tasks":parse_tasks(path)}
     (out/"task_registry.json").write_text(json.dumps({"benchmarks":benchmarks},indent=2,ensure_ascii=False),encoding="utf-8")
-    (out/"substrate_manifest.json").write_text(json.dumps({"schema_version":"cact.substrate.v1","commit":"unknown","benchmarks":{k:v["hash"] for k,v in benchmarks.items()},"planner":"same base planner","retriever":"fixed top-1","environment":"CACTTaskEnv-v0"},indent=2),encoding="utf-8")
+    substrate = {
+        "schema_version": "cact.substrate.v1",
+        "commit": os.getenv("CACT_XENON_COMMIT", "XENON-runtime"),
+        "environment": {
+            "name": os.getenv("CACT_ENV_NAME", "CACTTaskEnv-v0"),
+            "version": os.getenv("CACT_MINECRAFT_VERSION", "Minecraft-runtime"),
+            "mod_hash": os.getenv("CACT_MOD_HASH", sha256(ROOT / "minerl/minerl/env/malmo.py")),
+        },
+        "planner": {
+            "model_id": os.getenv("CACT_PLAN_MODEL", "Qwen/Qwen2.5-VL-7B-Instruct"),
+            "revision": os.getenv("CACT_PLAN_MODEL_REVISION", "HF-runtime"),
+            "temperature": float(os.getenv("CACT_PLAN_TEMPERATURE", "0.0")),
+            "top_p": float(os.getenv("CACT_PLAN_TOP_P", "1.0")),
+        },
+        "controller": {
+            "name": "STEVE-1",
+            "checkpoint_hash": os.getenv("CACT_CONTROLLER_CHECKPOINT_HASH", "checkpoint-runtime"),
+            "seeded": True,
+        },
+        "observation": {
+            "rgb": True,
+            "structured_fields": ["inventory", "health", "hunger", "position", "gui", "task_progress"],
+        },
+        "retriever": {
+            "model_id": os.getenv("CACT_RETRIEVER_MODEL", "fixed-retriever-v1"),
+            "index_hash": os.getenv("CACT_RETRIEVER_INDEX_HASH", sha256(ROOT / "protocol_inputs/task_cards.json")),
+            "top_k": 1,
+            "score_threshold": os.getenv("CACT_RETRIEVER_SCORE_THRESHOLD", "top1-frozen"),
+        },
+        "budgets": {"environment_actions": "task-card", "llm_calls": "task-card", "tokens": "task-card"},
+        "prompt_hashes": {
+            "base": sha256(ROOT / "src/optimus1/util/prompt.py"),
+            "reuse_wrapper": sha256(ROOT / "cact/cact_memory.py"),
+        },
+        "benchmarks": {k: v["hash"] for k, v in benchmarks.items()},
+    }
+    (out / "substrate_manifest.json").write_text(json.dumps(substrate, indent=2, ensure_ascii=False), encoding="utf-8")
     deviation_log = out / "deviation_log.csv"
     if not deviation_log.exists():
         with deviation_log.open("w", newline="", encoding="utf-8") as f:

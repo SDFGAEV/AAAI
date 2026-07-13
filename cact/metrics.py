@@ -177,12 +177,38 @@ def compute_late_harm_rate(rows, late_phases=("late", "final")):
     return sum(bool(_first(r, "harmful_reuse", "is_harmful", default=False)) for r in late) / len(late) if late else 0.0
 
 def compute_backoff_metrics(rows):
-    fallback = [r for r in rows if str(r.get("decision", "")).lower() in {"fallback", "reject"}]
-    unsupported = [r for r in fallback if str(r.get("reason", r.get("certificate_reason", ""))).startswith("unsupported")]
-    depths = [float(r["depth"]) for r in rows if r.get("depth") is not None]
-    return {"unsupported_fallback_rate": len(unsupported) / len(rows) if rows else 0.0,
-            "mean_backoff_depth": sum(depths) / len(depths) if depths else float("nan")}
+    """Return deployment backoff metrics without treating missing audits as zero.
 
+    ``parent_conflict`` and ``history_backoff`` are optional annotations emitted
+    by the policy/audit layer. If an older log lacks them, the corresponding
+    rate is ``None`` (unknown), not a fabricated zero.
+    """
+    fallback = [r for r in rows if str(r.get("decision", "")).lower() in {"fallback", "reject"}]
+    reasons = [str(r.get("reason", r.get("certificate_reason", ""))).lower() for r in rows]
+    unsupported = [r for r, reason in zip(rows, reasons) if str(r.get("decision", "")).lower() in {"fallback", "reject"} and reason.startswith("unsupported")]
+    depth_map = {"g0": 0.0, "g1": 1.0, "g2": 2.0, "g3": 3.0}
+    depths = []
+    for row in rows:
+        value = row.get("depth")
+        if value is None:
+            continue
+        try:
+            depths.append(float(depth_map.get(str(value), value)))
+        except (TypeError, ValueError):
+            continue
+    parent_values = [bool(r["parent_conflict"]) for r in rows if "parent_conflict" in r]
+    history_values = [bool(r["history_backoff"]) for r in rows if "history_backoff" in r]
+    if not history_values:
+        history_values = [reason in {"history_backoff", "history_insufficient"} for reason in reasons
+                          if reason in {"history_backoff", "history_insufficient"}]
+    return {
+        "unsupported_fallback_rate": len(unsupported) / len(rows) if rows else 0.0,
+        "mean_backoff_depth": sum(depths) / len(depths) if depths else float("nan"),
+        "parent_conflict_rate": (sum(parent_values) / len(parent_values)
+                                  if parent_values else None),
+        "history_backoff_rate": (sum(history_values) / len(history_values)
+                                  if history_values else None),
+    }
 def compute_aulc(values):
     vals = [float(v) for v in values if v is not None]
     if not vals: return 0.0

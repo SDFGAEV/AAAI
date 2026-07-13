@@ -11,7 +11,7 @@ Turns the serial nested-loop experiment into a multi-process parallel pipeline:
   5. Result Aggregation  — collects all logs into unified exp_results/
 
 Usage:
-  # E3 main evaluation (36 tasks × 8 seeds × 7 methods = 2016 episodes)
+  # E3 main evaluation (36 tasks x 8 seeds x 7 methods = 2016 episodes)
   python experiments/parallel_runner.py \\
     --benchmark cact_p3 --seeds 4001-4008 --methods \\
     NoKnowledge NoGate FixedBayes PairwisePreferenceGate C-ACT-Pointwise C-ACT \\
@@ -20,8 +20,8 @@ Usage:
   # Resume interrupted run
   python experiments/parallel_runner.py --resume --checkpoint_dir exp_results/ckpt/
 
-Speed: ~4× with 4 workers. E3: 17h → 4-5h (single MC per worker).
-       ~8× with 8 workers + MC instance sharing.
+Speed: ~4x with 4 workers. E3: 17h → 4-5h (single MC per worker).
+       ~8x with 8 workers + MC instance sharing.
 """
 
 import subprocess, sys, os, json, time, signal, shutil, argparse, socket, hashlib, urllib.request
@@ -34,7 +34,7 @@ from pathlib import Path
 _PROJ = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, _PROJ)
 
-# ── Defaults ──
+# -- Defaults --
 DEFAULT_METHODS = ["NoKnowledge", "NoGate", "FixedBayes",
                    "PairwisePreferenceGate", "C-ACT-Pointwise", "C-ACT"]
 DEFAULT_SEEDS = [4001, 4002, 4003, 4004, 4005, 4006, 4007, 4008]
@@ -144,7 +144,7 @@ class ParallelRunner:
 
         os.makedirs(self.checkpoint_dir, exist_ok=True)
 
-    # ── Port management ──
+    # -- Port management --
     @staticmethod
     def _port_free(port: int) -> bool:
         try:
@@ -161,7 +161,7 @@ class ParallelRunner:
                 return p
         raise RuntimeError(f"No free ports in range {start}-{start+max_attempts}")
 
-    # ── Checkpoint / resume ──
+    # -- Checkpoint / resume --
     def _load_checkpoint(self):
         """Load previously completed (task, seed, method) pairs."""
         ckpt_file = os.path.join(self.checkpoint_dir, "completed.json")
@@ -186,7 +186,7 @@ class ParallelRunner:
                 "updated": time.strftime("%Y-%m-%dT%H:%M:%S"),
             }, f, indent=2)
 
-    # ── Server lifecycle ──
+    # -- Server lifecycle --
     def _start_vlm_server(self, plan_model: str):
         """Start or validate a healthy shared VLM planning server."""
         health = f"http://127.0.0.1:{self.vlm_port}/health"
@@ -240,7 +240,7 @@ class ParallelRunner:
     def _stop_batch_proxy(self):
         """The proxy thread is daemon — stops automatically on exit."""
 
-    # ── Single episode execution ──
+    # -- Single episode execution --
     def _run_one(self, cfg: ExperimentConfig) -> Dict:
         """Run a single (task, seed, method) episode via subprocess."""
         key = (cfg.task, cfg.seed, cfg.method, cfg.frozen)
@@ -388,7 +388,7 @@ class ParallelRunner:
                 "error": str(e),
             }
 
-    # ── Build experiment grid ──
+    # -- Build experiment grid --
     def _build_grid(self, benchmark: str, seeds: List[int],
                     methods: List[str],
                     plan_model: str = "Qwen/Qwen2.5-VL-7B-Instruct",
@@ -447,7 +447,7 @@ class ParallelRunner:
                     ))
         return grid
 
-    # ── Main entry ──
+    # -- Main entry --
     def run(self, benchmark: str, seeds: List[int] = None,
             methods: List[str] = None, plan_model: str = None,
             resume: bool = False, grid: List[ExperimentConfig] = None):
@@ -476,7 +476,7 @@ class ParallelRunner:
         print(f"  C-ACT Parallel Runner")
         print(f"  Benchmark: {benchmark}")
         print(f"  Methods: {len(methods)} ({', '.join(methods)})")
-        print(f"  Seeds: {len(seeds)} ({seeds[0]}–{seeds[-1]})")
+        print(f"  Seeds: {len(seeds)} ({seeds[0]}-{seeds[-1]})")
         print(f"  Total episodes: {len(grid)}")
         print(f"  Workers: {self.workers}")
         pending = [cfg for cfg in grid if (cfg.task, cfg.seed, cfg.method, cfg.frozen) not in self._completed]
@@ -544,7 +544,7 @@ class ParallelRunner:
             raise RuntimeError(f"{len(batch_failures)} experiment episodes failed; refusing a partial-success exit: {summary}")
         return self._results
 
-    # ── Summary ──
+    # -- Summary --
     def print_summary(self):
         results = self._results
         if not results:

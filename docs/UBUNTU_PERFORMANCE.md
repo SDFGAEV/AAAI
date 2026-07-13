@@ -41,7 +41,7 @@ export CACT_FROZEN_HARDLINK=1
 The release runner validates sealed task cards before spending GPU time. Set
 `CACT_TASK_CARDS` to a whitespace-separated list of JSON/YAML card files (or
 set `CACT_REQUIRE_TASK_CARDS=0` only for a non-claiming dry run). E2 additionally
-requires `CACT_WORLD_SNAPSHOT_MANIFEST`, and E1c/D_audit require real sealed
+requires a frozen world identity (seed-derived in XENON or a real filesystem manifest), and E1c/D_audit require real sealed
 artifacts; these gates must not be bypassed for paper results. XENON procedural
 mode does not require a pre-existing save manifest; it records a seed-derived
 identity with generator provenance.

@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Create a canonical world-snapshot manifest from real Minecraft saves.
+"""Create a frozen identity manifest for filesystem or procedural worlds.
 
-The collector never creates a hash for a missing world.  A world path is
-resolved from ``--world-root-template`` using ``{task_id}`` and
-``{world_seed}``, then all non-volatile files are hashed in stable path order.
-The resulting manifest is an input to E2/E1c/E3/E4/E5 and must be frozen.
+Filesystem mode resolves ``--world-root-template`` using ``{task_id}`` and
+``{world_seed}`` and hashes all non-volatile files in stable path order; a
+missing directory is a hard error. XENON procedural mode instead derives a
+seed-plus-generator identity because ``force_reset=True`` creates the world at
+reset time. The resulting manifest is optional for XENON and must be frozen
+when supplied to E2/E1c/E3/E4/E5.
 """
 from __future__ import annotations
 import argparse, hashlib, json, os, sys

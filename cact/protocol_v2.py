@@ -381,21 +381,45 @@ class AIPWEstimator:
             "g2": lambda r: f"{r['source']}|{r['type']}|{r['task_group']}|{r.get('resource_scarcity','ordinary')}",
             "g3": lambda r: f"{r['source']}|{r['type']}",
         }
+        def _heterogeneity_se(rows, child_fn, field):
+            child_values = []
+            for child in sorted({child_fn(r) for r in rows}):
+                child_rows = [r for r in rows if child_fn(r) == child]
+                if not child_rows:
+                    continue
+                child_values.append((len(child_rows), float(np.mean([r[field] for r in child_rows])),
+                                     self._cluster_se(child_rows, field)))
+            if len(child_values) < 2:
+                return 0.0
+            total = sum(n for n, _, _ in child_values)
+            mean = sum(n * value for n, value, _ in child_values) / total
+            weighted_var = sum(n * (value - mean) ** 2 for n, value, _ in child_values) / total
+            sampling = sum(n * (se ** 2) for n, _, se in child_values) / total
+            return math.sqrt(max(0.0, weighted_var - sampling))
         estimates = []
-        for level, key_fn in groups.items():
+        levels = list(groups.items())
+        for level_index, (level, key_fn) in enumerate(levels):
             for key in sorted({key_fn(r) for r in pseudo}):
                 rows = [r for r in pseudo if key_fn(r) == key]
                 nr = sum(r["assignment"] == 1 for r in rows); nb = len(rows) - nr
                 weights = np.asarray([1/r["propensity"] if r["assignment"] else 1/(1-r["propensity"]) for r in rows])
                 ess = float(weights.sum()**2 / max((weights**2).sum(), 1e-12))
+                se_y = self._cluster_se(rows, "phi_y")
+                se_abs = self._cluster_se(rows, "psi_h1")
+                se_inc = self._cluster_se(rows, "phi_h")
+                if level_index:
+                    child_fn = levels[level_index - 1][1]
+                    se_y = math.sqrt(se_y ** 2 + _heterogeneity_se(rows, child_fn, "phi_y") ** 2)
+                    se_abs = math.sqrt(se_abs ** 2 + _heterogeneity_se(rows, child_fn, "psi_h1") ** 2)
+                    se_inc = math.sqrt(se_inc ** 2 + _heterogeneity_se(rows, child_fn, "phi_h") ** 2)
                 estimates.append(GroupEstimate(
                     level=level, key=key, n=len(rows), n_reuse=nr, n_base=nb, ess=ess,
                     delta_y=float(np.mean([r["phi_y"] for r in rows])),
-                    se_y=self._cluster_se(rows, "phi_y"),
+                    se_y=se_y,
                     risk_abs=float(np.mean([r["psi_h1"] for r in rows])),
-                    se_abs=self._cluster_se(rows, "psi_h1"),
+                    se_abs=se_abs,
                     risk_inc=float(np.mean([r["phi_h"] for r in rows])),
-                    se_inc=self._cluster_se(rows, "phi_h"),
+                    se_inc=se_inc,
                     supported=nr >= MIN_ARM_SUPPORT and nb >= MIN_ARM_SUPPORT and ess >= MIN_ESS))
         return estimates
 

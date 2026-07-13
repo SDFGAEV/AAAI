@@ -1,6 +1,48 @@
 {
   "schema_version": "cact.substrate.v1",
-  "commit": "unknown",
+  "commit": "XENON-runtime",
+  "environment": {
+    "name": "CACTTaskEnv-v0",
+    "version": "Minecraft-runtime",
+    "mod_hash": "bcbdf0a8dc1ed5852e0076dd50690202096b361a7ac5d9a218295597aeea0581"
+  },
+  "planner": {
+    "model_id": "Qwen/Qwen2.5-VL-7B-Instruct",
+    "revision": "HF-runtime",
+    "temperature": 0.0,
+    "top_p": 1.0
+  },
+  "controller": {
+    "name": "STEVE-1",
+    "checkpoint_hash": "checkpoint-runtime",
+    "seeded": true
+  },
+  "observation": {
+    "rgb": true,
+    "structured_fields": [
+      "inventory",
+      "health",
+      "hunger",
+      "position",
+      "gui",
+      "task_progress"
+    ]
+  },
+  "retriever": {
+    "model_id": "fixed-retriever-v1",
+    "index_hash": "db3fbe5d11ef90b5780e036645e36a19d6155680354e0979869e321fb49e8acb",
+    "top_k": 1,
+    "score_threshold": "top1-frozen"
+  },
+  "budgets": {
+    "environment_actions": "task-card",
+    "llm_calls": "task-card",
+    "tokens": "task-card"
+  },
+  "prompt_hashes": {
+    "base": "67dd391a5d8c6c8e4d4e13c4cd391cc3a332f8f80f80ab33817590c282642a92",
+    "reuse_wrapper": "01a920892ad010d9b352827a490842dbb100649144f4d14a3f1bb74812fcd4e4"
+  },
   "benchmarks": {
     "cact_e0": "e142fa78575193c82f327448994e8e0e8ff2073db9cafdae2d4a6b70400f0a4d",
     "cact_train": "1e719736ccf8edd7e7f2711381e26aaacc85214ac585a7b0e563c5e983fa184a",
@@ -10,8 +52,5 @@
     "cact_online_stream": "ce01d99c2697897739673e86c606161ee8a7d4f94446ff24da383311294dfe88",
     "cact_online_retention": "860a4c0b9a437dbed97204ea42071fe910e79b27e8b34068d60298b54fe5b727",
     "cact_online_hard_transfer": "1c809ceaa166779e22edee7158520b002b8e847f1be5bb2f96dfbdb111771601"
-  },
-  "planner": "same base planner",
-  "retriever": "fixed top-1",
-  "environment": "CACTTaskEnv-v0"
+  }
 }

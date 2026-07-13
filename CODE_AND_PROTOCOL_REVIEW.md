@@ -58,7 +58,7 @@ A remaining environment-level risk is that `preferred_spawn_biome` must be verif
 - `build_task_card_registry.py` regenerates the registry deterministically without reading outcomes.
 - `collect_world_snapshots.py` hashes real Minecraft save trees with a documented canonical-tree rule and refuses missing/empty worlds.
 - `run_e2_audit_rollouts.py` collects the four selected direct audit methods and invokes the real paired-branch collector for the >=200-row audit.
-- `setup_and_run.sh` checks dependencies, prepares the registry and XENON procedural identity manifest (or a filesystem manifest when a world-root template is supplied), enables real E2/E1c/D_audit collection, and delegates to `run_all.sh`. It never invents rollout outcomes or labels.
+- `setup_and_run.sh` checks dependencies, validates the registry, uses seed-derived XENON identity by default, and enables a filesystem manifest only when a real world-root template or explicit manifest is supplied. It then enables real E2/E1c/D_audit collection and delegates to `run_all.sh`; it never invents rollout outcomes or labels.
 
 
 ## Runtime hardening pass (2026-07-13)

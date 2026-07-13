@@ -11,12 +11,17 @@ from pathlib import Path
 REQUIRED = {"kind", "input_fields", "parameters", "missing", "unit_test"}
 
 
-def load(path: Path) -> dict:
+def load(path: Path | str) -> dict:
+    path = Path(path)
+    text = path.read_text(encoding="utf-8")
     try:
-        import yaml
-    except ModuleNotFoundError as exc:
-        raise SystemExit("PyYAML is required to validate predicate_registry.yaml") from exc
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        try:
+            import yaml
+        except ModuleNotFoundError as exc:
+            raise SystemExit("registry must be JSON-compatible YAML when PyYAML is unavailable") from exc
+        data = yaml.safe_load(text)
     if not isinstance(data, dict):
         raise ValueError("predicate registry must be a mapping")
     return data
@@ -26,6 +31,10 @@ def validate(data: dict) -> list[str]:
     errors: list[str] = []
     if data.get("schema_version") != "cact.predicate_registry.v1":
         errors.append("schema_version must be cact.predicate_registry.v1")
+    if data.get("missing_value_policy") != "fail_closed":
+        errors.append("missing_value_policy must be fail_closed")
+    if not isinstance(data.get("version"), int) or data.get("version") < 1:
+        errors.append("version must be a positive integer")
     predicates = data.get("predicates")
     if not isinstance(predicates, dict) or not predicates:
         return errors + ["predicates must be a non-empty mapping"]
