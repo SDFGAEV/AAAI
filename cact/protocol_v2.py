@@ -355,7 +355,13 @@ class AIPWEstimator:
                                "task_group": row.task_group, "risk_tier": row.risk_tier,
                                "source": row.source, "type": row.type,
                                "boundary_status": row.boundary_status, "failure_type": row.failure_type,
-                               "resource_scarcity": row.resource_scarcity, "assignment": a,
+                               "resource_scarcity": row.resource_scarcity,
+                               "episode_phase": row.episode_phase,
+                               "prior_admission_bin": row.prior_admission_bin,
+                               "prior_fallback_bin": row.prior_fallback_bin,
+                               "prior_harm_flag": row.prior_harm_flag,
+                               "remaining_critical_resource_ratio": row.remaining_critical_resource_ratio,
+                               "assignment": a,
                                "propensity": e, "phi_y": float(phi_y), "phi_h": float(phi_h),
                                "psi_h1": float(psi_h1), "y": y, "harm": h})
         return pseudo

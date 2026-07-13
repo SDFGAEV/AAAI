@@ -810,8 +810,8 @@ class CactMemory:
         # Protocol v2 decision: randomized D_fit/D_select logging or frozen
         # calibrated policy. The legacy controller remains a compatibility path
         # only when no v2 protocol artifact is supplied.
-        use_v2 = self._protocol_enabled and self._v2_logger is not None and self.method in (
-            "C-ACT", "C-ACT-Pointwise", "Online-C-ACT", "Online-C-ACT-Pointwise")
+        use_v2 = (self._protocol_enabled and self._v2_logger is not None and
+                  (self.method.startswith("C-ACT") or self.method.startswith("Online-C-ACT")))
         if use_v2:
             if self.frozen and self._v2_policy is None:
                 raise FileNotFoundError(

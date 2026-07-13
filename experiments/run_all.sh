@@ -37,6 +37,7 @@ _start_vlm_pool() {
   for gpu in $(_gpu_list); do
     local port=$((VLM_PORT + idx))
     echo "[VLM] GPU $gpu → port $port"
+    PYTHONPATH="$PROJ:$PROJ/src:$PROJ/minerl" \
     CUDA_VISIBLE_DEVICES="$gpu" "$PYTHON" app.py --port "$port" --plan_model "$PLAN_MODEL" \
       > "$RESULTS/vlm_gpu${gpu}_port${port}.log" 2>&1 &
     VLM_PID_LIST+=($!)
@@ -93,6 +94,9 @@ _runner_args() {
   if [ -n "${CACT_WORLD_SNAPSHOT_MANIFEST:-}" ]; then
     RUNNER_ARGS+=(--world_snapshot_manifest "$CACT_WORLD_SNAPSHOT_MANIFEST")
   fi
+  if [ -n "${CACT_CHECKPOINT_DIR:-}" ]; then
+    RUNNER_ARGS+=(--checkpoint_dir "$CACT_CHECKPOINT_DIR")
+  fi
 }
 run() {
   _runner_args
@@ -125,16 +129,18 @@ echo "[M0] compile .pyc (reduces subprocess startup latency)"
 echo "[M0] health check and protocol release"
 "$PYTHON" experiments/health_check.py
 "$PYTHON" experiments/release_protocol.py --label protocol-candidate
-#if [[ "${CACT_REQUIRE_TASK_CARDS:-1}" == "1" ]]; then
-#  if [[ -z "${CACT_TASK_CARDS:-}" ]]; then
-#    echo "STOP: CACT_TASK_CARDS must name the sealed task-card JSON/YAML files." >&2
-#    exit 2
-#  fi
-#  read -r -a TASK_CARD_FILES <<< "$CACT_TASK_CARDS"
-#  "$PYTHON" analysis/validate_task_cards.py "${TASK_CARD_FILES[@]}" --require-sealed \
-#    --out "$RESULTS/task_card_validation.json"
-#fi
-# validate_task_cards.py not yet committed — skipped for now.
+if [[ "${CACT_REQUIRE_TASK_CARDS:-1}" == "1" ]]; then
+  if [[ -z "${CACT_TASK_CARDS:-}" ]]; then
+    echo "STOP: CACT_TASK_CARDS must name the sealed task-card JSON/YAML files." >&2
+    exit 2
+  fi
+  read -r -a TASK_CARD_FILES <<< "$CACT_TASK_CARDS"
+  "$PYTHON" analysis/validate_task_cards.py "${TASK_CARD_FILES[@]}" --require-sealed \
+    --out "$RESULTS/task_card_validation.json"
+  "$PYTHON" analysis/validate_predicate_registry.py \
+    "$PROJ/protocol_inputs/predicate_registry.yaml" \
+    --out "$RESULTS/predicate_registry_validation.json"
+fi
 
 # E0: six substrate tasks × two seeds × NoKnowledge/NoGate.
 run_serial --benchmark cact_e0 --task_indices 0,1,2,3,4,5 --seeds 1001-1002 --methods NoKnowledge NoGate
@@ -227,20 +233,17 @@ run --benchmark cact_p3 --task_indices 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,
 # 3. Global-Risk Only     = C-ACT method with global-only selected κ*_G
 # 4. w/o Ledger           = C-ACT-Pointwise + kappa_override=κ*_F (ledger disabled)
 E4_GLOBAL_POLICY="$RESULTS/v2_policy_global_only.json"
-if [[ -f "$E4_GLOBAL_POLICY" ]]; then
-  run --benchmark cact_ablation --task_indices 0,1,2,3,4,5,6,7,8,9,10,11 --seeds 5001-5005 \
-    --methods C-ACT C-ACT-NoApplicability C-ACT --frozen \
-    --snapshot_path "$CAL_STORE" --protocol_path "$POLICY_FILE"
-  # Global-Risk Only: same controller, different κ
-  run --benchmark cact_ablation --task_indices 0,1,2,3,4,5,6,7,8,9,10,11 --seeds 5001-5005 \
-    --methods C-ACT --frozen \
-    --snapshot_path "$CAL_STORE" --protocol_path "$E4_GLOBAL_POLICY"
-else
-  echo "[E4] Global-Risk Only policy not found, running with full policy for all variants"
-  run --benchmark cact_ablation --task_indices 0,1,2,3,4,5,6,7,8,9,10,11 --seeds 5001-5005 \
-    --methods C-ACT C-ACT-NoApplicability C-ACT C-ACT-Pointwise --frozen \
-    --snapshot_path "$CAL_STORE" --protocol_path "$POLICY_FILE"
+FULL_KAPPA="$(sed -n "s/.*\\"kappa\\": *\\([0-9.]*\\).*/\\1/p" "$POLICY_FILE" | head -n1)"
+CACT_CHECKPOINT_DIR="$RESULTS/ckpt/e4_full" run --benchmark cact_ablation --task_indices 0,1,2,3,4,5,6,7,8,9,10,11 --seeds 5001-5005 \
+  --methods C-ACT C-ACT-NoApplicability --frozen --snapshot_path "$CAL_STORE" --protocol_path "$POLICY_FILE"
+CACT_CHECKPOINT_DIR="$RESULTS/ckpt/e4_pointwise" run --benchmark cact_ablation --task_indices 0,1,2,3,4,5,6,7,8,9,10,11 --seeds 5001-5005 \
+  --methods C-ACT-Pointwise --kappa "$FULL_KAPPA" --frozen --snapshot_path "$CAL_STORE" --protocol_path "$POLICY_FILE"
+if [[ ! -f "$E4_GLOBAL_POLICY" ]]; then
+  echo "STOP: Global-Risk Only policy artifact is required for E4." >&2
+  exit 2
 fi
+CACT_CHECKPOINT_DIR="$RESULTS/ckpt/e4_global" run --benchmark cact_ablation --task_indices 0,1,2,3,4,5,6,7,8,9,10,11 --seeds 5001-5005 \
+  --methods C-ACT --frozen --snapshot_path "$CAL_STORE" --protocol_path "$E4_GLOBAL_POLICY"
 
 # E5: five independent controlled streams, ten rounds each.
 for seed in 6001 6002 6003 6004 6005; do

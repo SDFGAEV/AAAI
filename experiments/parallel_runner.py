@@ -39,6 +39,36 @@ DEFAULT_METHODS = ["NoKnowledge", "NoGate", "FixedBayes",
                    "PairwisePreferenceGate", "C-ACT-Pointwise", "C-ACT"]
 DEFAULT_SEEDS = [4001, 4002, 4003, 4004, 4005, 4006, 4007, 4008]
 
+def _run_with_process_group(args, *, timeout=None, **kwargs):
+    """Run a child in its own process group so Minecraft descendants are cleaned up."""
+    kwargs.pop("text", None)
+    if os.name != "nt":
+        kwargs.setdefault("start_new_session", True)
+    proc = subprocess.Popen(args, **kwargs)
+    try:
+        returncode = proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        if os.name != "nt":
+            try:
+                os.killpg(proc.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+        else:
+            proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            if os.name != "nt":
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            else:
+                proc.kill()
+            proc.wait()
+        raise
+    return subprocess.CompletedProcess(args, returncode)
+
 
 @dataclass
 class ExperimentConfig:
@@ -173,7 +203,7 @@ class ParallelRunner:
         vlm_log = open(os.path.join(_PROJ, "exp_results", "vlm_server.log"), "a", encoding="utf-8")
         env = {**os.environ, "PYTHONUNBUFFERED": "1",
                "PYTHONPATH": os.pathsep.join([_PROJ, os.path.join(_PROJ, "src"), os.path.join(_PROJ, "minerl")])}
-        proc = subprocess.Popen(cmd, stdout=vlm_log, stderr=vlm_log, env=env)
+        proc = subprocess.Popen(cmd, stdout=vlm_log, stderr=vlm_log, env=env, start_new_session=(os.name != "nt"))
         vlm_log.close(); self._server_procs[self.vlm_port] = proc
         print(f"[VLM] Started planning server on port {self.vlm_port} (PID {proc.pid})")
         ready = False
@@ -294,7 +324,7 @@ class ParallelRunner:
                                              f"http://127.0.0.1:{self.batch_proxy_port}"),
                          "CACT_TRUST_STORE_DIR": cfg.store_path or os.environ.get("CACT_TRUST_STORE_DIR", "")}
             with open(stdout_path, "w", encoding="utf-8") as stdout, open(stderr_path, "w", encoding="utf-8") as stderr:
-                result = subprocess.run(cmd, stdout=stdout, stderr=stderr, text=True,
+                result = _run_with_process_group(cmd, stdout=stdout, stderr=stderr, text=True,
                                         timeout=cfg.timeout * cfg.env_times + 60,
                                         cwd=_PROJ, env=child_env)
             elapsed = time.perf_counter() - t0
@@ -576,6 +606,7 @@ def main():
     parser.add_argument("--frozen", action="store_true")
     parser.add_argument("--calibration_path", default="")
     parser.add_argument("--active_calib_rate", type=float, default=0.0)
+    parser.add_argument("--kappa", default="", help="Override calibrated kappa for E2/E4 matched-policy rollouts")
     parser.add_argument("--store_path", default="")
     parser.add_argument("--snapshot_path", default="")
     parser.add_argument("--protocol_path", default="")
@@ -620,6 +651,7 @@ def main():
         cfg.frozen = args.frozen
         cfg.calibration_path = args.calibration_path
         cfg.active_calib_rate = args.active_calib_rate
+        cfg.cact_kappa = str(args.kappa or "")
         if args.store_path:
             cfg.store_path = args.store_path
         if args.snapshot_path:

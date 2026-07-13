@@ -80,8 +80,16 @@ def _filter_task_obs(task: str, image_root: str) -> str:
 
     """
     task = task.replace(" ", "_")
-    task_imgs = [img for img in os.listdir(image_root) if ".jpg" in img and task in img]
-    task_imgs.sort(key=lambda x: int(x.split("_")[-1].replace(".jpg", "")))
+    task_imgs = [img for img in os.listdir(image_root)
+                 if img.lower().endswith(".jpg") and task in img]
+    if not task_imgs:
+        raise FileNotFoundError(f"no observation image found for task {task!r}")
+    def _step(name: str) -> int:
+        try:
+            return int(Path(name).stem.rsplit("_", 1)[-1])
+        except (ValueError, IndexError):
+            return -1
+    task_imgs.sort(key=_step)
     return os.path.join(image_root, task_imgs[0])
 
 

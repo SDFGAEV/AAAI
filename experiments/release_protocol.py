@@ -48,6 +48,7 @@ def main():
            ROOT/"src/optimus1/models/steve1/VPT/lib/impala_cnn.py",
            ROOT/"src/optimus1/models/steve1/VPT/lib/util.py", ROOT/"minerl/minerl/env/_multiagent.py",
            ROOT/"experiments/release_protocol.py", ROOT/"experiments/health_check.py",
+           ROOT/"analysis/validate_predicate_registry.py", ROOT/"protocol_inputs/predicate_registry.yaml",
            ROOT/"tests/test_controller_ledger.py",
            ROOT/"docs/UBUNTU_PERFORMANCE.md"]
     manifest = {"schema_version":"cact.protocol_release.v1", "label":args.label, "created_utc":datetime.now(timezone.utc).isoformat(), "method":"C-ACT: Contextual Admission via Counterfactual Treatment Effects", "frozen_claims":["reliable admission", "applicability boundary and adaptive risk-coverage"], "hashes":{str(p.relative_to(ROOT.parent)):sha256(p) for p in files if p.exists()}, "seeds":{"E0":[1001,1002],"E1a":list(range(2001,2006)),"E1b":list(range(2101,2106)),"D_select":list(range(3001,3009)),"D_audit":list(range(3011,3019)),"E3":list(range(4001,4009)),"E4":list(range(5001,5006)),"E5":[6001,6002,6003,6004,6005]}, "budgets":{"delta":.05,"eps_abs":.10,"eps_inc":.02,"kappas":[0,.5,1,1.5,2,2.5,3],"support_n":12,"ess":24}}

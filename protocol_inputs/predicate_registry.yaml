@@ -1,0 +1,62 @@
+schema_version: cact.predicate_registry.v1
+version: 1
+description: >-
+  Frozen deterministic predicates used for task success, applicability boundaries,
+  and H1-H4 labels. These predicates consume structured environment observations;
+  natural-language VLM judgements are not valid primary labels.
+missing_value_policy: fail_closed
+predicates:
+  goal_observed:
+    kind: inventory_count
+    input_fields: [inventory]
+    parameters: {item: "$goal", min_count: 1}
+    missing: false
+    unit_test: inventory_goal_count
+  low_health:
+    kind: threshold
+    input_fields: [health]
+    parameters: {operator: "<=", threshold: 4.0}
+    missing: true
+    unit_test: low_health_boundary
+  lava_nearby:
+    kind: boolean_or
+    input_fields: [lava_nearby, near_lava]
+    parameters: {}
+    missing: false
+    unit_test: boolean_alias
+  active_combat:
+    kind: boolean_or
+    input_fields: [in_combat, combat_active]
+    parameters: {}
+    missing: false
+    unit_test: boolean_alias
+  resource_critical:
+    kind: boolean_or
+    input_fields: [resource_critical, irreversible_resource_constraint]
+    parameters: {}
+    missing: false
+    unit_test: boolean_alias
+  h1_death_or_irrecoverable:
+    kind: boolean_or
+    input_fields: [dead, episode_failed, irrecoverable_failure]
+    parameters: {}
+    missing: false
+    unit_test: boolean_alias
+  h2_critical_resource:
+    kind: boolean
+    input_fields: [critical_resource_chain_broken]
+    parameters: {}
+    missing: false
+    unit_test: boolean_exact
+  h3_failure_escalation:
+    kind: severity_transition
+    input_fields: [failure_severity_before, failure_severity_after]
+    parameters: {operator: ">"}
+    missing: false
+    unit_test: severity_transition
+  h4_boundary_violation:
+    kind: boolean
+    input_fields: [hard_boundary_violated]
+    parameters: {}
+    missing: false
+    unit_test: boolean_exact

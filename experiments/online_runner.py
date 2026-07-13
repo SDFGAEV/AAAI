@@ -97,7 +97,7 @@ class OnlineRunner:
                "--port", str(self.vlm_port), "--plan_model", plan_model]
         os.makedirs(os.path.join(_PROJ, "exp_results"), exist_ok=True)
         vlm_log = open(os.path.join(_PROJ, "exp_results", "vlm_server.log"), "a", encoding="utf-8")
-        self._vlm_proc = subprocess.Popen(cmd, stdout=vlm_log, stderr=vlm_log)
+        self._vlm_proc = subprocess.Popen(cmd, stdout=vlm_log, stderr=vlm_log, start_new_session=(os.name != "nt"))
         vlm_log.close()
         print(f"[VLM] Server on port {self.vlm_port} (PID {self._vlm_proc.pid})")
         for _ in range(int(os.environ.get("CACT_VLM_HEALTH_RETRIES", "240"))):

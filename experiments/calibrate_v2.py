@@ -4,7 +4,8 @@
 The command never uses the audit set for selection. It writes a policy artifact
 only when the one-shot audit passes.
 """
-import argparse, glob, hashlib, json, os, sys
+import argparse
+import numpy as np, glob, hashlib, json, os, sys
 from pathlib import Path
 _PROJ = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_PROJ))
@@ -59,9 +60,9 @@ def main():
         combined = []
         for key, items in by_key.items():
             ref = items[0]
-            ref.delta_y = sum(x.delta_y for x in items) / len(items)
-            ref.risk_abs = sum(x.risk_abs for x in items) / len(items)
-            ref.risk_inc = sum(x.risk_inc for x in items) / len(items)
+            ref.delta_y = float(np.median([x.delta_y for x in items]))
+            ref.risk_abs = float(np.median([x.risk_abs for x in items]))
+            ref.risk_inc = float(np.median([x.risk_inc for x in items]))
             ref.se_y = max(x.se_y for x in items)
             ref.se_abs = max(x.se_abs for x in items)
             ref.se_inc = max(x.se_inc for x in items)
