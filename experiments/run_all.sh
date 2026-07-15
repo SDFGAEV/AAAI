@@ -5,7 +5,7 @@ PYTHON="${PYTHON:-python3}"
 # Prefer the venv python if it exists (avoids fastapi/transformers import errors
 # when the VLM pool starts under system python).
 if [ -x "$PROJ/venv310/bin/python3" ]; then PYTHON="$PROJ/venv310/bin/python3"; fi
-WORKERS="${CACT_WORKERS:-4}"
+WORKERS="${CACT_WORKERS:-3}"
 VLM_PORT="${CACT_VLM_PORT:-12345}"
 VLM_PORTS="${CACT_VLM_PORTS:-}"
 PLAN_MODEL="Qwen/Qwen2.5-VL-7B-Instruct"
@@ -49,7 +49,10 @@ _start_vlm_pool() {
   for ((i=0; i<idx; i++)); do ports+=($((VLM_PORT + i))); done
   VLM_PORTS=$(IFS=,; echo "${ports[*]}")
   export VLM_PORTS
-  # Wait for every VLM to accept /health (parallel — not serial).
+  # Wait for every VLM to accept /health (parallel, not serial).
+  # Keep health-check PIDs separate: a bare `wait` would also wait for the
+  # long-lived VLM server processes and deadlock the pipeline here.
+  local health_pids=()
   for ((i=0; i<idx; i++)); do
     local p=$((VLM_PORT + i))
     echo "[VLM] waiting for port $p ..."
@@ -57,9 +60,17 @@ _start_vlm_pool() {
       if curl -s --connect-timeout 1 "http://127.0.0.1:$p/health" > /dev/null 2>&1; then echo "ready:$p"; exit 0; fi
       sleep 0.5
     done
-    echo "fail:$p") &
+    echo "fail:$p"; exit 1) &
+    health_pids+=("$!")
   done
-  wait
+  local health_failed=0
+  for pid in "${health_pids[@]}"; do
+    wait "$pid" || health_failed=1
+  done
+  if (( health_failed )); then
+    echo "[VLM] FATAL: one or more health checks failed" >&2
+    exit 1
+  fi
   for ((i=0; i<idx; i++)); do
     local p=$((VLM_PORT + i))
     if ! curl -s --connect-timeout 1 "http://127.0.0.1:$p/health" > /dev/null 2>&1; then
@@ -105,6 +116,8 @@ run() {
     --plan_model "$PLAN_MODEL" "${RUNNER_ARGS[@]}"
 }
 run_serial() {
+    export MINERL_GPU_IDS="${MINERL_GPU_IDS:-0,2,3}"
+    export MINERL_STARTUP_TIMEOUT=300
   _runner_args
   "$PYTHON" experiments/parallel_runner.py "$@" --workers 1 \
     --plan_model "$PLAN_MODEL" "${RUNNER_ARGS[@]}"
@@ -144,11 +157,12 @@ fi
   --out "$RESULTS/predicate_registry_validation.json"
 
 # E0: six substrate tasks x two seeds x NoKnowledge/NoGate.
-run_serial --benchmark cact_e0 --task_indices 0,1,2,3,4,5 --seeds 1001-1002 --methods NoKnowledge NoGate
+# E0 SKIPPED: # E0 SKIPPED
 
-# E1a freezes the shared knowledge store; E1b collects randomized opportunities.
+# E1a freezes the shared knowledge store; E1b collects 120 opportunities initially.
+# Set CACT_E1B_SEEDS=2101-2110 only for the preregistered 240-episode expansion.
 run_serial --benchmark cact_train --task_indices 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23 --seeds 2001-2005 --methods C-ACT --store_path "$CAL_STORE"
-run_serial --benchmark cact_train --task_indices 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23 --seeds 2101-2105 --methods C-ACT --store_path "$CAL_STORE" --protocol_path collect
+run_serial --benchmark cact_train --task_indices 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23 --seeds "${CACT_E1B_SEEDS:-2101-2105}" --methods C-ACT --store_path "$CAL_STORE" --protocol_path collect
 
 # D_select/D_audit opportunity logging is required before a provisional
 # artifact can parameterize the 15-policy direct E2 rollouts.
@@ -162,7 +176,8 @@ PROVISIONAL_POLICY="$RESULTS/v2_policy_provisional.json"
 "$PYTHON" experiments/calibrate_v2.py --fit-glob "$FIT_GLOB" --select-glob "$SELECT_GLOB" \
   --audit-glob "$AUDIT_GLOB1" "$AUDIT_GLOB2" --out "$PROVISIONAL_POLICY"
 
-# E2: direct matched-risk policy selection.  Generate the table only when
+# E2: direct matched-risk policy selection. Initial design is 8 templates x 6 seeds x 15 policies = 720; set CACT_E2_SEEDS=3001-3008 only after the preregistered outcome-blind insufficiency rule.
+# Generate the table only when
 # explicitly enabled; otherwise require a precomputed, audited input.
 if [[ -z "${E2_DIRECT_JSONL:-}" ]]; then
   if [[ "${CACT_AUTO_GENERATE_E2:-0}" != "1" ]]; then
@@ -180,6 +195,7 @@ fi
   --out "$RESULTS/e2_direct_selection.json"
 
 # E1c: generate the real sealed paired-branch artifact when requested.
+# E1c uses disjoint seeds (2201-2215 by default) from E1b logging (2101-2110).
 PAIR_GLOB="$RESULTS/cact_pair_train/*/pairs.jsonl"
 PAIR_FILES=()
 if compgen -G "$PAIR_GLOB" > /dev/null; then
@@ -192,7 +208,7 @@ if (( ${#PAIR_FILES[@]} == 0 )); then
   fi
   "$PYTHON" experiments/generate_pair_train.py \
     --pilot-task-indices "${CACT_E1C_TASK_INDICES:-0,1,2,3,4,5,6,7,8,9,10,11}" \
-    --pilot-seeds "${CACT_E1C_SEEDS:-2101-2115}" --workers 1 \
+    --pilot-seeds "${CACT_E1C_SEEDS:-2201-2215}" --workers 1 \
     --out "$RESULTS/cact_pair_train/generated/pairs.jsonl"
   PAIR_FILES=("$RESULTS/cact_pair_train/generated/pairs.jsonl")
 fi

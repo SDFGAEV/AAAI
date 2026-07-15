@@ -9,6 +9,13 @@ from omegaconf import DictConfig
 
 from ..util.server_api import MultiThreadServerAPI
 
+
+def _unwrap_step(result):
+    """Handle gym 0.26+ 5-tuple (obs, reward, term, trunc, info) vs 4-tuple."""
+    if len(result) == 5:
+        return result[0], result[1], result[2] or result[3], result[4]
+    return result[0], result[1], result[2], result[3]
+
 from .mods import RecorderMod, StatusMod, TaskCheckerMod
 
 
@@ -66,7 +73,7 @@ class BasaltTimeoutWrapper(gym.Wrapper):
         return super().reset()
 
     def step(self, action):
-        observation, reward, done, info = super().step(action)
+        observation, reward, done, info = _unwrap_step(super().step(action))
         self.num_steps += 1
         if self.num_steps >= self.timeout:
             done = True
@@ -139,13 +146,13 @@ class CustomEnvWrapper(gym.Wrapper):
         if action["attack"] > 0:
             action["jump"] = action["left"] = action["right"] = np.array(0)
             action["sneak"] = action["sprint"] = np.array(0)
-        observation, reward, done, info = self.env.step(action)
+        observation, reward, done, info = _unwrap_step(self.env.step(action))
         self.record_mod.step(observation, None, action)
         self.status_mod.step(observation, action, self.num_steps)
 
         info.update(self.status_mod.get_status())
 
-        info["isGuiOpen"] = observation["isGuiOpen"]
+        info["isGuiOpen"] = observation.get("isGuiOpen", False)
 
         return observation, reward, done, info
 
@@ -169,7 +176,7 @@ class CustomEnvWrapper(gym.Wrapper):
             action["inventory"] = np.array(0)
         action["drop"] = np.array(0)
 
-        observation, reward, done, info = self.env.step(action)
+        observation, reward, done, info = _unwrap_step(self.env.step(action))
 
         if goal is not None and goal[0] != self.cache["task"]:
             self.task_checker_mod.reset(observation["inventory"])
@@ -224,7 +231,7 @@ class CustomEnvWrapper(gym.Wrapper):
 
         if self._current_task_finish:
             self.cache["task"] = ""
-        info["isGuiOpen"] = observation["isGuiOpen"]
+        info["isGuiOpen"] = observation.get("isGuiOpen", False)
 
         self.cache["info"] = info
         return observation, reward, done, info
@@ -242,7 +249,7 @@ class CustomEnvWrapper(gym.Wrapper):
     
     def check_original_goal_finish(self, goal: tuple[str, int] | None):
         action = self.env.noop_action()
-        observation, reward, done, info = self.step(action)
+        observation, reward, done, info = _unwrap_step(self.step(action))
         self.status_mod.step(observation, action, self.num_steps)
 
         item_str = copy.deepcopy(goal[0])
@@ -266,7 +273,7 @@ class CustomEnvWrapper(gym.Wrapper):
 
     def check_waypoint_finish(self, waypoint: tuple[str, int] | None):
         action = self.env.noop_action()
-        observation, reward, done, info = self.step(action)
+        observation, reward, done, info = _unwrap_step(self.step(action))
         self.status_mod.step(observation, action, self.num_steps)
 
         item_str = copy.deepcopy(waypoint[0])

@@ -56,17 +56,19 @@ def assert_close(a, b, tol=1e-6, msg=""):
         msg = f"{msg} ({a} != {b}, diff={abs(a-b):.2e})"
     assert_true(ok, msg)
 def section(name):
-    print(f"\n{"="*70}\n  {name}\n{"="*70}")
+    separator = "=" * 70
+    print(f"\n{separator}\n  {name}\n{separator}")
 
 def summary():
     global PASS, FAIL, TOTAL
-    print(f"\n{"="*70}")
+    separator = "=" * 70
+    print(f"\n{separator}")
     print(f"  TOTAL: {TOTAL}  PASS: {PASS}  FAIL: {FAIL}")
     if FAIL == 0:
         print(f"  RESULT: ALL TESTS PASSED")
     else:
         print(f"  RESULT: {FAIL}/{TOTAL} TESTS FAILED")
-    print(f"{"="*70}")
+    print(separator)
     return FAIL == 0
 
 

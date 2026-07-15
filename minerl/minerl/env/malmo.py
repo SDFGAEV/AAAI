@@ -33,6 +33,7 @@ import socket
 import struct
 import select
 import collections
+import re
 import subprocess
 import sys
 import tempfile
@@ -94,7 +95,7 @@ class InstanceManager:
     Note: In future versions of MineRL the instance manager will become its own daemon process which provides
     instance allocation capability using remote procedure calls.
     """
-    MINECRAFT_DIR = os.path.join(os.path.dirname(__file__), '..', 'Malmo', 'Minecraft')
+    MINECRAFT_DIR = os.path.join(os.path.dirname(__file__), '..', 'MCP-Reborn')
     SCHEMAS_DIR = os.path.join(os.path.dirname(__file__), '..', 'Malmo', 'Schemas')
     STATUS_DIR = os.path.join(os.path.abspath(os.path.dirname(sys.argv[0])), 'performance')
     MAXINSTANCES = None
@@ -435,6 +436,9 @@ class MinecraftInstance(object):
 
             startup_timeout = float(os.environ.get("MINERL_STARTUP_TIMEOUT", "180"))
             deadline = time.monotonic() + startup_timeout
+            _tcp_probe_count = 0
+            # Pre-compile ANSI escape pattern for performance
+            _ansi_re = re.compile(r'\x1b\[[0-9;]*[a-zA-Z]')
             while True:
                 if time.monotonic() >= deadline:
                     try:
@@ -448,37 +452,70 @@ class MinecraftInstance(object):
                     ready, _, _ = select.select([stdout], [], [], min(1.0, max(0.0, deadline - time.monotonic())))
                     if not ready:
                         continue
-                line = stdout.readline().decode(mine_log_encoding) if stdout is not None else b""
+                line = stdout.readline().decode(mine_log_encoding, errors='replace') if stdout is not None else ""
 
                 # Check for failures and print useful messages!
                 _check_for_launch_errors(line)
 
                 if not line:
                     # IF THERE WAS AN ERROR STARTING THE MC PROCESS
-                    # Print the whole logs!
                     error_str = ""
                     for l in lines:
                         spline = "\n".join(l.split("\n")[:-1])
                         self._logger.error(spline)
                         error_str += spline + "\n"
-                    # Throw an exception!
                     raise EOFError(
                         error_str + "\n\nMinecraft process finished unexpectedly. There was an error with Malmo.")
 
-                lines.append(line)
-                self._log_heuristic("\n".join(line.split("\n")[:-1]))
+                # Strip ANSI escape codes and \r from Docker Gradle TTY output
+                line = _ansi_re.sub('', line).replace('\r', '\n')
+                for subline in line.split('\n'):
+                    subline = subline.strip()
+                    if not subline:
+                        continue
+                    lines.append(subline)
+                    self._log_heuristic("\n".join(subline.split("\n")[:-1]) if "\n" in subline else subline)
 
-                MALMOENVPORTSTR = "***** Start MalmoEnvServer on port "
-                port_received = MALMOENVPORTSTR in line
-                if port_received:
-                    self._port = int(line.split(MALMOENVPORTSTR)[-1].strip())
+                    MALMOENVPORTSTR = "***** Start MalmoEnvServer on port "
+                    MALMOENVPORTSTR2 = "Listening for messages on port "
+                    port_received = MALMOENVPORTSTR in subline or MALMOENVPORTSTR2 in subline
+                    if port_received:
+                        if MALMOENVPORTSTR in subline:
+                            self._port = int(subline.split(MALMOENVPORTSTR)[-1].strip())
+                        else:
+                            pass
 
-                client_ready = "CLIENT enter state: DORMANT" in line
-                server_ready = "SERVER enter state: DORMANT" in line
+                    client_ready = "CLIENT enter state: DORMANT" in subline
+                    server_ready = "SERVER enter state: DORMANT" in subline
+
+                # Fallback: only after 120+ lines AND 60s+ elapsed, probe TCP as last resort.
+                # Gradle runClient may buffer output; DORMANT is the gold signal.
+                if not client_ready and not server_ready and len(lines) > 120:
+                    _tcp_probe_count += 1
+                    if _tcp_probe_count % 15 == 0:
+                        target_port = self._port or port
+                        try:
+                            probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                            probe.settimeout(2.0)
+                            probe.connect(("127.0.0.1", target_port))
+                            # Send a MalmoEnv hello to confirm protocol readiness
+                            comms.send_message(probe, ("<MalmoEnv" + malmo_version + "/>").encode())
+                            probe.close()
+                            self._logger.info("MalmoEnv protocol-ready on port %d (fallback)", target_port)
+                            self._port = target_port
+                            client_ready = True
+                        except (socket.error, socket.timeout, BrokenPipeError):
+                            pass
 
                 if client_ready:
                     break
 
+            # Port discovery: scan all java listening ports for MalmoEnv protocol
+            if not self.port or self.port == port:
+                discovered = self._discover_malmoenv_port(port)
+                if discovered:
+                    self._port = discovered
+                    self._logger.info("Discovered MalmoEnv on port %d", discovered)
             if not self.port:
                 raise RuntimeError(
                     "Malmo failed to start the MalmoEnv server! Check the logs from the Minecraft process.")
@@ -569,6 +606,52 @@ class MinecraftInstance(object):
     def port(self):
         return self._port
 
+    def _discover_malmoenv_port(self, configured_port: int = 0) -> int:
+        """Scan java listening ports and find the one that speaks MalmoEnv protocol.
+
+        Retries up to 5 times with delays because MalmoEnvServer.serve()
+        may not have created the ServerSocket immediately after DORMANT.
+        """
+        import subprocess, struct
+        for attempt in range(5):
+            if attempt > 0:
+                time.sleep(2)  # Wait for MalmoEnvServer socket to be created
+            try:
+                ss_out = subprocess.check_output(["ss", "-tlnp"], timeout=5).decode()
+                java_ports = set()
+                for line in ss_out.split("\n"):
+                    if "java" in line:
+                        parts = line.split()
+                        for p in parts:
+                            if ":" in p:
+                                port_str = p.split(":")[-1]
+                                if port_str.isdigit():
+                                    java_ports.add(int(port_str))
+                # Try MalmoEnv hello on each port
+                for probe_port in sorted(java_ports):
+                    if probe_port == configured_port:
+                        continue  # This is likely MCP, skip it
+                    try:
+                        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        sock.settimeout(2.0)
+                        sock.connect(("127.0.0.1", probe_port))
+                        hello = ("<MalmoEnv" + malmo_version + "/>").encode()
+                        sock.send(struct.pack("!I", len(hello)) + hello)
+                        echo = b"<Echo>probe</Echo>"
+                        sock.send(struct.pack("!I", len(echo)) + echo)
+                        raw = sock.recv(4)
+                        if raw and len(raw) == 4:
+                            rlen = struct.unpack("!I", raw)[0]
+                            if rlen > 0:
+                                sock.close()
+                                return probe_port
+                        sock.close()
+                    except (socket.error, socket.timeout, struct.error):
+                        pass
+            except Exception:
+                pass
+        return 0
+
     def get_output(self):
         while self.running or self._starting:
             try:
@@ -608,9 +691,16 @@ class MinecraftInstance(object):
             launch_script = 'launchClient.bat'
 
         launch_script = os.path.join(minecraft_dir, launch_script)
-        rundir = os.path.join(minecraft_dir, 'run')
+        # Unique runDir per port avoids multi-worker I/O contention
+        run_dir = 'run_' + str(port)
 
-        cmd = [launch_script, '-port', str(port), '-env', '-runDir', rundir]
+        # GPU round-robin assignment for multi-worker setups
+        gpu_ids = [int(x.strip()) for x in os.environ.get('MINERL_GPU_IDS', '0').split(',') if x.strip()]
+        gpu_idx = getattr(InstanceManager, '_gpu_counter', 0)
+        gpu_id = gpu_ids[gpu_idx % len(gpu_ids)]
+        InstanceManager._gpu_counter = gpu_idx + 1
+
+        cmd = [launch_script, '-port', str(port), '-env', '-runDir', run_dir, '-gpu', str(gpu_id)]
         if self.status_dir:
             cmd += ['-performanceDir', self.status_dir]
         if self._seed:
@@ -619,19 +709,16 @@ class MinecraftInstance(object):
             cmd += ['-maxMem', self._max_mem]
 
         cmd_to_print = cmd[:] if not self._seed else cmd[:-2]
-        self._logger.info("Starting Minecraft process: " + str(cmd_to_print))
-        # print(cmd)
+        self._logger.info("Starting Minecraft process (gpu=%d, runDir=%s): %s" % (gpu_id, run_dir, str(cmd_to_print)))
 
         if replaceable:
             cmd.append('-replaceable')
         preexec_fn = os.setsid if 'linux' in str(sys.platform) or sys.platform == 'darwin' else None
-        # print(preexec_fn)
         minecraft_process = psutil.Popen(cmd,
-                                         cwd=InstanceManager.MINECRAFT_DIR,
+                                         cwd=minecraft_dir,
                                          stdin=subprocess.DEVNULL,
                                          stdout=subprocess.PIPE,
                                          stderr=subprocess.STDOUT,
-                                         # use process group, see http://stackoverflow.com/a/4791612/18576
                                          preexec_fn=preexec_fn
                                          )
         return minecraft_process

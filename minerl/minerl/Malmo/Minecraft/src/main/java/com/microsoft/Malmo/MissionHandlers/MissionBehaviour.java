@@ -126,7 +126,8 @@ public class MissionBehaviour
         lowLevelInputs = a0start.isLowLevelInputs() != null && a0start.isLowLevelInputs();
      
         // Graphics Settings
-        guiScale = (a0start.getGuiScale() == null) ? 2 : a0start.getGuiScale();
+        // GuiScale is serialized as a float, but Minecraft consumes an integer scale.
+        guiScale = (a0start.getGuiScale() == null) ? 2 : Math.round(a0start.getGuiScale());
         gammaSetting = (a0start.getGammaSetting() == null) ? (float) 2.0 : a0start.getGammaSetting();
         fovSetting = (a0start.getFOVSetting() == null) ? (float) 130.0 : a0start.getFOVSetting();
     }

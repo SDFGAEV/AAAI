@@ -1,17 +1,45 @@
+import copy
 import pickle
+import warnings
+from collections.abc import Mapping
 
 import gym
 from ..config import DEVICE, MINECLIP_CONFIG
 from ..mineclip_code.load_mineclip import load
 from ..MineRLConditionalAgent import MineRLConditionalAgent
-from ..VPT.agent import ENV_KWARGS
+from ..VPT.agent import ENV_KWARGS, POLICY_KWARGS, PI_HEAD_KWARGS
 
 
 def load_model_parameters(path_to_model_file):
-    agent_parameters = pickle.load(open(path_to_model_file, "rb"))
-    policy_kwargs = agent_parameters["model"]["args"]["net"]["args"]
-    pi_head_kwargs = agent_parameters["model"]["args"]["pi_head_opts"]
-    pi_head_kwargs["temperature"] = float(pi_head_kwargs["temperature"])
+    """Load VPT architecture metadata across legacy and torch state-dict files.
+
+    Older VPT releases stored a pickled training bundle with ``model.args``;
+    the released ``2x.model`` checkpoint is a torch state dict instead.  The
+    latter intentionally has no architecture metadata, so use the canonical
+    policy constants shipped with this repository rather than attempting an
+    unsafe raw ``pickle.load`` or guessing from tensor shapes.
+    """
+    try:
+        with open(path_to_model_file, "rb") as handle:
+            agent_parameters = pickle.load(handle)
+    except (pickle.UnpicklingError, EOFError, ValueError, AttributeError) as exc:
+        warnings.warn(
+            f"{path_to_model_file} is a torch state-dict checkpoint; using the "
+            f"repository VPT architecture defaults ({exc})",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return copy.deepcopy(POLICY_KWARGS), copy.deepcopy(PI_HEAD_KWARGS)
+
+    if not isinstance(agent_parameters, Mapping):
+        raise ValueError(f"unsupported VPT metadata type: {type(agent_parameters).__name__}")
+    try:
+        policy_kwargs = copy.deepcopy(agent_parameters["model"]["args"]["net"]["args"])
+        pi_head_kwargs = copy.deepcopy(agent_parameters["model"]["args"]["pi_head_opts"])
+    except (KeyError, TypeError) as exc:
+        raise ValueError(f"VPT metadata missing model architecture fields: {path_to_model_file}") from exc
+    if "temperature" in pi_head_kwargs:
+        pi_head_kwargs["temperature"] = float(pi_head_kwargs["temperature"])
     return policy_kwargs, pi_head_kwargs
 
 

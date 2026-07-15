@@ -85,10 +85,10 @@ def main():
         raise SystemExit("D_audit failed for at least one controller family; no deployable policy was written")
 
     selection_source = "aipw_select"
+    direct_policies = {}
     if args.direct_selection:
         direct = json.loads(Path(args.direct_selection).read_text(encoding="utf-8"))
         selected = direct.get("selection", {})
-        direct_policies = {}
         for family in ("full", "pointwise"):
             if family not in selected or "kappa" not in selected[family]:
                 raise SystemExit(f"direct selection missing {family} kappa")

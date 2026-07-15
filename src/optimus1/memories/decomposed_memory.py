@@ -218,18 +218,26 @@ class DecomposedMemory:
         # 3. retrieve subgoals for the top-k $wp^{success}$, making $\{(wp_i^{success}, sg_i^{success})\}_{i=1}^k$.
 
         sorted_succeeded_waypoints = sorted(self.succeeded_waypoints)
+        if not sorted_succeeded_waypoints:
+            return {}  # No experience yet
         embedding_tensors = [torch.load(os.path.join(self.wp_to_sg_dir_path, f'{name}.pt')) for name in sorted_succeeded_waypoints]
-        embedding_matrix = torch.cat(embedding_tensors, dim=0)
+        if embedding_tensors:
+            embedding_matrix = torch.cat(embedding_tensors, dim=0)
+        else:
+            embedding_matrix = torch.empty(0, 384)
         embedding_matrix = embedding_matrix.to(DEVICE)
 
         # wp_embedding = self.mineclip.encode_text(waypoint)
 
         wp_embedding = torch.tensor(self.bert_encoder.encode(waypoint)).unsqueeze(0).to(DEVICE)
 
-        cosine_similarities = torch.matmul(embedding_matrix, wp_embedding.T).squeeze()
+        cosine_similarities = torch.matmul(embedding_matrix, wp_embedding.T).reshape(-1)
 
-        topK_values, topK_indices = torch.topk(cosine_similarities, topK)
-        top_succeeded_waypoints = [sorted_succeeded_waypoints[i] for i in topK_indices.tolist()]
+        k = min(max(int(topK), 0), int(cosine_similarities.numel()))
+        if k == 0:
+            return {}
+        topK_values, topK_indices = torch.topk(cosine_similarities, k)
+        top_succeeded_waypoints = [sorted_succeeded_waypoints[i] for i in topK_indices.reshape(-1).tolist()]
 
         wp_sg_dict = dict()
 

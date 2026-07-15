@@ -35,7 +35,7 @@ C-ACT sits between a frozen retriever and a frozen base planner. It intercepts t
 | E2 | Policy selection + sealed audit + paired branch audit | 960 direct rollouts + real audit artifacts |
 | E3 | Three-tier frozen evaluation (ID / Compositional OOD / Contract-boundary) | 1728 episodes |
 | E4 | Four core ablations | 240 episodes |
-| E5 | Multi-stream controlled online growth (5 streams x 10 rounds) | 2,600 episodes |
+| E5 | Multi-stream controlled online growth (5 streams x 10 rounds) | 2,400 episodes |
 
 Six methods: NoKnowledge, NoGate, FixedBayes, PairwisePreferenceGate, C-ACT-Pointwise, C-ACT.
 

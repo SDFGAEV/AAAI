@@ -42,7 +42,7 @@ def env_make(env_id: str, cfg: DictConfig, logger: logging.Logger) -> CustomEnvW
     - env: The created environment.
 
     """
-    env = gym.make(env_id)
+    env = gym.make(env_id, disable_env_checker=True)
     seed = int(cfg["seed"])
     if hasattr(env, "seed"):
         env.seed(seed)

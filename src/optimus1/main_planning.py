@@ -60,6 +60,43 @@ from optimus1.util import (
 MINUTE = 2000  # was 1200; higher = fewer reasoning interventions
 visual_info = ""
 
+
+# Malmo emits several benign Java exceptions during normal headless operation
+# (for example probe socket resets, OpenAL initialization warnings, and the
+# Realms availability check).  The old ``"Exception" in content`` test treated
+# all of them as infrastructure crashes and discarded valid episodes.  Only
+# explicit crash signatures are fatal; missing or diagnostic-only logs are not
+# evidence that the environment failed.
+_FATAL_MALMO_LOG_PATTERNS = (
+    re.compile(r"---- Minecraft Crash Report ----", re.IGNORECASE),
+    re.compile(r"the game crashed whilst", re.IGNORECASE),
+    re.compile(r"Minecraft process finished unexpectedly", re.IGNORECASE),
+    re.compile(r"\bFATAL(?: ERROR)?\b", re.IGNORECASE),
+    re.compile(r"Exception in thread \"(?:main|Server thread)\"", re.IGNORECASE),
+    re.compile(r"java\.lang\.(?:OutOfMemoryError|NoClassDefFoundError|LinkageError|VerifyError)"),
+    re.compile(r"java\.net\.ConnectException: Connection refused"),
+)
+_MAX_MALMO_LOG_SCAN_BYTES = 256 * 1024
+
+def _malmo_log_has_fatal_error(path: str) -> bool:
+    """Return whether *path* contains an unambiguous Minecraft crash.
+
+    Malmo's diagnostic stream is not a Python exception channel.  In
+    particular, ``SocketException``/``RuntimeException`` lines are expected
+    during mission teardown and Realms probing, so a generic substring check
+    is unsound.
+    """
+    if not path or not os.path.isfile(path):
+        return False
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as handle:
+            handle.seek(0, os.SEEK_END)
+            handle.seek(max(0, handle.tell() - _MAX_MALMO_LOG_SCAN_BYTES))
+            content = handle.read()
+    except OSError:
+        return False
+    return any(pattern.search(content) for pattern in _FATAL_MALMO_LOG_PATTERNS)
+
 def call_planner_with_retry(
     cfg: DictConfig,
     obs: Dict[str, Any],
@@ -296,12 +333,10 @@ def new_agent_do(
     env_malmo_logger_port = env.instances[0]._target_port - 9000
     env_malmo_logger_path = os.path.join(hydra_path.split('logs')[0], 'logs', f'mc_{env_malmo_logger_port}.log')
 
-    if os.path.exists(env_malmo_logger_path):
-        with open(env_malmo_logger_path, 'r', encoding='utf-8') as file:
-            content = file.read()
-        if 'Exception' in content:
-            logger.warning(f"Exception found in malmo log, continuing anyway")
-    else:
+    if _malmo_log_has_fatal_error(env_malmo_logger_path):
+        logger.error("Fatal Minecraft crash signature found in %s", env_malmo_logger_path)
+        return "env_malmo_logger_error", None, None, None, None
+    elif not os.path.exists(env_malmo_logger_path):
         logger.info(f"env_malmo_logger_path: {env_malmo_logger_path} does not exist, continuing.")
 
     status = ""
@@ -420,13 +455,8 @@ def new_agent_do(
                     env.can_open_inventory = False
                     env.can_change_hotbar = False
 
-                    if not os.path.exists(env_malmo_logger_path):
-                        logger.error(f"env_malmo_logger_path: {env_malmo_logger_path} does not exist.")
-                        return "env_malmo_logger_error", None, None, None, None
-
-                    with open(env_malmo_logger_path, 'r', encoding='utf-8') as file:
-                        content = file.read()
-                    if 'Exception' in content:
+                    if _malmo_log_has_fatal_error(env_malmo_logger_path):
+                        logger.error("Fatal Minecraft crash signature found in %s", env_malmo_logger_path)
                         return "env_malmo_logger_error", None, None, None, None
 
                     fail_env_step = (env.num_steps >= int(cfg["env"]["max_minutes"])*MINUTE)
@@ -472,7 +502,12 @@ def new_agent_do(
                         cfg["server"], obs, current_sg_prompt, step=env.num_steps,
                         hydra_path=hydra_path, run_uuid=run_uuid
                     )
-                    obs, reward, game_over, info = env.step(action, current_sg_target)
+                    step_result = env.step(action, current_sg_target)
+                    if len(step_result) == 5:
+                        obs, reward, terminated, truncated, info = step_result
+                        game_over = terminated or truncated
+                    else:
+                        obs, reward, game_over, info = step_result
                     action_memory.set_observation(obs, info)
                     if action_memory.needs_supervision_check():
                         action_memory.acknowledge_supervision(bool(info.get("reflection_passed", False)) if isinstance(info, dict) else False, obs, info)
@@ -515,13 +550,8 @@ def new_agent_do(
                             # })
 
                     if env.num_steps % (MINUTE * 3) == 0:
-                        if not os.path.exists(env_malmo_logger_path):
-                            logger.error(f"env_malmo_logger_path: {env_malmo_logger_path} does not exist.")
-                            return "env_malmo_logger_error", None, None, None, None
-
-                        with open(env_malmo_logger_path, 'r', encoding='utf-8') as file:
-                            content = file.read()
-                        if 'Exception' in content:
+                        if _malmo_log_has_fatal_error(env_malmo_logger_path):
+                            logger.error("Fatal Minecraft crash signature found in %s", env_malmo_logger_path)
                             return "env_malmo_logger_error", None, None, None, None
 
                     if game_over:
@@ -560,13 +590,8 @@ def new_agent_do(
                 subgoal = None
 
 
-        if not os.path.exists(env_malmo_logger_path):
-            logger.error(f"env_malmo_logger_path: {env_malmo_logger_path} does not exist.")
-            return "env_malmo_logger_error", None, None, None, None
-
-        with open(env_malmo_logger_path, 'r', encoding='utf-8') as file:
-            content = file.read()
-        if 'Exception' in content:
+        if _malmo_log_has_fatal_error(env_malmo_logger_path):
+            logger.error("Fatal Minecraft crash signature found in %s", env_malmo_logger_path)
             return "env_malmo_logger_error", None, None, None, None
 
         # end of while loop. game is done.
@@ -746,7 +771,14 @@ def main(cfg: DictConfig):
                     new_agent_do, cfg, env, logger, current_monitos, obs, action_memory, task, goal, run_uuid
                 )
                 try:
-                    status, steps, completed_subgoals, failed_subgoals, failed_waypoints = future.result(timeout=TASK_TIMEOUT)
+                    result = future.result(timeout=TASK_TIMEOUT)
+                    if len(result) == 5:
+                        status, steps, completed_subgoals, failed_subgoals, failed_waypoints = result
+                    elif len(result) == 4:
+                        status, steps, completed_subgoals, failed_subgoals = result
+                        failed_waypoints = []
+                    else:
+                        raise ValueError(f"Unexpected result length: {len(result)}")
                 except FutureTimeoutError:
                     logger.error(f"Task timeout ({TASK_TIMEOUT}s): {goal}")
                     status, steps, completed_subgoals, failed_subgoals, failed_waypoints = "timeout", 0, [], [], []
@@ -880,7 +912,7 @@ def main(cfg: DictConfig):
                     pass
 
             img_dir = os.path.join(hydra_path, run_uuid, "imgs")
-            shutil.rmtree(img_dir)
+            shutil.rmtree(img_dir, ignore_errors=True)
 
             # wandb.finish()
 

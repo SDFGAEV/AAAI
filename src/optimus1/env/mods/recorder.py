@@ -89,7 +89,7 @@ class RecorderMod(Mod):
         if self.export_video:
             # dir/{task}/{status}/{time}.mp4
             task = task.replace(" ", "_")
-            actual_done_final_task = actual_done_final_task.replace(" ", "_")
+            actual_done_final_task = str(actual_done_final_task or "").replace(" ", "_")
             video_dir = os.path.join(self.output_video_path, task, biome, status)
             os.makedirs(video_dir, exist_ok=True)
             time = get_time()

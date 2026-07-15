@@ -8,7 +8,7 @@ import torch
 # from ..models.qwen_2_5_planning import PlanningModel as QwenPlanningModel
 from ..models.qwen_vl_planning import PlanningModel as QwenVLPlanningModel
 # from ..models.deepseek_vl_planning import PlanningModel as DeepSeekPlanningModel
-# from ..models.gpt4_planning import PlanningModel as GPT4PlanningModel
+# from ..models.gpt4_planning import PlanningModel as GPT4PlanningModel  # uncomment if GPT-4 backend is available
 from ..models.steve_action_model import ActionModel as SteveActionModel
 
 logger = logging.getLogger(__name__)
@@ -33,6 +33,12 @@ class Agent:
     ) -> None:
         self.plan_with_gpt = plan_with_gpt
         if plan_with_gpt:
+            try:
+                from ..models.gpt4_planning import PlanningModel as GPT4PlanningModel  # noqa: F811
+            except ImportError:
+                raise ImportError(
+                    "GPT4PlanningModel is not available. Install the required GPT-4 backend, "
+                    "or set plan_with_gpt=False to use Qwen-VL instead.")
             self.gpt_v = True
             self.plan_model = GPT4PlanningModel()
             logger.info("gpt4o as planning model")

@@ -94,5 +94,5 @@ class _FakeSingleAgentEnv(_FakeEnvMixin, _SingleAgentEnv):
         multi_agent_action = {
             aname: action
         }
-        s, reward, done, info = super().step(multi_agent_action)
+        step_result = super().step(multi_agent_action); s, reward, done, info = (step_result[0], step_result[1], step_result[2] or step_result[3], step_result[4]) if len(step_result) == 5 else step_result
         return s[aname], reward[aname], done, info[aname]

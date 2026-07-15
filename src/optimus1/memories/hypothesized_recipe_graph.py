@@ -433,7 +433,10 @@ class HypothesizedRecipeGraph:
 
         cosine_similarities = torch.matmul(verified_embedding_matrix, item_embedding.T).squeeze()
 
-        topK_similarities, topK_indices = torch.topk(cosine_similarities, topK)
+        k = min(max(int(topK), 0), int(cosine_similarities.numel()))
+        if k == 0:
+            return [], []
+        topK_similarities, topK_indices = torch.topk(cosine_similarities, k)
 
         topK_verified_items = [sorted_verified_items[i] for i in topK_indices.tolist()]
         

@@ -4,10 +4,31 @@ import re
 from typing import Any, Dict, List
 
 PlanList = List[Dict[str, Any]]
+# Canonical protocol actions from the paper: {mine, craft, smelt}.
+_MINE_ALIASES = ("dig down and break down", "dig down and mine", "chop a tree", "chop", "punch", "collect", "gather")
+
+
+def canonicalize_language_action(task: str) -> str:
+    """Normalize legacy mining aliases to the paper's ``mine`` action."""
+    text = " ".join(str(task or "").strip().split())
+    lowered = text.lower()
+    for alias in _MINE_ALIASES:
+        if lowered == alias:
+            return "mine"
+        if lowered.startswith(alias + " "):
+            return "mine " + text[len(alias) + 1:].lstrip()
+    return text
+
+
+def canonicalize_subgoal(subgoal: Dict[str, Any]) -> Dict[str, Any]:
+    result = dict(subgoal)
+    result["task"] = canonicalize_language_action(result.get("task", ""))
+    return result
 
 
 
 def language_action_to_subgoal(action, waypoint) -> str:
+    action = canonicalize_language_action(action)
     subgoal = {
         "task": action,
         "goal": [waypoint, 1],
@@ -36,6 +57,17 @@ def render_subgoal(subgoal: str, wp_num: int = 1) -> str:
     except json.JSONDecodeError as e:
         return [], None, str(e)
 
+    # Qwen may wrap the required subgoal in an item_name/task_planning envelope.
+    if "task" not in temp:
+        for key in ("task_planning", "subgoal", "plan"):
+            nested = temp.get(key)
+            if isinstance(nested, dict) and "task" in nested:
+                temp = nested
+                break
+    if "task" not in temp or "goal" not in temp:
+        return [], None, "planner output missing task/goal"
+
+    temp = canonicalize_subgoal(temp)
     temp["goal"][1] = wp_num
 
     return temp, temp["task"], None
@@ -94,7 +126,7 @@ def render_gpt4_plan(plan: str, replan: bool = False) -> PlanList:
     ]
 
     for p in sub_plans:
-        p["task"] = p["task"].replace("punch", "chop").replace("collect", "chop").replace("gather", "chop")
+        p.update(canonicalize_subgoal(p))
 
     return sub_plans, None
 
@@ -129,7 +161,7 @@ def render_plan(plan: str, wp_num: int = 1) -> PlanList:
     ]
 
     for p in sub_plans:
-        p["task"] = p["task"].replace("punch", "chop").replace("collect", "chop").replace("gather", "chop")
+        p.update(canonicalize_subgoal(p))
         p['goal'][1] = wp_num
 
     return sub_plans, temp_str, None
@@ -173,14 +205,14 @@ def oracle_graph_to_plan(graph, subgoal_item_name, subgoal_num):
 
     if "Just mine it" in graph:
         if subgoal_item_name in ['log', 'logs']:
-            task_str = "chop a tree"
+            task_str = "mine logs"
             need_item = "logs"
         elif subgoal_item_name in ["cobblestone", "iron_ore", "gold_ore"]:
             need_item = subgoal_item_name
-            task_str = f"dig down and break down {need_item.replace('_', ' ')}"
+            task_str = f"mine {need_item.replace('_', ' ')}"
         elif subgoal_item_name in ["diamond", "diamond_ore"]:
             need_item = subgoal_item_name.replace('_ore', ' ')
-            task_str = f"dig down and mine {need_item}"
+            task_str = f"mine {need_item}"
         else:
             need_item = subgoal_item_name
             task_str = f"mine {need_item}"
@@ -206,12 +238,12 @@ def oracle_graph_to_plan(graph, subgoal_item_name, subgoal_num):
         need_num = int(tmp[1].strip())
 
         if need_item in ['log', 'logs']:
-            task_str = "chop a tree"
+            task_str = "mine logs"
             need_item = "logs"
         elif need_item in ["cobblestone", "iron_ore", "gold_ore"]:
-            task_str = f"dig down and break down {need_item.replace('_', ' ')}"
+            task_str = f"mine {need_item.replace('_', ' ')}"
         elif need_item in ["diamond"]:
-            task_str = f"dig down and mine {need_item}"
+            task_str = f"mine {need_item}"
         elif "ingot" in need_item:
             task_str = "smelt " + need_item.replace('_ingot', ' ore')
         else:

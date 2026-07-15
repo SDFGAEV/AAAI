@@ -927,8 +927,9 @@ public class ServerStateMachine extends StateMachine
         }
         
         private void setPlayerAbsolutePosition(EntityPlayerMP player, PosAndDirection pos) {
-            player.rotationYaw = pos.getYaw().floatValue();
-            player.rotationPitch = pos.getPitch().floatValue();
+            // JAXB generates primitive float accessors for bounded yaw/pitch attributes.
+            player.rotationYaw = pos.getYaw();
+            player.rotationPitch = pos.getPitch();
             player.setPositionAndUpdate(pos.getX().doubleValue(), pos.getY().doubleValue(), pos.getZ().doubleValue());
             player.onUpdate(); // Needed to force scene to redraw
         }

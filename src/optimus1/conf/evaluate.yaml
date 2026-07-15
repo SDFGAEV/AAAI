@@ -6,7 +6,9 @@ benchmark: diamond
 
 exp_num: 0
 seed: 0
-world_seed: 0
+# Unless an experiment explicitly overrides it, the procedural world must
+# use the same declared seed as the statistical episode seed.
+world_seed: ${seed}
 
 plan_model: Qwen/Qwen2.5-VL-7B-Instruct
 # Qwen/Qwen2.5-VL-7B-Instruct

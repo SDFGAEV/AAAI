@@ -88,19 +88,40 @@ def main():
     free_gb = usage.free / 1e9
     check(f"Disk space >= 10GB free", lambda: (free_gb >= 10, f"{free_gb:.1f} GB free"))
 
-    # 9. Port availability
+    # 9. Port availability. Ports reserved by the current VLM pool are
+    # intentionally occupied by the time this check runs and must not make
+    # the health check fail. Require enough free unreserved candidates.
     ports = [12345, 15000, 15001, 15002, 15003]
+    reserved = set()
+    raw_ports = os.getenv("CACT_VLM_PORTS", "")
+    if raw_ports:
+        for raw in raw_ports.split(","):
+            try:
+                reserved.add(int(raw.strip()))
+            except ValueError:
+                pass
+    else:
+        try:
+            base = int(os.getenv("CACT_VLM_PORT", "12345"))
+            gpu_count = len([x for x in os.getenv("CACT_GPUS", "0").split(",") if x.strip()])
+            reserved.update(base + i for i in range(max(1, gpu_count)))
+        except ValueError:
+            pass
     free_ports = []
     for p in ports:
+        if p in reserved:
+            continue
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.bind(("127.0.0.1", p))
                 free_ports.append(p)
         except OSError:
             pass
-    check("Free ports (≥4)", lambda: (
-        len(free_ports) >= 4,
-        f"{len(free_ports)} free: {free_ports}"))
+    candidates = len([p for p in ports if p not in reserved])
+    required_free = min(4, candidates)
+    check("Free ports (unreserved)", lambda: (
+        len(free_ports) >= required_free,
+        f"{len(free_ports)} free: {free_ports}; reserved: {sorted(reserved)}"))
 
     # 10. RAM
     try:

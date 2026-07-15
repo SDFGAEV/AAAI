@@ -17,9 +17,10 @@
                 An absolute position in the 3D Minecraft world.
             </xs:documentation>
         </xs:annotation>
-        <xs:attribute name="x" type="xs:float" use="required"/>
-        <xs:attribute name="y" type="xs:float" use="required"/>
-        <xs:attribute name="z" type="xs:float" use="required"/>
+        <!-- Decimal preserves the precision expected by mission handlers. -->
+        <xs:attribute name="x" type="xs:decimal" use="required"/>
+        <xs:attribute name="y" type="xs:decimal" use="required"/>
+        <xs:attribute name="z" type="xs:decimal" use="required"/>
     </xs:complexType>
 
     <xs:complexType name="PosAndDirection">

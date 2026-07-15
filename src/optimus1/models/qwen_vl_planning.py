@@ -1,7 +1,15 @@
 from typing import List, Optional
 
 import torch
-from transformers import Qwen2_5_VLForConditionalGeneration, Qwen2VLForConditionalGeneration, AutoProcessor
+try:
+    from transformers import Qwen2_5_VLForConditionalGeneration
+except ImportError:
+    Qwen2_5_VLForConditionalGeneration = None
+try:
+    from transformers import Qwen2VLForConditionalGeneration
+except ImportError:
+    Qwen2VLForConditionalGeneration = None
+from transformers import AutoProcessor
 from qwen_vl_utils import process_vision_info
 
 from ..util.prompt import language_action_to_subgoal
@@ -82,14 +90,26 @@ class PlanningModel(BasePlanningModel):
                  system_prompt: Optional[str] = None) -> None:
         self.device = f"cuda:{device_id}"
 
-        if "2B" in model_path or "2b" in model_path.lower():
+        normalized_model = model_path.lower()
+        if "qwen2.5" in normalized_model or "qwen2_5" in normalized_model:
+            if Qwen2_5_VLForConditionalGeneration is None:
+                raise ImportError(
+                    "Qwen2.5-VL requires transformers>=4.49; install a compatible "
+                    "version instead of falling back to the incompatible Qwen2-VL class")
+            ModelClass = Qwen2_5_VLForConditionalGeneration
+        elif "qwen2-vl" in normalized_model or "qwen2vl" in normalized_model:
+            if Qwen2VLForConditionalGeneration is None:
+                raise ImportError(
+                    "Qwen2-VL support is unavailable in the installed transformers version")
             ModelClass = Qwen2VLForConditionalGeneration
         else:
-            ModelClass = Qwen2_5_VLForConditionalGeneration
+            raise ValueError(
+                f"Unsupported Qwen-VL model path {model_path!r}; include qwen2.5 or qwen2-vl "
+                "in the model identifier so the architecture cannot be mis-selected")
         self.model = ModelClass.from_pretrained(
             model_path,
             torch_dtype=torch.float16,
-            device_map="auto",
+            device_map=self.device,
         )
         self.model.eval()
         self.processor = AutoProcessor.from_pretrained(model_path)
@@ -127,33 +147,21 @@ class PlanningModel(BasePlanningModel):
             # That is, it does not use memory
             pass
 
-        if "log" not in waypoint:
-            # waypoint is not logs
-            language_actions = ["dig down and mine", "craft", "smelt"]
-            for failed_sg_str in failed_sg_list_for_wp:
-                if "mine" in failed_sg_str:
-                    language_actions.remove("dig down and mine")
-                elif "craft" in failed_sg_str:
-                    language_actions.remove("craft")
-                elif "smelt" in failed_sg_str:
-                    language_actions.remove("smelt")
-            language_action_options = [f"{action} {waypoint}" for action in language_actions]
-            if len(language_action_options) == 0:
-                language_action_options = [f"dig down and mine {waypoint}", f"craft {waypoint}", f"smelt {waypoint}"]
-        else:
-            # waypoint is logs
-            language_actions = ["chop a tree", "craft logs", "smelt logs"]
-            for failed_sg_str in failed_sg_list_for_wp:
-                if "mine" in failed_sg_str or "chop" in failed_sg_str:
-                    language_actions.remove("chop a tree")
-                elif "craft" in failed_sg_str:
-                    language_actions.remove("craft logs")
-                elif "smelt" in failed_sg_str:
-                    language_actions.remove("smelt logs")
-            language_action_options = language_actions
-            if len(language_action_options) == 0:
-                language_action_options = [f"chop a tree", f"craft {waypoint}", f"smelt {waypoint}"]
-
+        # The paper's formal high-level action space is exactly {mine, craft, smelt}.
+        language_actions = ["mine", "craft", "smelt"]
+        failed_sg_list_for_wp = failed_sg_list_for_wp or []
+        for failed_sg_str in failed_sg_list_for_wp:
+            failed = str(failed_sg_str).lower()
+            if any(x in failed for x in ("mine", "chop", "punch", "gather")):
+                if "mine" in language_actions:
+                    language_actions.remove("mine")
+            elif "craft" in failed and "craft" in language_actions:
+                language_actions.remove("craft")
+            elif "smelt" in failed and "smelt" in language_actions:
+                language_actions.remove("smelt")
+        language_action_options = [f"{action} {waypoint}" for action in language_actions]
+        if not language_action_options:
+            language_action_options = [f"mine {waypoint}", f"craft {waypoint}", f"smelt {waypoint}"]
         language_subgoal_options = []
         i = 1
         for action in language_action_options:

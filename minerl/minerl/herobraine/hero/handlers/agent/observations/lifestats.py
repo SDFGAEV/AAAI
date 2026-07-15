@@ -47,7 +47,7 @@ class LifeStatsObservation(KeymapTranslationHandler):
         return str("""<ObservationFromFullStats/>""")
 
     def from_hero(self, hero_dict):
-        hero_dict = hero_dict['life_stats']
+        hero_dict = hero_dict.get('life_stats', {})
         return super().from_hero(hero_dict)
 
 

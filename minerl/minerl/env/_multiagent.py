@@ -28,7 +28,7 @@ NS = "{http://ProjectMalmo.microsoft.com}"
 STEP_OPTIONS = 0
 
 MAX_WAIT = 600  # Time to wait before raising an exception (high value because some operations we wait on are very slow)
-SOCKTIME = 60.0 * 4  # After this much time a socket exception will be thrown.
+SOCKTIME = 120.0  # After this much time a socket exception will be thrown.
 TICK_LENGTH = 0.05
 
 logger = logging.getLogger(__name__)
@@ -206,7 +206,12 @@ class _MultiAgentEnv(gym.Env):
         Process observation into the proper dict space.
         """
         if info:
-            info = json.loads(info)
+            if isinstance(info, str):
+                try:
+                    info = json.loads(info)
+                except (json.JSONDecodeError, TypeError):
+                    pass  # already parsed or malformed
+            # else: already a dict/bytes, use as-is
         else:
             info = {}
 
@@ -455,6 +460,9 @@ class _MultiAgentEnv(gym.Env):
                     self._setup_slave_master_connection_info(slave_xml, mc_server_ip, mc_server_port)
                     self._send_mission(slave_instance, slave_xml, self._get_token(role, ep_uid))
 
+            # Give MalmoEnvServer time to fully initialize the mission before peeking
+            time.sleep(2)
+
             # Finally, peek all of the observations.
             return self._peek_obs()
 
@@ -575,7 +583,7 @@ class _MultiAgentEnv(gym.Env):
             # The socket could be failed here. This method
             # will throw a socket exception if this is the case.
             # TODO: Properly rewrite fault tolerance.
-            self._TO_MOVE_quit_current_episode(instance)
+            # self._TO_MOVE_quit_current_episode(instance)  # SKIP: MalmoEnvServer fresh, no episode to quit
 
         # Now we should have clean instances with clean sockets ready to recieve a mission.
 
@@ -617,10 +625,19 @@ class _MultiAgentEnv(gym.Env):
             if self._seed is not None:
                 token += ":{}".format(self._seed)
             token = token.encode()
+            # MalmoEnvServer protocol: send MissionInit XML first, then token as separate message
+            # (server reads both independently in missionInit() at MalmoEnvServer.java:299)
             comms.send_message(instance.client_socket, mission_xml)
             comms.send_message(instance.client_socket, token)
 
             reply = comms.recv_message(instance.client_socket)
+            if reply is None:
+                logger.warning("recv_message returned None for MissionInit reply, retrying...")
+                num_retries += 1
+                if num_retries > MAX_WAIT:
+                    raise socket.timeout("MissionInit: no response from MalmoEnvServer")
+                time.sleep(1)
+                continue
             ok, = struct.unpack("!I", reply)
             if ok != 1:
                 num_retries += 1
@@ -639,24 +656,46 @@ class _MultiAgentEnv(gym.Env):
             multi_done = True
             for actor_name, instance in zip(self.task.agent_names, self.instances):
                 start_time = time.time()
-                comms.send_message(instance.client_socket, peek_message.encode())
-                obs = comms.recv_message(instance.client_socket)
-                info = comms.recv_message(instance.client_socket).decode('utf-8')
-
-                reply = comms.recv_message(instance.client_socket)
-                done, = struct.unpack('!b', reply)
-                self.has_finished[actor_name] = self.has_finished[actor_name] or done
-                multi_done = multi_done and done == 1
-                if obs is None or len(obs) == 0:
+                peek_ok = False
+                while not peek_ok:
                     if time.time() - start_time > MAX_WAIT:
-                        instance.client_socket.close()
+                        try:
+                            instance.client_socket.close()
+                        except Exception:
+                            pass
                         instance.client_socket = None
                         raise MissionInitException(
                             'too long waiting for first observation')
-                    time.sleep(0.1)
-                    # FIXME - shouldn't we error or retry here?
-
-                multi_obs[actor_name], _ = self._process_observation(actor_name, obs, info)
+                    try:
+                        comms.send_message(instance.client_socket, peek_message.encode())
+                    except (socket.error, BrokenPipeError, ConnectionRefusedError):
+                        logger.warning("Failed to send Peek, retrying...")
+                        time.sleep(0.5)
+                        continue
+                    obs = comms.recv_message(instance.client_socket)
+                    if obs is None:
+                        logger.warning("recv_message returned None for obs, retrying...")
+                        time.sleep(0.5)
+                        continue
+                    info_raw = comms.recv_message(instance.client_socket)
+                    if info_raw is None:
+                        logger.warning("recv_message returned None for info, retrying...")
+                        time.sleep(0.5)
+                        continue
+                    info = info_raw.decode('utf-8')
+                    reply = comms.recv_message(instance.client_socket)
+                    if reply is None:
+                        logger.warning("recv_message returned None for reply, retrying...")
+                        time.sleep(0.5)
+                        continue
+                    done, = struct.unpack('!b', reply)
+                    self.has_finished[actor_name] = self.has_finished[actor_name] or done
+                    multi_done = multi_done and done == 1
+                    if len(obs) == 0:
+                        time.sleep(0.1)
+                        continue
+                    multi_obs[actor_name], _ = self._process_observation(actor_name, obs, info)
+                    peek_ok = True
             self.done = multi_done
             if self.done:
                 raise RuntimeError(
@@ -740,7 +779,7 @@ class _MultiAgentEnv(gym.Env):
                 "more than once; restarting.".format(instance))
 
             instance.kill()
-            instance = self._get_new_instance(instance_id=self.instance.instance_id)
+            instance = self._get_new_instance(instance_id=instance.instance_id)
         else:
             instance.had_to_clean = True
 
@@ -765,13 +804,13 @@ class _MultiAgentEnv(gym.Env):
             raise e
 
     def _TO_MOVE_quit_current_episode(self, instance: MinecraftInstance) -> None:
-        has_quit = False
-
         logger.info("Attempting to quit: {instance}".format(instance=instance))
-        # while not has_quit:
-        comms.send_message(instance.client_socket, "<Quit/>".encode())
-        reply = comms.recv_message(instance.client_socket)
-        ok, = struct.unpack('!I', reply)
+        try:
+            comms.send_message(instance.client_socket, "<Quit/>".encode())
+            reply = comms.recv_message(instance.client_socket)
+            ok, = struct.unpack('!I', reply)
+        except (socket.timeout, socket.error, ConnectionRefusedError, struct.error):
+            logger.warning("Quit command failed or timed out, continuing anyway")
         has_quit = not (ok == 0)
         # TODO: Get this to work properly
 

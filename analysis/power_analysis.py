@@ -42,18 +42,25 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=None); ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args()
-    results = {}
+    results = []
     for effect in (-0.06, -0.08, -0.10, -0.12):
         r = simulate(effect_size=effect, seed=args.seed)
         print(f"  effect={effect:+.2f}: power={r['power']:.3f} (target: >=0.80)")
-        results[f"hrr_{abs(effect):.0f}pp"] = r
+        results.append((effect, r))
+    # Find MDE: smallest absolute effect with >=80% power (ascending search)
+    results.sort(key=lambda x: abs(x[0]))
+    mde = None
+    mde_label = None
+    for effect, r in results:
         if r["power"] >= 0.80:
             mde = effect
-    threshold = next((e for e, d in sorted(results.items()) if d["power"] >= 0.80), None)
-    print(f"Minimal detectable effect (>=80% power): {threshold}")
+            mde_label = f"hrr_{abs(effect):.0f}pp"
+            break
+    results_dict = {f"hrr_{abs(e):.0f}pp": r for e, r in results}
+    print(f"Minimal detectable effect (>=80% power): {mde_label}")
     if args.out:
-        json.dump({"simulation_reps": args.reps, "results": {k: {kk: vv for kk, vv in v.items() if kk != "reps"}
-                   for k, v in results.items()}}, open(args.out, "w"), indent=2, ensure_ascii=False)
+        json.dump({"simulation_reps": r["reps"], "results": {k: {kk: vv for kk, vv in v.items() if kk != "reps"}
+                   for k, v in results_dict.items()}}, open(args.out, "w"), indent=2, ensure_ascii=False)
 
 if __name__ == "__main__":
     main()

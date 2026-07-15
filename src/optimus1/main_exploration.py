@@ -28,6 +28,7 @@ from optimus1.memories import HypothesizedRecipeGraph
 
 from optimus1.monitor import Monitors, StepMonitor, SuccessMonitor
 from optimus1.util import (
+    canonicalize_language_action,
     ServerAPI,
     base64_to_img,
     get_evaluate_task,
@@ -423,8 +424,7 @@ def exploration_do(
                 current_sg_target[0] = "logs"
 
             temp_sg_prompt = current_sg_prompt
-            if "punch" in current_sg_prompt:
-                current_sg_prompt = current_sg_prompt.replace("punch", "chop")
+            current_sg_prompt = canonicalize_language_action(current_sg_prompt)
             op = current_sg_prompt.split(" ")[0]
 
             if "create" in current_sg_prompt:

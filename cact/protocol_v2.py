@@ -190,9 +190,9 @@ class Opportunity:
 
     @property
     def harm(self) -> Optional[int]:
-        if any(v is None for v in (self.h1, self.h2, self.h3, self.h4)):
+        if any(v is None for v in (self.h1, self.h2, self.h3, self.h4, self.h5, self.h6)):
             return None
-        return int(bool(self.h1 or self.h2 or self.h3 or self.h4))
+        return int(bool(self.h1 or self.h2 or self.h3 or self.h4 or self.h5 or self.h6))
 
     def to_dict(self) -> Dict[str, Any]:
         row = asdict(self)
@@ -310,13 +310,14 @@ class AIPWEstimator:
         x = self._features(selected)
         y = np.asarray([float(getattr(r, outcome)) for r in selected])
         beta = np.zeros(x.shape[1], dtype=float)
+        n = len(selected)
         reg = self.ridge * np.eye(x.shape[1]); reg[0, 0] = 0.0
         for _ in range(80):
             z = np.clip(x @ beta, -30.0, 30.0)
             prob = 1.0 / (1.0 + np.exp(-z))
             w = np.maximum(prob * (1.0 - prob), 1e-4)
-            hessian = x.T @ (w[:, None] * x) + reg
-            gradient = x.T @ (prob - y) + reg @ beta
+            hessian = x.T @ (w[:, None] * x) / n + reg
+            gradient = x.T @ (prob - y) / n + reg @ beta
             try:
                 step = np.linalg.solve(hessian, gradient)
             except np.linalg.LinAlgError:
@@ -504,7 +505,7 @@ class AdmissionPolicyV2:
                     "risk_inc_ucb": 0.0, "risk_charge": 0.0,
                     "budget_before": budget_before, "budget_after": budget_before}
         candidates = [
-            # Protocol §7.1: g0(8) → g1(6) → g2(4) → g3(2)
+            # Protocol Section 7.1: g0(8) -> g1(6) -> g2(4) -> g3(2)
             ("g0", f"{opportunity.source}|{opportunity.type}|{opportunity.task_group}|{opportunity.failure_type}|{opportunity.risk_tier}|{opportunity.resource_scarcity}|{opportunity.episode_phase}|{opportunity.prior_admission_bin}"),
             ("g1", f"{opportunity.source}|{opportunity.type}|{opportunity.task_group}|{opportunity.failure_type}|{opportunity.risk_tier}|{opportunity.episode_phase}"),
             ("g2", f"{opportunity.source}|{opportunity.type}|{opportunity.task_group}|{opportunity.resource_scarcity}"),
@@ -514,10 +515,11 @@ class AdmissionPolicyV2:
             # Support is defined by the preregistered arm/ESS rules in the
             # estimator (12 per arm and ESS >= 24); do not add an
             # undocumented n>=40 gate at deployment time.
-            if not row or not row.get("supported", False): continue
-            benefit = float(row["delta_y"]) - self.policy.kappa*float(row["se_y"])
-            abs_risk = float(row["risk_abs"]) + self.policy.kappa*float(row["se_abs"])
-            inc_risk = float(row["risk_inc"]) + self.policy.kappa*float(row["se_inc"])
+            if not row or not row.get("supported", False):
+                continue
+            benefit = float(row["delta_y"]) - self.policy.kappa * float(row["se_y"])
+            abs_risk = float(row["risk_abs"]) + self.policy.kappa * float(row["se_abs"])
+            inc_risk = float(row["risk_inc"]) + self.policy.kappa * float(row["se_inc"])
             charge = max(0.0, inc_risk)
             if benefit < self.policy.delta:
                 reason = "benefit_too_low"
@@ -548,4 +550,3 @@ class AdmissionPolicyV2:
                 "support_level": None, "benefit_lcb": 0.0, "risk_abs_ucb": 0.0,
                 "risk_inc_ucb": 0.0, "risk_charge": 0.0,
                 "budget_before": budget_before, "budget_after": budget_before}
-

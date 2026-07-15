@@ -137,7 +137,7 @@ class _TypeObservation(TranslationHandler):
         try:
             head = obs_dict['equipped_items']
             for key in self._keys:
-                head = json.loads(head[key])
+                val = head[key]; head = json.loads(val) if isinstance(val, str) else val
             item = head['type']
             return (self._other if item not in self._items else item)
         except KeyError:
@@ -206,7 +206,7 @@ class _DamageObservation(TranslationHandler):
         try:
             head = info['equipped_items']
             for key in self._keys:
-                head = json.loads(head[key])
+                val = head[key]; head = json.loads(val) if isinstance(val, str) else val
             return np.array(head[self.type_str])
         except KeyError:
             return np.array(self._default, dtype=self.space.dtype)

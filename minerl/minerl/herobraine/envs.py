@@ -37,5 +37,9 @@ MINERL_BASALT_VILLAGE_HOUSE_ENV_SPEC = basalt_specs.VillageMakeHouseEnvSpec()
 # Register the envs.
 ENVS = [env for env in locals().values() if isinstance(env, EnvSpec)]
 for env in ENVS:
-    if env.name not in gym.envs.registry.env_specs:
+    try:
+        _already = env.name in gym.envs.registry
+    except TypeError:
+        _already = hasattr(gym.envs.registry, 'env_specs') and env.name in gym.envs.registry.env_specs
+    if not _already:
         env.register()

@@ -39,3 +39,12 @@ cact_ckpt/
 .codex_xenon_patch2.py
 .xenon_patch_probe
 results/
+.codex_backup_*/
+.runtime/
+minerl/minerl/MCP-Reborn.bak/
+minerl/minerl/Malmo/Minecraft/run*/
+minerl/minerl/Malmo/Minecraft/caches/
+minerl/minerl/Malmo/Minecraft/null/
+venv310/
+src/optimus1/memories/cact/
+src/optimus1/memories/cact_e2/

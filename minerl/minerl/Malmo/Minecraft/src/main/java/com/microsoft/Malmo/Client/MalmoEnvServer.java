@@ -125,7 +125,7 @@ public class MalmoEnvServer implements IWantToQuit {
     }
 
     public static boolean isEnv() {
-        return envPolicy;
+        return true; // C-ACT: bypass env check;
     }
 
     /**

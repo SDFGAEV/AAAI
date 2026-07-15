@@ -74,8 +74,8 @@ def select(rows, eps_inc=0.02, eps_abs=0.10):
         raise ValueError(f"D_select must contain 48 cells (6 seeds) or 64 cells (8-seed expansion), got {cell_count}")
     seeds_per_template = Counter(key[0] for key in cells)
     expected_seeds = 6 if cell_count == 48 else 8
-    if set(seeds_per_template.values()) != {expected_seeds}:
-        raise ValueError("D_select cells must be balanced across the 8 preregistered templates")
+    if len(seeds_per_template) != 8 or set(seeds_per_template.values()) != {expected_seeds}:
+        raise ValueError("D_select must be balanced across exactly 8 preregistered templates")
     incomplete = [key for key, methods in cells.items() if set(methods) != REQUIRED]
     if incomplete:
         raise ValueError(f"incomplete matched-risk cells: {len(incomplete)}")
@@ -139,7 +139,6 @@ def main():
     result = {"schema_version": "cact.e2.direct_select.v1", "source": str(Path(args.input)),
               "design": {"allowed_cells": [48, 64], "observed_cells": len({_cell(r) for r in rows})},
               "selection": select(rows, args.eps_inc, args.eps_abs)}
-              "selection": select(load(args.input), args.eps_inc, args.eps_abs)}
     Path(args.out).write_text(json.dumps(result, indent=2, sort_keys=True), encoding="utf-8")
     print(json.dumps(result, ensure_ascii=False))
 

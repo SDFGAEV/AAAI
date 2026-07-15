@@ -129,6 +129,7 @@ class ParallelRunner:
         self._vlm_ports: List[int] = []
         if vlm_ports:
             self._vlm_ports = [int(x) for x in vlm_ports.split(",") if x]
+        self._world_snapshot_manifest_supplied = bool(world_snapshot_manifest)
         self._world_snapshot_hashes: Dict[str, str] = {}
         if world_snapshot_manifest:
             with open(world_snapshot_manifest, encoding="utf-8") as handle:
@@ -248,13 +249,17 @@ class ParallelRunner:
             return {"key": key, "status": "skipped", "reason": "already_completed"}
 
         cmd = [
-            sys.executable, "-OO", "-m", "optimus1.main_planning",
+            sys.executable, "-m", "optimus1.main_planning",
             f"server.port={cfg.vlm_port}",
             f"server.url=http://127.0.0.1",
             f"benchmark={cfg.benchmark}",
             f"+evaluate=[{cfg.task_idx}]",
             f"env.times={cfg.env_times}",
             f"seed={cfg.seed}",
+            # Keep the statistical seed and the procedural Minecraft world
+            # seed aligned.  MineRL's env.seed() only seeds spaces/token
+            # generation; the mission XML uses the Hydra world_seed override.
+            f"world_seed={cfg.seed}",
             f"prefix={cfg.prefix}",
             f"+cact_method={cfg.method}",
             f"plan_model={cfg.plan_model}",
@@ -388,6 +393,13 @@ class ParallelRunner:
                 "error": str(e),
             }
 
+    def _snapshot_hash_for(self, task_idx: int, seed: int) -> str:
+        key = f"{task_idx}|{seed}"
+        value = self._world_snapshot_hashes.get(key)
+        if self._world_snapshot_manifest_supplied and not value:
+            raise ValueError(f"world snapshot manifest missing required cell {key}")
+        return value or derive_snapshot_hash(task_idx, seed)
+
     # -- Build experiment grid --
     def _build_grid(self, benchmark: str, seeds: List[int],
                     methods: List[str],
@@ -443,7 +455,7 @@ class ParallelRunner:
                                                 method.replace("/", "_").replace("-", "_"),
                                                 f"seed_{seed}", f"task_{idx}"),
                         run_id=f"{benchmark}_{method}_seed{seed}_task{idx}",
-                        snapshot_hash=self._world_snapshot_hashes.get(f"{idx}|{seed}") or derive_snapshot_hash(idx, seed),
+                        snapshot_hash=self._snapshot_hash_for(idx, seed),
                     ))
         return grid
 
@@ -512,7 +524,7 @@ class ParallelRunner:
                 for future in as_completed(futures):
                     result = future.result()
                     key = result["key"]
-                    if result.get("status") in {"success", "skipped"}:
+                    if result.get("status") in {"success", "skipped", "failed", "timeout"}:
                         self._completed.add(key)
                     else:
                         batch_failures.append(result)

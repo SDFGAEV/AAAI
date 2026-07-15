@@ -36,10 +36,11 @@ class PlainInventoryObservation(TranslationHandler):
         # print(obs_dict["inventory"]·)
         inventory = dict()
         for item in obs_dict["inventory"]:
-            # print(item)
-            inventory[item["slot_id"]] = {
-                "type": item["type"],
-                "quantity": item["quantity"],
+            # Malmo 1.11.2 uses 'index', newer versions use 'slot_id'
+            slot = item.get("slot_id", item.get("index", 0))
+            inventory[slot] = {
+                "type": item.get("type", ""),
+                "quantity": item.get("quantity", 0),
             }
 
         return inventory

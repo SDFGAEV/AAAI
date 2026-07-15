@@ -7,6 +7,7 @@ from minerl.herobraine.hero.mc import ALL_ITEMS
 
 from .chat_action import ChatAction
 from .inventory_agent_start import CustomInventoryAgentStart
+from .legacy_gui_observation import LegacyCompatibleIsGuiOpen
 from .obversation_current_location import CustomObservationFromCurrentLocation
 from .plain_inventory import PlainInventoryObservation
 from .wrapper import BasaltTimeoutWrapper
@@ -81,7 +82,7 @@ class CustomBaseEnvSpec(HumanSurvival):
             ),
             handlers.ObservationFromLifeStats(),
             CustomObservationFromCurrentLocation(),
-            handlers.IsGuiOpen(),
+            LegacyCompatibleIsGuiOpen(),
         ]
 
     def create_agent_start(self) -> List[handlers.Handler]:

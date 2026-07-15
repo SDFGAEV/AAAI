@@ -45,7 +45,6 @@ def retry(func):
                     retry_exc = e
                 if i < retry_count - 1:
                     logger.debug(f"Pause before retry on " + str(e))
-                    raise e
                     time.sleep(retry_timeout)
                     logger.debug("Pause complete.")
         raise retry_exc

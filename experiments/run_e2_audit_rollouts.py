@@ -115,6 +115,9 @@ def main():
     if args.world_snapshot_manifest:
         manifest = json.loads(Path(args.world_snapshot_manifest).read_text(encoding="utf-8"))
         hashes = {str(k): str(v) for k, v in manifest.get("hashes", manifest).items()}
+        expected = {f"{task}|{seed}" for task in tasks for seed in seeds}
+        missing = sorted(expected - {k for k, v in hashes.items() if v})
+        if missing: raise SystemExit(f"world snapshot manifest missing {len(missing)} required cells")
     else:
         hashes = {f"{task}|{seed}": derive_snapshot_hash(task, seed) for task in tasks for seed in seeds}
     full_kappa, point_kappa = _selected_kappas(Path(args.policy_path))

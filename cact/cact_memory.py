@@ -35,7 +35,7 @@ from .trust_store import TrustStore, CANDIDATE, QUARANTINED, PROBATION, CERTIFIE
 from .trust_gate import TrustGate
 from .context_bucket import ContextBucket
 from .contract import ContractExtractor, ContractChecker
-from .decision_controller import DecisionController
+from .decision_controller import DecisionController, DecisionResult
 from .interaction_gate import InteractionGate
 from .active_logging import ActiveBaseLogger
 from .thompson_probe import SafeThompsonProber
@@ -849,7 +849,7 @@ class CactMemory:
                     f"{waypoint}|{self._current_seed}|{self._reuse_count + self._fallback_count}")
                 gate = {"decision": "ADMIT" if assignment else "FALLBACK",
                         "reason": "randomized_logging", "depth": None}
-            result = __import__("cact.decision_controller", fromlist=["DecisionResult"]).DecisionResult()
+            result = DecisionResult()
             result.decision = "reuse" if assignment else "fallback"
             result.chosen_knowledge_id = kid if assignment else ""
             result.contract_satisfied_before = bool(applicable)
