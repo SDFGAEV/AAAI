@@ -511,7 +511,7 @@ class MinecraftInstance(object):
                     break
 
             # Port discovery: scan all java listening ports for MalmoEnv protocol
-            if not self.port or self.port == port:
+            if not self.port:
                 discovered = self._discover_malmoenv_port(port)
                 if discovered:
                     self._port = discovered
