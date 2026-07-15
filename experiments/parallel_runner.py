@@ -515,10 +515,19 @@ class ParallelRunner:
             self._start_vlm_server(plan_model)
             self._start_batch_proxy()
 
-        # Assign ports to workers: round-robin across VLM pool
+        # Pair each VLM endpoint with the same GPU used by its Minecraft
+        # subprocess. This avoids cross-GPU model traffic and makes the
+        # allocation auditable from the episode logs.
         ports = self._vlm_ports if self._vlm_ports else [self.vlm_port]
+        gpu_ids = [int(x.strip()) for x in os.environ.get("MINERL_GPU_IDS", "").split(",") if x.strip()]
+        gpu_to_port = {gpu: ports[i] for i, gpu in enumerate(gpu_ids) if i < len(ports)}
         for i, cfg in enumerate(grid):
-            cfg.vlm_port = ports[i % len(ports)]
+            if gpu_ids and gpu_to_port:
+                gpu_key = f"{cfg.seed}:{cfg.task_idx}:{cfg.method}"
+                gpu_id = gpu_ids[int(hashlib.sha256(gpu_key.encode("utf-8")).hexdigest(), 16) % len(gpu_ids)]
+                cfg.vlm_port = gpu_to_port.get(gpu_id, ports[i % len(ports)])
+            else:
+                cfg.vlm_port = ports[i % len(ports)]
             cfg.plan_model = plan_model
 
         try:
