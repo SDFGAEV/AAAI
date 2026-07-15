@@ -769,6 +769,21 @@ class MinecraftInstance(object):
                 if self._kill_minecraft_via_malmoenv(self.host, self.port):
                     time.sleep(float(os.environ.get("MINERL_EXIT_GRACE", "1.0")))
 
+            # MCP-Reborn is Docker-backed on the server. A graceful Malmo
+            # exit can leave the exact launcher child alive and leak its port
+            # into the next episode. Reap only this child, never by port/name.
+            if self.minecraft_process is not None:
+                try:
+                    if self.minecraft_process.is_running():
+                        self.minecraft_process.terminate()
+                        self.minecraft_process.wait(timeout=float(os.environ.get("MINERL_PROCESS_EXIT_TIMEOUT", "5")))
+                except (psutil.NoSuchProcess, psutil.TimeoutExpired):
+                    try:
+                        if self.minecraft_process.is_running():
+                            self.minecraft_process.kill()
+                            self.minecraft_process.wait(timeout=5)
+                    except (psutil.NoSuchProcess, psutil.TimeoutExpired):
+                        pass
             # Now lets try and end the process if anything is laying around
             try:
                 minerl.utils.process_watcher.reap_process_and_children(self.minecraft_process)
