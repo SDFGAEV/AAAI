@@ -694,11 +694,19 @@ class MinecraftInstance(object):
         # Unique runDir per port avoids multi-worker I/O contention
         run_dir = 'run_' + str(port)
 
-        # GPU round-robin assignment for multi-worker setups
+        # GPU assignment is supplied by the parent runner when available. A
+        # process-local counter is only a fallback: every episode is launched
+        # in a fresh subprocess, so a counter alone would always select GPU 0.
         gpu_ids = [int(x.strip()) for x in os.environ.get('MINERL_GPU_IDS', '0').split(',') if x.strip()]
-        gpu_idx = getattr(InstanceManager, '_gpu_counter', 0)
-        gpu_id = gpu_ids[gpu_idx % len(gpu_ids)]
-        InstanceManager._gpu_counter = gpu_idx + 1
+        explicit_gpu = os.environ.get('CACT_MC_GPU_ID')
+        if explicit_gpu is not None:
+            gpu_id = int(explicit_gpu)
+            if gpu_id not in gpu_ids:
+                raise ValueError(f"CACT_MC_GPU_ID={gpu_id} is not in MINERL_GPU_IDS={gpu_ids}")
+        else:
+            gpu_idx = getattr(InstanceManager, '_gpu_counter', 0)
+            gpu_id = gpu_ids[gpu_idx % len(gpu_ids)]
+            InstanceManager._gpu_counter = gpu_idx + 1
 
         cmd = [launch_script, '-port', str(port), '-env', '-runDir', run_dir, '-gpu', str(gpu_id)]
         if self.status_dir:

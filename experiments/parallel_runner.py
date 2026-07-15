@@ -328,6 +328,14 @@ class ParallelRunner:
                                              if self._vlm_ports else
                                              f"http://127.0.0.1:{self.batch_proxy_port}"),
                          "CACT_TRUST_STORE_DIR": cfg.store_path or os.environ.get("CACT_TRUST_STORE_DIR", "")}
+            # Assign Minecraft GPUs deterministically per episode. Each episode runs in
+            # its own subprocess, so a process-local round-robin counter would always
+            # restart at GPU 0 and silently defeat multi-GPU execution.
+            gpu_ids = [x.strip() for x in os.environ.get("MINERL_GPU_IDS", "").split(",") if x.strip()]
+            if gpu_ids:
+                gpu_key = f"{cfg.seed}:{cfg.task_idx}:{cfg.method}"
+                gpu_idx = int(hashlib.sha256(gpu_key.encode("utf-8")).hexdigest(), 16) % len(gpu_ids)
+                child_env["CACT_MC_GPU_ID"] = gpu_ids[gpu_idx]
             with open(stdout_path, "w", encoding="utf-8") as stdout, open(stderr_path, "w", encoding="utf-8") as stderr:
                 result = _run_with_process_group(cmd, stdout=stdout, stderr=stderr, text=True,
                                         timeout=cfg.timeout * cfg.env_times + 60,
