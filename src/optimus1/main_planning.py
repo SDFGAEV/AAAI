@@ -785,7 +785,7 @@ def main(cfg: DictConfig):
                     _wall_time, _llm_calls, _in_tok, _out_tok = 0.0, 0, 0, 0
                     ServerAPI.reset_counters()
                 except Exception as e:
-                    logger.error(f"Task exception: {e}")
+                    logger.exception("Task exception: %s", e)
                     status, steps, completed_subgoals, failed_subgoals, failed_waypoints = "exception", 0, [], [], []
                     _wall_time, _llm_calls, _in_tok, _out_tok = 0.0, 0, 0, 0
                     ServerAPI.reset_counters()
