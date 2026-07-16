@@ -194,13 +194,24 @@ def make_plan(
     wp_list_str = retrieve_waypoints(waypoint_generator, original_final_goal, 1, inventory)
     logger.info(f"In make_plan")
     logger.info(f"wp_list_str: {wp_list_str}")
-    first_wp_str = wp_list_str.splitlines()[1] # 0th line is 'craft 1 <goal> summary:'
-    
-    wp = first_wp_str.split('.')[1].split(':')[0].strip()
+    # The graph may intentionally return only the summary header when the
+    # target is a raw environment resource or when a cyclic recipe was
+    # blocked.  Do not index blindly into ``splitlines``: that converted a
+    # recoverable planning case into an episode-fatal IndexError.
+    lines = [line.strip() for line in wp_list_str.splitlines() if line.strip()]
+    first_wp_str = next((line for line in lines[1:] if "." in line and "need" in line.lower()), "")
+    if first_wp_str:
+        match = re.match(r"^\s*\d+\.\s*(.+?)\s*:\s*need\s+(\d+)", first_wp_str, re.IGNORECASE)
+    else:
+        match = None
+    if match:
+        wp = match.group(1).strip()
+        wp_num = int(match.group(2))
+    else:
+        wp = original_final_goal.strip().lower().replace(" ", "_")
+        wp_num = 1
     if 'log' in wp:
         wp = 'logs'
-
-    wp_num = int(first_wp_str.split('.')[1].split('need')[1].strip())
 
     is_succeeded, sg_str = action_memory.is_succeeded_waypoint(wp)
 

@@ -44,10 +44,14 @@ def _cleanup_owned_minecraft(run_id: str) -> None:
     if not run_id or os.name == "nt":
         return
     try:
-        listed = subprocess.run(["docker", "ps", "-q", "--filter", f"label=cact.run_id={run_id}"], check=False, capture_output=True, text=True, timeout=5)
-        ids = [x for x in listed.stdout.splitlines() if x.strip()]
-        if ids:
-            subprocess.run(["docker", "rm", "-f", *ids], check=False, capture_output=True, text=True, timeout=20)
+        listed = subprocess.run(["docker", "ps", "-aq", "--filter", f"label=cact.run_id={run_id}"], check=False, capture_output=True, text=True, timeout=10)
+        ids = [x.strip() for x in listed.stdout.splitlines() if x.strip()]
+        for container_id in ids:
+            # Remove one at a time: a Java/Minecraft process can take longer
+            # to reap than Docker's default batch request, and a failed batch
+            # would otherwise leave every sibling container running.
+            subprocess.run(["docker", "rm", "-f", container_id], check=False,
+                           capture_output=True, text=True, timeout=60)
     except (OSError, subprocess.SubprocessError):
         pass
 def _run_with_process_group(args, *, timeout=None, **kwargs):

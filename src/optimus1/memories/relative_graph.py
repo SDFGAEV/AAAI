@@ -214,7 +214,9 @@ class KnowledgeGraph:
         summary=None,
         sub_graph=None,
         in_degree=None,
-        cur_inventory=dict(),
+        cur_inventory=None,
+        path=None,
+        blocked=None,
     ):
         if steps is None:
             steps = []
@@ -224,6 +226,24 @@ class KnowledgeGraph:
             sub_graph = {}
         if in_degree is None:
             in_degree = {}
+        if cur_inventory is None:
+            cur_inventory = {}
+        if path is None:
+            path = ()
+        if blocked is None:
+            blocked = set()
+
+        # Recipe files contain reversible compression recipes (e.g.
+        # emerald <-> emerald_block).  They are not valid acquisition plans:
+        # expanding them recursively would never terminate.  Treat the first
+        # repeated node as an environment-acquired prerequisite and propagate
+        # the blocked marker to the parent so no impossible craft step is
+        # emitted.
+        if item in path or item in blocked:
+            blocked.add(item)
+            summary[item] = summary.get(item, 0) + quantity
+            return steps
+        path = path + (item,)
 
         if item not in sub_graph:
             sub_graph[item] = {}
@@ -279,7 +299,13 @@ class KnowledgeGraph:
                 sub_graph,
                 in_degree,
                 cur_inventory,
+                path,
+                blocked,
             )
+
+            if ingredient in blocked:
+                blocked.add(item)
+                return steps
 
             if self.get_recipe(ingredient) is None: # base items such as cobblestone, diamond_ore, gold_ore
                 if ingredient not in summary:
