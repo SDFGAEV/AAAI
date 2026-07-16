@@ -48,7 +48,7 @@
 - Task-card validation accepts a sealed card manifest/list, rejects duplicate task IDs, and reports the actual card count.
 
 A remaining environment-level risk is that `preferred_spawn_biome` must be verified from the runtime observation/world snapshot, not inferred from configuration alone. Task cards should therefore include a post-reset world assertion and its hash.
-- Paper sources were synchronized with the executable grid: six methods, E3 = 1,728 episodes, E4 = 240 episodes, and E5 = 2,600 episodes under the current five-stream/ten-round configuration. Unsupported prospective-result wording was removed from the LaTeX abstract, and the synchronized paper files are now included in the release manifest.
+- Paper sources were synchronized with the executable grid: six methods, E3 = 1,728 episodes, E4 = 240 episodes, and E5 = 2,400 episodes under the current five-stream/ten-round configuration. Unsupported prospective-result wording was removed from the LaTeX abstract, and the synchronized paper files are now included in the release manifest.
 - E2/D_audit matched cells additionally require a common episode ID across methods, preventing a nominal cell key from masking non-paired episodes.
 **Audit scope note:** the configured cross-model reviewer endpoint was unavailable in this session, so the findings above are a local static/code-and-protocol audit. They are not a substitute for an independent reviewer pass.
 - Ubuntu performance was improved by bounded VLM health polling, safe process cleanup, multi-GPU port routing, reduced thread oversubscription, and fail-fast manifests; quantitative GPU/CPU profiling remains a server-side task because this host has no CUDA.

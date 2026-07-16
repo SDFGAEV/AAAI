@@ -4,7 +4,9 @@ import os
 import shutil
 import fcntl
 import time
-from typing import Any, Dict
+import math
+import re
+from typing import Any, Callable, Dict
 
 import torch
 import torch.nn.functional as F
@@ -42,10 +44,12 @@ class HypothesizedRecipeGraph:
 
     item_number_graph: Dict[str, Dict[str, int]]
 
-    def __init__(self, cfg, logger):
+    def __init__(self, cfg, logger, recipe_predictor: Callable | None = None):
         # self.oracle_graph = OracleGraph() # just for checking item names
         self.cfg = cfg
         self.logger = logger
+        # Injected predictor keeps ADG independent from a specific VLM transport.
+        self.recipe_predictor = recipe_predictor
         self.device = f'cuda'
         self.exploration_uuid = cfg["exploration_uuid"]
 
@@ -106,6 +110,7 @@ class HypothesizedRecipeGraph:
 
         self._load_verified_recipes()
         self._load_hypothesized_recipes()
+        self._sanitize_dependency_cycles()
         self._prepare_item_name_embeddings()
         self.find_frontiers()
 
@@ -200,6 +205,41 @@ class HypothesizedRecipeGraph:
             self.all_item_names.append(item_name)
 
 
+    def _sanitize_dependency_cycles(self) -> None:
+        """Apply the paper's initialization-time DAG invariant.
+
+        LLM-predicted requirement sets that introduce a cycle are discarded as
+        a whole for that item.  This keeps graph traversal finite and mirrors
+        Algorithm 2 instead of silently relying on the planner compiler to
+        survive malformed persisted recipes.
+        """
+        def reaches(start: str, target: str, seen: set[str]) -> bool:
+            if start == target:
+                return True
+            if start in seen:
+                return False
+            seen.add(start)
+            recipe = self.graph.get(start)
+            if not isinstance(recipe, dict):
+                return False
+            return any(reaches(str(dep), target, seen.copy())
+                       for dep in recipe.get("ingredients", {}) or {})
+
+        for item in sorted(self.graph):
+            recipe = self.graph[item]
+            if not isinstance(recipe, dict) or recipe.get("is_verified"):
+                continue
+            ingredients = recipe.get("ingredients", {})
+            if any(reaches(str(dep), item, set()) for dep in ingredients or {}):
+                self.logger.warning("Discarding cyclic ADG requirements for %s", item)
+                recipe["ingredients"] = {}
+
+        # Rebuild the reverse index after dropping an edge set.
+        self.item_number_graph = {}
+        for product, recipe in self.graph.items():
+            for material, qty in (recipe.get("ingredients", {}) or {}).items():
+                self.item_number_graph.setdefault(material, {})[product] = qty
+
     def get_recipe(self, item: str):
         return self.graph.get(item)
 
@@ -220,12 +260,18 @@ class HypothesizedRecipeGraph:
             if g in self.verified_item_names:
                 continue
 
-            # create empty json file
-            with open(os.path.join(self.hypothesized_recipe_dir, f"{g}.json"), "w") as fp:
-                fp.write("")
-
             self._generate_hypothesized_recipe(g)
 
+    def initialize_hypotheses(self, recipe_predictor: Callable | None = None) -> None:
+        """Generate missing ADG hypotheses through the configured LLM."""
+        if recipe_predictor is not None:
+            self.recipe_predictor = recipe_predictor
+        if self.recipe_predictor is None:
+            raise RuntimeError(
+                "XENON ADG initialization requires a recipe_predictor; "
+                "refusing to fabricate empty requirements."
+            )
+        self._init_hypothesized_recipes()
 
     def _generate_hypothesized_recipe(self, item_name):
         """
@@ -271,7 +317,10 @@ class HypothesizedRecipeGraph:
         #     print(f"item_name: {item_name}")
         #     print(hypothesized_recipe)
         #     print()
-        hypothesized_recipe = {} # LLM_generate_recipe(item_name, topK_verified_items, topK_verified_recipes)
+        if self.recipe_predictor is None:
+            raise RuntimeError(f"No recipe predictor configured for ADG item {item_name!r}; refusing to fabricate an empty requirement set.")
+        raw_recipe = self.recipe_predictor(item_name, topK_verified_items, topK_verified_recipes)
+        hypothesized_recipe = self._normalize_recipe_prediction(raw_recipe, item_name)
 
         hypothesized_recipe = self._change_material_names(item_name, hypothesized_recipe) # change material names using oracle graph and self.all_item_names
 
@@ -309,6 +358,35 @@ class HypothesizedRecipeGraph:
             if material not in self.graph and material not in self.hypothesized_item_names:
                 self._generate_hypothesized_recipe(material)
 
+    @staticmethod
+    def _normalize_recipe_prediction(raw_recipe: Any, item_name: str) -> Dict[str, int]:
+        """Parse and validate the strict JSON contract used by the paper."""
+        value = raw_recipe
+        if isinstance(value, str):
+            text = re.sub(r"^```(?:json)?\s*|\s*```$", "", value.strip(), flags=re.I | re.S).strip()
+            try:
+                value = json.loads(text)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"recipe predictor returned invalid JSON for {item_name!r}") from exc
+        if isinstance(value, dict) and "required_items" in value:
+            value = value["required_items"]
+        if not isinstance(value, dict):
+            raise ValueError(f"recipe predictor must return an object for {item_name!r}")
+        normalized: Dict[str, int] = {}
+        for material, quantity in value.items():
+            name = str(material).strip().lower().replace(" ", "_")
+            if not name or name == item_name:
+                continue
+            if isinstance(quantity, bool):
+                raise ValueError(f"invalid quantity for {name!r}")
+            try:
+                number = float(quantity)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"invalid quantity for {name!r}") from exc
+            if not math.isfinite(number) or number <= 0 or not number.is_integer():
+                raise ValueError(f"quantity for {name!r} must be a positive integer")
+            normalized[name] = normalized.get(name, 0) + int(number)
+        return normalized
 
     def _change_material_names(self, item_name, hypothesized_recipe):
         # <item_name>: "stone_pickaxe"
@@ -481,7 +559,38 @@ class HypothesizedRecipeGraph:
         """
 
 
-        pass
+        # Return frontier nodes in the transitive ingredient closure of the
+        # goal.  The upstream release left this API as a bare ``pass``;
+        # callers consequently received ``None`` and could silently explore
+        # an unrelated item.  Relevance is a graph property, so use a
+        # bounded traversal rather than expanding quantities via ``compile``.
+        goal = str(goal_item_name or "").strip().lower().replace(" ", "_")
+        if not goal:
+            return []
+        frontier = set(self.frontier_item_names)
+        if not frontier:
+            return []
+
+        related = set()
+        pending = [goal]
+        visited = set()
+        while pending:
+            item = pending.pop()
+            if item in visited:
+                continue
+            visited.add(item)
+            if item in frontier and item != goal:
+                related.add(item)
+            recipe = self.graph.get(item)
+            if not isinstance(recipe, dict):
+                continue
+            ingredients = recipe.get("ingredients", {})
+            if isinstance(ingredients, dict):
+                pending.extend(
+                    str(name).strip().lower().replace(" ", "_")
+                    for name in ingredients if name
+                )
+        return sorted(related)
 
 
     # def calculate_knowledge_all_frontiers(self):
@@ -785,26 +894,27 @@ class HypothesizedRecipeGraph:
             self.spread_inadmissible(item_name)
 
 
-    def spread_inadmissible(self, inadmissible_item_name):
+    def spread_inadmissible(self, inadmissible_item_name, _visited=None):
+        """Recursively revise every unverified descendant of an inadmissible item.
+
+        Algorithm 3 requires descendant propagation; direct-child-only
+        propagation leaves deeper goals dependent on hallucinated nodes.
         """
-        API spec
-            input: inadmissible_item_name, self.graph
-            output: self.exploration_count_dict
-        
-        Procedure:
-            for all unverified items which have inadmissible_item_name as part of their recipe:
-                increment_count(item_name)
-        """
-        child_of_inadmissible = []
+        visited = set() if _visited is None else set(_visited)
+        if inadmissible_item_name in visited:
+            return
+        visited.add(inadmissible_item_name)
+        children = []
         for result_item_name, recipe in self.graph.items():
-            if recipe["is_verified"]:
+            if not isinstance(recipe, dict) or recipe.get("is_verified"):
                 continue
-            if inadmissible_item_name in list(recipe["ingredients"].keys()):
-                child_of_inadmissible.append(result_item_name)
-        
-        for item_name in child_of_inadmissible:
-            self.exploration_count_dict[item_name] += 1
+            if inadmissible_item_name in recipe.get("ingredients", {}):
+                children.append(result_item_name)
+        for item_name in sorted(children):
+            self.exploration_count_dict[item_name] = max(
+                int(self.exploration_count_dict.get(item_name, 1)), 1) + 1
             self.update_hypothesis(item_name)
+            self.spread_inadmissible(item_name, visited)
 
     def get_recipe_revised_items(self):
         return self.recipe_revised_items
@@ -1001,7 +1111,9 @@ class HypothesizedRecipeGraph:
         summary=None,
         sub_graph=None,
         in_degree=None,
-        cur_inventory=dict(),
+        cur_inventory=None,
+        path=None,
+        blocked=None,
     ):
         if steps is None:
             steps = []
@@ -1011,6 +1123,17 @@ class HypothesizedRecipeGraph:
             sub_graph = {}
         if in_degree is None:
             in_degree = {}
+        if cur_inventory is None:
+            cur_inventory = {}
+        if path is None:
+            path = ()
+        if blocked is None:
+            blocked = set()
+        if item in path or item in blocked:
+            blocked.add(item)
+            summary[item] = summary.get(item, 0) + quantity
+            return steps
+        path = path + (item,)
 
         if item not in sub_graph:
             sub_graph[item] = {}
@@ -1063,6 +1186,8 @@ class HypothesizedRecipeGraph:
                 sub_graph,
                 in_degree,
                 cur_inventory,
+                path=path,
+                blocked=blocked,
             )
 
             if self.get_recipe(ingredient) is None: # base items such as cobblestone, diamond_ore, gold_ore
@@ -1132,7 +1257,7 @@ class HypothesizedRecipeGraph:
 
         return "\n".join(res), res, order, ordered_item_quantity
 
-    def compile(self, item: str, number: int = 1, __cur_inventory: dict = dict()):
+    def compile(self, item: str, number: int = 1, __cur_inventory: dict | None = None):
         self.sub_graph = {}
         self._in_degree = {}
         self.cur_inventory = {}
@@ -1140,7 +1265,7 @@ class HypothesizedRecipeGraph:
 
         cur_inventory = dict()
 
-        for k, v in __cur_inventory.items():
+        for k, v in (__cur_inventory or {}).items():
             if k.endswith('_planks'):
                 if 'planks' not in cur_inventory:
                     cur_inventory['planks'] = 0

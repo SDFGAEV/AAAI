@@ -162,12 +162,12 @@ def retrieve_waypoints(
     waypoint_generator: OracleGraph,
     item: str,
     number: int = 1,
-    cur_inventory: dict = dict()
+    cur_inventory: dict | None = None
 ) -> str:
     item = item.lower().replace(" ", "_")
     item = item.replace("logs", "log")
 
-    _cur_inventory = copy.deepcopy(cur_inventory)
+    _cur_inventory = copy.deepcopy(cur_inventory or {})
     if item in _cur_inventory:
         del _cur_inventory[item]
 
@@ -689,7 +689,9 @@ def main(cfg: DictConfig):
     cact_branch_parent = str(cfg.get("cact_branch_parent_id", "") or "")
     cact_branch_prefix = int(cfg.get("cact_branch_prefix_assignment", 0) or 0)
     cact_branch_trace = str(cfg.get("cact_branch_prefix_trace", "") or "")
-    cact_kappa = cfg.get("cact_kappa", "")  # E2 direct select kappa override
+    cact_kappa = cfg.get("cact_kappa", "")  # legacy alias
+    cact_lambda = cfg.get("cact_lambda", "")  # E2 CAP lambda override
+    cact_future_lookup = cfg.get("cact_future_opportunity_lookup", "")
     cact_snapshot_hash = str(cfg.get("cact_snapshot_hash", "") or "")
     cact_run_id = cfg.get("cact_run_id", f"{cact_method}_seed{seed}")
     cact_log_dir = os.path.join(_PROJ, "exp_results", "cact_logs", str(cact_run_id))
@@ -707,6 +709,8 @@ def main(cfg: DictConfig):
                                protocol_seed=seed, branch_mode=cact_branch_mode,
                                branch_target_opportunity=cact_branch_target,
                                kappa_override=cact_kappa or None,
+                               lambda_override=cact_lambda or None,
+                               future_opportunity_lookup_path=cact_future_lookup or None,
                                snapshot_hash=cact_snapshot_hash,
                                branch_prefix_trace=cact_branch_trace,
                                branch_parent_id=cact_branch_parent,

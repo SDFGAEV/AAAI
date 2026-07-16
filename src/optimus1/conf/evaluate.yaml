@@ -52,6 +52,8 @@ memory:
     path: replan
     file: <task>.json
   recipe:
+    # Generate missing hypotheses through the XENON VLM predictor; persisted memories are reused.
+    initialize_with_llm: true
     base: learning_recipe
     verified:
       path: verified

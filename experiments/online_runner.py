@@ -53,11 +53,13 @@ class OnlineRunner:
 
     def __init__(self, workers: int = 4, vlm_port: int = 12345,
                  rounds: int = DEFAULT_ROUNDS, protocol_path: str = "",
-                 vlm_ports: str = "", world_snapshot_manifest: str = ""):
+                 vlm_ports: str = "", world_snapshot_manifest: str = "",
+                 protocol_release_manifest: str = ""):
         self.workers = workers
         self.vlm_port = vlm_port
         self.vlm_ports = vlm_ports
         self.world_snapshot_manifest = world_snapshot_manifest
+        self.protocol_release_manifest = protocol_release_manifest
         self.rounds = rounds
         self.protocol_path = protocol_path
         self._store_root = os.path.join(_PROJ, "exp_results", "online_stores")
@@ -129,7 +131,8 @@ class OnlineRunner:
 
         runner = ParallelRunner(workers=1 if trust_store_path else self.workers,
                                 vlm_port=self.vlm_port, vlm_ports=self.vlm_ports,
-                                world_snapshot_manifest=self.world_snapshot_manifest)
+                                world_snapshot_manifest=self.world_snapshot_manifest,
+                                protocol_release_manifest=self.protocol_release_manifest)
         runner._t_start = time.perf_counter()
 
         ckpt = os.path.join(self._results_root, f"{method}_{phase}")
@@ -489,6 +492,7 @@ def main():
     parser.add_argument("--world_snapshot_manifest", default="",
                         help="JSON mapping task_id|world_seed to canonical world snapshot hash")
     parser.add_argument("--protocol_path", default="")
+    parser.add_argument("--protocol_release_manifest", default=os.environ.get("CACT_PROTOCOL_RELEASE_MANIFEST", ""))
 
     args = parser.parse_args()
     methods = args.methods or DEFAULT_METHODS
@@ -496,6 +500,7 @@ def main():
     runner = OnlineRunner(workers=args.workers, vlm_port=args.vlm_port,
                           vlm_ports=args.vlm_ports, rounds=args.rounds,
                           world_snapshot_manifest=args.world_snapshot_manifest,
+                          protocol_release_manifest=args.protocol_release_manifest,
                           protocol_path=args.protocol_path)
     runner.run(methods=methods, seed=args.seed)
 

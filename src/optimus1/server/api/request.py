@@ -1,11 +1,11 @@
 from enum import Enum
 from typing import Any, List, Dict
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class MCRequest(BaseModel):
-    rgb_images: List[Any]
+    rgb_images: List[Any] = Field(default_factory=list)
 
     done_imgs: List[Any] | None = None
     cont_imgs: List[Any] | None = None

@@ -16,7 +16,8 @@ _PROJ = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_PROJ))
 from experiments.world_identity import derive_snapshot_hash
 
-KAPPAS = (0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0)
+LAMBDAS = (0.0, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0)
+KAPPAS = LAMBDAS  # compatibility alias for historical method labels
 REQUIRED = {"Base"} | {f"Full:{k:g}" for k in KAPPAS} | {f"Pointwise:{k:g}" for k in KAPPAS}
 
 def _cell(row):
@@ -31,7 +32,7 @@ def load(path):
                 row = json.loads(line)
                 missing = {"task_id", "world_seed", "episode_id", "matched_cell_id",
                            "method", "success", "harmful_reuse",
-                           "store_hash", "run_id", "returncode", "coverage", "hrr", "eahr"} - set(row)
+                           "store_hash", "run_id", "returncode", "coverage", "hrr", "eahr", "hard_sr"} - set(row)
                 if missing:
                     raise ValueError(f"row missing required fields: {sorted(missing)}")
                 if not row.get("snapshot_hash"):
@@ -42,7 +43,7 @@ def load(path):
                     raise ValueError("E2 rows require non-empty run_id and store_hash")
                 if int(row["returncode"]) != 0:
                     raise ValueError(f"E2 rollout failed: {row['run_id']}")
-                for name in ("success", "harmful_reuse", "coverage", "hrr", "eahr"):
+                for name in ("success", "harmful_reuse", "coverage", "hrr", "eahr", "hard_sr"):
                     value = float(row[name])
                     if not math.isfinite(value) or not 0.0 <= value <= 1.0:
                         raise ValueError(f"E2 metric {name} outside [0,1]: {row[name]}")
@@ -84,26 +85,30 @@ def select(rows, eps_inc=0.02, eps_abs=0.10):
         candidates = []
         for kappa in KAPPAS:
             method = f"{family}:{kappa:g}"
-            deltas, inc_eahr, hrrs, coverages = [], [], [], []
+            deltas, inc_eahr, hrrs, hard_srs, coverages = [], [], [], [], []
             for methods in cells.values():
                 base, cand = methods["Base"], methods[method]
                 deltas.append(float(cand["success"]) - float(base["success"]))
                 inc_eahr.append(float(cand["eahr"]) - float(base["eahr"]))
                 hrrs.append(float(cand["hrr"]))
+                hard_srs.append(float(cand["hard_sr"]))
                 coverages.append(float(cand["coverage"]))
             mean_delta = sum(deltas) / len(deltas)
             mean_inc_eahr = sum(inc_eahr) / len(inc_eahr)
             mean_hrr = sum(hrrs) / len(hrrs)
             mean_coverage = sum(coverages) / len(coverages)
+            mean_hard_sr = sum(hard_srs) / len(hard_srs)
             if mean_inc_eahr <= eps_inc and mean_hrr <= eps_abs:
-                candidates.append((mean_coverage, mean_delta, -kappa, kappa,
-                                   mean_inc_eahr, mean_hrr))
+                # Manual tie-break: coverage, lower incremental harm, higher
+                # HardSR, then smaller lambda.
+                candidates.append((mean_coverage, -mean_inc_eahr, mean_hard_sr, -kappa,
+                                   kappa, mean_delta, mean_hrr))
         if not candidates:
             raise ValueError(f"no {family} candidate satisfies incremental risk bound")
         best = max(candidates)
-        chosen[family.lower()] = {"kappa": best[3], "mean_coverage": best[0],
-                                  "mean_delta_success": best[1],
-                                  "mean_incremental_eahr": best[4], "mean_hrr": best[5],
+        chosen[family.lower()] = {"lambda": best[4], "lambda_value": best[4], "kappa": best[4], "mean_coverage": best[0],
+                                  "mean_delta_success": best[5], "mean_hard_sr": best[2],
+                                  "mean_incremental_eahr": -best[1], "mean_hrr": best[6],
                                   "cells": len(cells)}
     # Global-Risk Only (§18): same 7 Full rollouts, overall constraints only.
     gr_candidates = []
@@ -124,7 +129,7 @@ def select(rows, eps_inc=0.02, eps_abs=0.10):
                                   -kappa, kappa, m_eahr, m_hrr))
     if gr_candidates:
         best_gr = max(gr_candidates)
-        chosen["global_only"] = {"kappa": best_gr[3], "mean_coverage": best_gr[0],
+        chosen["global_only"] = {"lambda": best_gr[3], "lambda_value": best_gr[3], "kappa": best_gr[3], "mean_coverage": best_gr[0],
                                  "mean_delta_success": best_gr[1],
                                  "mean_incremental_eahr": best_gr[4], "mean_hrr": best_gr[5],
                                  "cells": len(cells)}

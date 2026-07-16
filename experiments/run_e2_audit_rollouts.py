@@ -24,18 +24,23 @@ def _seeds(value):
 def _selected_kappas(policy_path: Path):
     data = json.loads(policy_path.read_text(encoding="utf-8"))
     families = data.get("families", data)
-    return float(families["full"]["kappa"]), float(families["pointwise"]["kappa"])
+    def value(family):
+        row = families[family]
+        return float(row.get("lambda", row.get("lambda_value", row.get("kappa", 1.0))))
+    return value("full"), value("pointwise")
 
-def _collect_direct(args, tasks, seeds, hashes, full_kappa, point_kappa):
+def _collect_direct(args, tasks, seeds, hashes, full_lambda, point_lambda):
     methods = [("Base", "Base"), ("NoGate", "NoGate"),
-               ("Full", f"Full:{full_kappa:g}"),
-               ("Pointwise", f"Pointwise:{point_kappa:g}")]
-    cfg = {"vlm_port": args.vlm_port, "benchmark": args.benchmark,
+               ("Full", f"Full:{full_lambda:g}"),
+               ("Pointwise", f"Pointwise:{point_lambda:g}")]
+    cfg = {"vlm_port": args.vlm_port, "vlm_ports": [int(x) for x in args.vlm_ports.split(",") if x.strip()], "benchmark": args.benchmark,
            "snapshot_path": args.snapshot_path, "store_path": args.snapshot_path,
            "world_snapshot_hashes": hashes, "protocol_path": args.protocol_path,
+           "future_opportunity_lookup": args.future_opportunity_lookup,
            "plan_model": args.plan_model, "timeout": args.timeout}
     jobs = [(task, seed, label, internal) for task in tasks for seed in seeds for label, internal in methods]
-    owned = _ensure_vlm(args.vlm_port, args.plan_model)
+    primary_vlm_port = int(args.vlm_ports.split(",", 1)[0]) if args.vlm_ports.strip() else args.vlm_port
+    owned = _ensure_vlm(primary_vlm_port, args.plan_model)
     rows = []
     try:
         with ThreadPoolExecutor(max_workers=max(1, args.workers)) as pool:
@@ -99,6 +104,7 @@ def main():
     ap.add_argument("--snapshot-path", required=True)
     ap.add_argument("--world-snapshot-manifest", default="", help="optional filesystem/procedural snapshot manifest")
     ap.add_argument("--protocol-path", required=True)
+    ap.add_argument("--future-opportunity-lookup", default="")
     ap.add_argument("--policy-path", required=True)
     ap.add_argument("--out-rollouts", required=True)
     ap.add_argument("--out-pairs", required=True)
@@ -107,6 +113,7 @@ def main():
     ap.add_argument("--pair-seeds", default="")
     ap.add_argument("--workers", type=int, default=2)
     ap.add_argument("--vlm-port", type=int, default=12345)
+    ap.add_argument("--vlm-ports", default="", help="comma-separated external VLM ports")
     ap.add_argument("--timeout", type=int, default=240)
     ap.add_argument("--plan-model", default="Qwen/Qwen2.5-VL-7B-Instruct")
     args = ap.parse_args()
@@ -120,8 +127,8 @@ def main():
         if missing: raise SystemExit(f"world snapshot manifest missing {len(missing)} required cells")
     else:
         hashes = {f"{task}|{seed}": derive_snapshot_hash(task, seed) for task in tasks for seed in seeds}
-    full_kappa, point_kappa = _selected_kappas(Path(args.policy_path))
-    rows = _collect_direct(args, tasks, seeds, hashes, full_kappa, point_kappa)
+    full_lambda, point_lambda = _selected_kappas(Path(args.policy_path))
+    rows = _collect_direct(args, tasks, seeds, hashes, full_lambda, point_lambda)
     out_rollouts = Path(args.out_rollouts); out_rollouts.parent.mkdir(parents=True, exist_ok=True)
     out_rollouts.write_text("\n".join(json.dumps(x, ensure_ascii=False, sort_keys=True) for x in rows) + "\n", encoding="utf-8")
     pair_tasks = args.pair_task_indices or args.task_indices

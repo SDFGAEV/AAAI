@@ -264,6 +264,29 @@ class DecomposedMemory:
 
         return failed_subgoal_lists
 
+    def all_actions_invalid(self, waypoint: str) -> bool:
+        """Return whether mine, craft and smelt are all empirically invalid."""
+        path = os.path.join(self.wp_to_sg_dir_path, f"{waypoint}.json")
+        if not os.path.isfile(path):
+            return False
+        try:
+            actions = read_json_data_with_shared_lock(path).get("action", {})
+        except (OSError, ValueError, TypeError):
+            return False
+        if not isinstance(actions, dict):
+            return False
+        for action in ("mine", "craft", "smelt"):
+            hist = actions.get(action)
+            if not isinstance(hist, dict):
+                return False
+            try:
+                success, failure = int(hist.get("success", 0)), int(hist.get("failure", 0))
+            except (TypeError, ValueError):
+                return False
+            if failure < success + self.plan_failure_threshold:
+                return False
+        return True
+
     def retrieve_total_failed_counts(self, waypoint):
         json_file_name = f"{waypoint}.json"
         lst_dir = os.listdir(self.wp_to_sg_dir_path)

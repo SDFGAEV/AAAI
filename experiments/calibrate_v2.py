@@ -10,6 +10,7 @@ from pathlib import Path
 _PROJ = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_PROJ))
 from cact.protocol_v2 import AIPWEstimator, OpportunityLogger, PolicyCalibrator
+from cact.joint_evidence import JointEvidenceDrawStore
 
 def collect(patterns):
     paths = []
@@ -35,7 +36,9 @@ def main():
     ap.add_argument("--audit-glob", nargs="+", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--direct-selection", default="",
-                    help="E2 matched-risk selection artifact; overrides kappa per family")
+                    help="E2 matched-risk selection artifact; overrides lambda per family")
+    ap.add_argument("--joint-draws-out", default="",
+                    help="Independent Zarr v2 joint evidence store (default: sibling of --out)")
     args = ap.parse_args()
 
     fit, fit_paths = collect(args.fit_glob)
@@ -74,6 +77,11 @@ def main():
 
     select_est = ensemble(select)
     audit_est = ensemble(audit)
+    # Freeze paired draws as an independent, inspectable Zarr artifact.
+    joint_out = Path(args.joint_draws_out) if args.joint_draws_out else Path(args.out).with_name("joint_evidence_draws.zarr")
+    joint_meta = JointEvidenceDrawStore.write(select_est, joint_out,
+        upstream_hash=digest(select_paths), seed=17)
+    JointEvidenceDrawStore.validate(joint_out)
     # Select and audit each controller family independently.  They currently
     # share the same causal estimates, but separate policy objects prevent a
     # future ledger-aware selector from silently reusing the other family.
@@ -90,12 +98,13 @@ def main():
         direct = json.loads(Path(args.direct_selection).read_text(encoding="utf-8"))
         selected = direct.get("selection", {})
         for family in ("full", "pointwise"):
-            if family not in selected or "kappa" not in selected[family]:
-                raise SystemExit(f"direct selection missing {family} kappa")
-            kappa = float(selected[family]["kappa"])
-            # Re-materialize the admitted group set at the directly selected
-            # kappa; do not retain estimates selected at another kappa.
-            direct_policy = PolicyCalibrator(kappas=(kappa,)).select(select_est)
+            if family not in selected:
+                raise SystemExit(f"direct selection missing {family}")
+            # New E2 artifacts use lambda; accept kappa only for old sealed
+            # tables and immediately materialize a CAP policy.
+            lambda_value = float(selected[family].get("lambda",
+                selected[family].get("lambda_value", selected[family].get("kappa", 1.0))))
+            direct_policy = PolicyCalibrator(lambdas=(lambda_value,)).select(select_est)
             direct_policy = PolicyCalibrator().audit(direct_policy, audit_est)
             if not direct_policy.audit_passed:
                 raise SystemExit(f"D_audit failed after direct {family} kappa selection")
@@ -134,12 +143,25 @@ def main():
         global_out.write_text(json.dumps(direct_policies["global_only"].to_dict(), indent=2, sort_keys=True), encoding="utf-8")
     artifact["families"] = families
     artifact["family_selection"] = {"full": "independent_select_audit", "pointwise": "independent_select_audit"}
+    flow_manifest = {
+        "schema_version": "cact.evidence_flow.v1",
+        "nu_candidates": [12.0, 24.0, 48.0],
+        "selected_nu": 24.0,
+        "rule": "omega=ESS/(ESS+nu), child-parent aligned joint draws",
+        "root_validity": "source-by-type requires both arms and ESS support",
+        "upstream_select_hash": digest(select_paths),
+    }
+    flow_path = Path(args.out).with_name("evidence_flow_manifest.json")
+    flow_path.write_text(json.dumps(flow_manifest, indent=2, sort_keys=True), encoding="utf-8")
     artifact.update({
         "schema_version": "cact.v2.policy",
+        "evidence_flow_manifest": flow_path.name,
         "fit_rows": len(fit), "select_rows": len(select), "audit_rows": len(audit),
         "fit_hash": digest(fit_paths), "select_hash": digest(select_paths),
         "audit_hash": digest(audit_paths),
         "selection_source": selection_source,
+        "joint_evidence_draws": joint_meta,
+        "joint_evidence_draws_path": joint_out.name,
         "estimator": {"name": "episode_clustered_cross_fitted_aipw",
                       "folds": 5, "fold_seeds": [17, 29, 41]},
     })

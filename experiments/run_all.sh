@@ -12,6 +12,7 @@ PLAN_MODEL="Qwen/Qwen2.5-VL-7B-Instruct"
 RESULTS="$PROJ/exp_results"
 CAL_STORE="$RESULTS/calibration_store"
 POLICY_FILE="$RESULTS/v2_policy.json"
+PROTOCOL_RELEASE_MANIFEST="$PROJ/protocol_release/manifest.json"
 PREFERENCE_FILE="$RESULTS/d_pair_train_preference.json"
 CACT_TASK_CARDS="${CACT_TASK_CARDS:-$PROJ/protocol_inputs/task_cards.json}"
 mkdir -p "$RESULTS"
@@ -109,6 +110,12 @@ _runner_args() {
   if [ -n "${CACT_CHECKPOINT_DIR:-}" ]; then
     RUNNER_ARGS+=(--checkpoint_dir "$CACT_CHECKPOINT_DIR")
   fi
+  if [ -n "${CACT_FUTURE_OPPORTUNITY_LOOKUP:-}" ] && [ -f "$CACT_FUTURE_OPPORTUNITY_LOOKUP" ]; then
+    RUNNER_ARGS+=(--future-opportunity-lookup "$CACT_FUTURE_OPPORTUNITY_LOOKUP")
+  fi
+  if [ -f "$PROTOCOL_RELEASE_MANIFEST" ]; then
+    RUNNER_ARGS+=(--protocol-release-manifest "$PROTOCOL_RELEASE_MANIFEST")
+  fi
 }
 run() {
   _runner_args
@@ -129,7 +136,7 @@ run_online() {
   else
     extra+=(--vlm_port "$VLM_PORT")
   fi
-  local manifest_args=()
+  local manifest_args=(--protocol_release_manifest "$PROTOCOL_RELEASE_MANIFEST")
   if [ -n "${CACT_WORLD_SNAPSHOT_MANIFEST:-}" ]; then
     manifest_args+=(--world_snapshot_manifest "$CACT_WORLD_SNAPSHOT_MANIFEST")
   fi
@@ -172,6 +179,9 @@ FIT_GLOB="$RESULTS/cact_logs/cact_train_C-ACT_seed*_task*/opportunities.jsonl"
 SELECT_GLOB="$RESULTS/cact_logs/cact_calib_C-ACT_seed*_task[0-5]/opportunities.jsonl"
 AUDIT_GLOB1="$RESULTS/cact_logs/cact_calib_C-ACT_seed*_task[6-9]/opportunities.jsonl"
 AUDIT_GLOB2="$RESULTS/cact_logs/cact_calib_C-ACT_seed*_task1[01]/opportunities.jsonl"
+FUTURE_LOOKUP="$RESULTS/future_opportunity_lookup.json"
+"$PYTHON" experiments/build_future_opportunity_lookup.py --inputs "$FIT_GLOB" "$SELECT_GLOB" "$AUDIT_GLOB1" "$AUDIT_GLOB2" --out "$FUTURE_LOOKUP"
+export CACT_FUTURE_OPPORTUNITY_LOOKUP="$FUTURE_LOOKUP"
 PROVISIONAL_POLICY="$RESULTS/v2_policy_provisional.json"
 "$PYTHON" experiments/calibrate_v2.py --fit-glob "$FIT_GLOB" --select-glob "$SELECT_GLOB" \
   --audit-glob "$AUDIT_GLOB1" "$AUDIT_GLOB2" --out "$PROVISIONAL_POLICY"
@@ -185,11 +195,13 @@ if [[ -z "${E2_DIRECT_JSONL:-}" ]]; then
     exit 2
   fi
   E2_DIRECT_JSONL="$RESULTS/e2_select_rollouts.jsonl"
+  E2_VLM_ARGS=(--vlm-port "$VLM_PORT")
+  if [[ -n "${VLM_PORTS:-}" ]]; then E2_VLM_ARGS=(--vlm-ports "$VLM_PORTS"); fi
   "$PYTHON" experiments/run_e2_select_rollouts.py \
     --benchmark cact_p3 --task-indices "${CACT_E2_TASK_INDICES:-0,1,2,3,4,5,6,7}" \
-    --seeds "${CACT_E2_SEEDS:-3001-3006}" --workers "$WORKERS" --vlm-port "$VLM_PORT" \
+    --seeds "${CACT_E2_SEEDS:-3001-3006}" --workers "$WORKERS" "${E2_VLM_ARGS[@]}" \
     --snapshot-path "$CAL_STORE" \
-    --protocol-path "$PROVISIONAL_POLICY" --out "$E2_DIRECT_JSONL"
+    --protocol-path "$PROVISIONAL_POLICY" --future-opportunity-lookup "$FUTURE_LOOKUP" --out "$E2_DIRECT_JSONL"
 fi
 "$PYTHON" experiments/e2_direct_select.py --input "$E2_DIRECT_JSONL" \
   --out "$RESULTS/e2_direct_selection.json"
@@ -235,7 +247,7 @@ if [[ "${CACT_REQUIRE_E2_AUDIT:-1}" == "1" ]]; then
       --benchmark cact_p3 --task-indices "${CACT_DAUDIT_TASK_INDICES:-8,9,10,11,12,13,14,15}" \
       --seeds "${CACT_DAUDIT_SEEDS:-3011-3018}" --snapshot-path "$CAL_STORE" \
       --protocol-path "$POLICY_FILE" --policy-path "$POLICY_FILE" \
-      --out-rollouts "$E2_AUDIT_JSONL" --out-pairs "$E2_AUDIT_PAIRS_JSONL" --workers "$WORKERS"
+      --out-rollouts "$E2_AUDIT_JSONL" --out-pairs "$E2_AUDIT_PAIRS_JSONL" --future-opportunity-lookup "$FUTURE_LOOKUP" --workers "$WORKERS"
   fi
   "$PYTHON" experiments/validate_e2_audit.py --rollouts "$E2_AUDIT_JSONL" \
     --pairs "$E2_AUDIT_PAIRS_JSONL" --out "$RESULTS/e2_audit_validation.json"
@@ -244,23 +256,12 @@ fi
 # E3: 36 conditions x 8 seeds x six preregistered methods, strict frozen.
 run --benchmark cact_p3 --task_indices 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35 --seeds 4001-4008 --methods NoKnowledge NoGate FixedBayes PairwisePreferenceGate C-ACT-Pointwise C-ACT --frozen --snapshot_path "$CAL_STORE" --protocol_path "$POLICY_FILE"
 
-# E4: four core ablations aligned with protocol §18 (12 conditions x 5 seeds x 4 variants = 240)
-# 1. Full C-ACT           = C-ACT method with v2_policy.json (family=full)
-# 2. w/o Applicability    = C-ACT-NoApplicability (applicable always True)
-# 3. Global-Risk Only     = C-ACT method with global-only selected κ*_G
-# 4. w/o Ledger           = C-ACT-Pointwise + kappa_override=κ*_F (ledger disabled)
-E4_GLOBAL_POLICY="$RESULTS/v2_policy_global_only.json"
-FULL_KAPPA="$($PYTHON -c 'import json,sys; print(json.load(open(sys.argv[1]))["families"]["full"]["kappa"])' "$POLICY_FILE")"
-CACT_CHECKPOINT_DIR="$RESULTS/ckpt/e4_full" run --benchmark cact_ablation --task_indices 0,1,2,3,4,5,6,7,8,9,10,11 --seeds 5001-5005 \
-  --methods C-ACT C-ACT-NoApplicability --frozen --snapshot_path "$CAL_STORE" --protocol_path "$POLICY_FILE"
-CACT_CHECKPOINT_DIR="$RESULTS/ckpt/e4_pointwise" run --benchmark cact_ablation --task_indices 0,1,2,3,4,5,6,7,8,9,10,11 --seeds 5001-5005 \
-  --methods C-ACT-Pointwise --kappa "$FULL_KAPPA" --frozen --snapshot_path "$CAL_STORE" --protocol_path "$POLICY_FILE"
-if [[ ! -f "$E4_GLOBAL_POLICY" ]]; then
-  echo "STOP: Global-Risk Only policy artifact is required for E4." >&2
-  exit 2
-fi
-CACT_CHECKPOINT_DIR="$RESULTS/ckpt/e4_global" run --benchmark cact_ablation --task_indices 0,1,2,3,4,5,6,7,8,9,10,11 --seeds 5001-5005 \
-  --methods C-ACT --frozen --snapshot_path "$CAL_STORE" --protocol_path "$E4_GLOBAL_POLICY"
+# E4: four preregistered structural variants (12 tasks x 5 seeds x 4 variants).
+# Full CAP, independent margins, hard evidence backoff, and myopic reserve.
+CACT_CHECKPOINT_DIR="$RESULTS/ckpt/e4_structural" run --benchmark cact_ablation \
+  --task_indices 0,1,2,3,4,5,6,7,8,9,10,11 --seeds 5001-5005 \
+  --methods C-ACT C-ACT-IndependentMargins C-ACT-HardBackoff C-ACT-MyopicReserve \
+  --frozen --snapshot_path "$CAL_STORE" --protocol_path "$POLICY_FILE"
 
 # E5: five independent controlled streams, ten rounds each.
 for seed in 6001 6002 6003 6004 6005; do

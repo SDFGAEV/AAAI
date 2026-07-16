@@ -162,6 +162,32 @@ class ServerAPI:
         return reasoning, visual_description
 
     @staticmethod
+    def get_recipe(
+        server_cfg: Dict[str, Any],
+        item_name: str,
+        similar_items: List[str],
+        similar_recipes: List[dict],
+    ) -> str:
+        """Request one strict XENON ADG recipe prediction (text-only)."""
+        if not item_name:
+            raise ValueError("item_name must be non-empty")
+        data = {
+            "rgb_images": [],
+            "task_or_instruction": item_name,
+            "type": "recipe",
+            "similar_wp_sg_dict": {str(k): v for k, v in zip(similar_items, similar_recipes)},
+        }
+        res = _HTTP.post(
+            f"{server_cfg['url']}:{server_cfg['port']}/chat",
+            json=data,
+            timeout=server_cfg["timeout"],
+        )
+        if res.status_code != 200:
+            raise RuntimeError(f"Failed to get ADG recipe: {res.text}")
+        payload = res.json()
+        ServerAPI._acc(payload)
+        return payload["response"]
+    @staticmethod
     def get_plan(
         server_cfg: DictConfig,
         obs: Dict[str, Any],

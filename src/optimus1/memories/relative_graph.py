@@ -466,7 +466,7 @@ class KnowledgeGraph:
         return "\n".join(res), res, order, ordered_item_quantity
 
 
-    def compile(self, item: str, number: int = 1, __cur_inventory: dict = dict()):
+    def compile(self, item: str, number: int = 1, __cur_inventory: dict | None = None):
         self.sub_graph = {}
         self._in_degree = {}
         self.cur_inventory = {}
@@ -474,7 +474,7 @@ class KnowledgeGraph:
 
         cur_inventory = dict()
 
-        for k, v in __cur_inventory.items():
+        for k, v in (__cur_inventory or {}).items():
             if k.endswith('_planks'):
                 if 'planks' not in cur_inventory:
                     cur_inventory['planks'] = 0
@@ -547,7 +547,7 @@ class KnowledgeGraph:
         return f"craft {number} {item} summary:\n" + pretty_result + "\n", ordered_text, ordered_item, ordered_item_quantity
 
 
-    def dict_update(self, src: dict, dst: dict, cur_inventory=dict()):
+    def dict_update(self, src: dict, dst: dict, cur_inventory: dict | None = None):
         """add src to dst"""
         for k, v in src.items():
             v_ = v

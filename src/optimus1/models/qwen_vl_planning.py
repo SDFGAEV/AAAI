@@ -1,3 +1,4 @@
+import json
 from typing import List, Optional
 
 import torch
@@ -19,6 +20,13 @@ from .base_model import BasePlanningModel
 prompt_decomposed_plan = """For an item name, you need to make a plan using examples.
 """
 
+
+recipe_prediction_prompt = """You are the XENON Adaptive Dependency Graph initializer. Predict only the immediate required Minecraft items for <item_name>. Use the successful examples as semantic hints, but do not copy an item name unless justified. An empty object means the item is obtained directly by mining. Output strict JSON only in the form {\"required_items\": {\"item\": positive_integer}}. Do not include the target item itself, prose, markdown, tools, or quantities that are not positive integers.
+
+<item_name>: {item_name}
+<similar_verified_items>: {items}
+<similar_verified_recipes>: {recipes}
+"""
 #################### Our context-aware reasoning prompt ####################
 description_prompt = """Given a Minecraft game image, describe nearby Minecraft objects, like tree, grass, cobblestone, etc.
 
@@ -313,6 +321,15 @@ You can make <task planning> by selecting an option from below:
 
     #     return self._inference(prompt, imgs)
 
+
+    def predict_recipe(self, item_name: str, similar_items: List[str], similar_recipes: List[dict]) -> str:
+        """Predict one ADG requirement set with the paper's strict JSON contract."""
+        prompt = recipe_prediction_prompt.format(
+            item_name=item_name,
+            items=json.dumps(similar_items, ensure_ascii=False),
+            recipes=json.dumps(similar_recipes, ensure_ascii=False),
+        )
+        return self._inference(prompt, None)
 
     def _inference(self, instruction: str, images: str | List[str] = None) -> str:
         """Single inference call. For batch, use _inference_batch()."""

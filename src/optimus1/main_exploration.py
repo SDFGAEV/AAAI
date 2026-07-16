@@ -235,15 +235,21 @@ def feasibility_min_count_frontier(hypothesized_recipe_graph: HypothesizedRecipe
         frontier_exploration_count_dict[item_name] = exploration_count_dict[item_name]
         frontier_level_dict[item_name] = level_dict[item_name]
 
-    sorted_item_names = sorted(
-        frontier_item_names,
-        key=lambda item: (
-            frontier_exploration_count_dict[item], # fewer exploration count is better
-            - (1 / frontier_level_dict[item]) # higher feasibility score is better
-        )
-    )
+    # DEX selects the least-explored, least-difficult frontier and breaks
+    # exact ties uniformly at random (paper Appendix G).  The old release
+    # sorted ties lexicographically, introducing a systematic item-order bias.
+    min_count = min(frontier_exploration_count_dict.values())
+    count_ties = [item for item in frontier_item_names
+                  if frontier_exploration_count_dict[item] == min_count]
+    min_level = min(frontier_level_dict[item] for item in count_ties)
+    best_ties = [item for item in count_ties if frontier_level_dict[item] == min_level]
+    random.shuffle(best_ties)
+    remainder = sorted(set(frontier_item_names) - set(best_ties),
+                       key=lambda item: (frontier_exploration_count_dict[item],
+                                         frontier_level_dict[item], item))
+    ordered_item_names = best_ties + remainder
 
-    selected_int_goal = hypothesized_recipe_graph.select_non_conflicting_goal(sorted_item_names)
+    selected_int_goal = hypothesized_recipe_graph.select_non_conflicting_goal(ordered_item_names)
 
     if frontier_exploration_count_dict[selected_int_goal] > 1:
         hypothesized_recipe_graph.update_hypothesis(selected_int_goal)
@@ -336,7 +342,14 @@ def exploration_do(
     topK = cfg["memory"]["topK"]
     plan_failure_threshold = cfg["memory"]["plan_failure_threshold"]
 
-    hypothesized_recipe_graph = HypothesizedRecipeGraph(cfg, logger)
+    def _recipe_predictor(item_name, similar_items, similar_recipes):
+        return ServerAPI.get_recipe(cfg["server"], item_name, similar_items, similar_recipes)
+
+    hypothesized_recipe_graph = HypothesizedRecipeGraph(cfg, logger, recipe_predictor=_recipe_predictor)
+    recipe_cfg = cfg["memory"]["recipe"]
+    if bool(recipe_cfg.get("initialize_with_llm", False)) and not hypothesized_recipe_graph.hypothesized_item_names:
+        logger.info("Initializing XENON ADG hypotheses through the VLM predictor")
+        hypothesized_recipe_graph.initialize_hypotheses()
     action_memory = DecomposedMemory(cfg, logger)
 
     _verified_items = list(set(copy.deepcopy(hypothesized_recipe_graph.verified_item_names)))
@@ -523,7 +536,7 @@ def exploration_do(
                     subgoal = None
 
                     wp_total_failure_counts = action_memory.retrieve_total_failed_counts(waypoint)
-                    if wp_total_failure_counts <= -plan_failure_threshold * 3:
+                    if action_memory.all_actions_invalid(waypoint):
                         logger.warning(f"{waypoint} failed {abs(wp_total_failure_counts)} times, so increment exploration count of {waypoint}.")
                         hypothesized_recipe_graph.increment_count(waypoint, prefix)
 
@@ -638,7 +651,7 @@ def exploration_do(
             action_memory.save_success_failure(waypoint, language_action_str, is_success=False)
             wp_total_failure_counts = action_memory.retrieve_total_failed_counts(waypoint)
 
-            if wp_total_failure_counts <= -plan_failure_threshold * 3:
+            if action_memory.all_actions_invalid(waypoint):
                 logger.warning(f"{waypoint} failed {abs(wp_total_failure_counts)} times, so increment exploration count of {waypoint}.")
                 hypothesized_recipe_graph.increment_count(waypoint, prefix)
                 action_memory.reset_success_failure_history(waypoint)

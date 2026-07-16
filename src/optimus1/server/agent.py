@@ -110,6 +110,13 @@ class Agent:
         )
         return decomposed_plan, prompt
 
+    def predict_recipe(self, item_name: str, similar_items: list[str], similar_recipes: list[dict]) -> str:
+        """Generate an ADG hypothesis through the configured planning model."""
+        assert self.plan_model is not None, "The plan model is not initialized."
+        predictor = getattr(self.plan_model, "predict_recipe", None)
+        if predictor is None:
+            raise RuntimeError("The selected planning model does not implement XENON recipe prediction")
+        return predictor(item_name, similar_items, similar_recipes)
     def context_aware_reasoning(
         self,
         task: str,

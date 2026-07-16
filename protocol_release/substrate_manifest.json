@@ -4,7 +4,7 @@
   "environment": {
     "name": "CACTTaskEnv-v0",
     "version": "Minecraft-runtime",
-    "mod_hash": "e79f2a461ef00f503c7bf013a007e67908789d22c061ef8a80c3e6fa3203d379"
+    "mod_hash": "105500e8526be0cb5e074a4f348a7e7b36b1d4b3a55d65e9cc5c0a8225eb7ca9"
   },
   "planner": {
     "model_id": "Qwen/Qwen2.5-VL-7B-Instruct",
@@ -40,8 +40,8 @@
     "tokens": "task-card"
   },
   "prompt_hashes": {
-    "base": "0e05d44de792532771edf4ffce2cceb88cc9641cdf2712ff32b0dc4532940b0a",
-    "reuse_wrapper": "0d2b10e9ee499c99cb0bdb515e0c2fadb711dba6c7d47eb9635d65a711b390ff"
+    "base": "96b7468d709b0866b678830d8f4bd856ed84b721e7293da8f8b03b470de8c4b2",
+    "reuse_wrapper": "6d59435297d7612b22cc5d8d337cb42230f7aa4fc3686b58f7d99b09a3884798"
   },
   "benchmarks": {
     "cact_e0": "e142fa78575193c82f327448994e8e0e8ff2073db9cafdae2d4a6b70400f0a4d",

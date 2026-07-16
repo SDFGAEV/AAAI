@@ -24,7 +24,7 @@ Speed: ~4x with 4 workers. E3: 17h → 4-5h (single MC per worker).
        ~8x with 8 workers + MC instance sharing.
 """
 
-import subprocess, sys, os, json, time, signal, shutil, argparse, socket, hashlib, urllib.request
+import subprocess, sys, os, json, time, signal, shutil, argparse, socket, hashlib, urllib.request, threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Optional
@@ -111,7 +111,9 @@ class ExperimentConfig:
     branch_parent_id: str = ""
     branch_prefix_assignment: int = 0
     branch_prefix_trace: str = ""
-    cact_kappa: str = ""       # E2: override policy kappa
+    cact_kappa: str = ""       # legacy override
+    cact_lambda: str = ""      # E2: override unified CAP lambda
+    future_opportunity_lookup: str = ""
     snapshot_hash: str = ""
 
 
@@ -134,7 +136,8 @@ class ParallelRunner:
     def __init__(self, workers: int = 4, vlm_port: int = 12345,
                  mc_base_port: int = 15000, checkpoint_dir: str = None,
                  batch_proxy_port: int = 12346, vlm_ports: str = "",
-                 world_snapshot_manifest: str = ""):
+                 world_snapshot_manifest: str = "",
+                 protocol_release_manifest: str = ""):
         self.workers = workers
         self.vlm_port = vlm_port
         self.mc_base_port = mc_base_port
@@ -145,6 +148,9 @@ class ParallelRunner:
         if vlm_ports:
             self._vlm_ports = [int(x) for x in vlm_ports.split(",") if x]
         self._world_snapshot_manifest_supplied = bool(world_snapshot_manifest)
+        self.protocol_release_manifest = str(protocol_release_manifest or "")
+        if self.protocol_release_manifest:
+            self._verify_protocol_release(self.protocol_release_manifest)
         self._world_snapshot_hashes: Dict[str, str] = {}
         if world_snapshot_manifest:
             with open(world_snapshot_manifest, encoding="utf-8") as handle:
@@ -159,6 +165,38 @@ class ParallelRunner:
         self._proxy_thread = None
 
         os.makedirs(self.checkpoint_dir, exist_ok=True)
+
+    @staticmethod
+    def _verify_protocol_release(manifest_path: str) -> None:
+        """Fail closed if every released non-paper source/config file changed."""
+        manifest = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+        hashes = manifest.get("hashes", {})
+        if not isinstance(hashes, dict) or not hashes:
+            raise ValueError("protocol release manifest lacks hashes")
+        missing = []; mismatched = []
+        for rel, expected in hashes.items():
+            normalized = str(rel).replace("\\", "/")
+            # paper/ is intentionally outside the current code audit scope.
+            if "/paper/" in f"/{normalized}/" or normalized.endswith("/paper"):
+                continue
+            normalized_upper = normalized.upper()
+            if normalized_upper == "C-ACT_PROTOCOL.MD":
+                manuals = [x for x in Path(_PROJ).parent.glob("C-ACT*.md")
+                           if x.is_file() and x.stat().st_size > 50000]
+                candidate = next((x for x in manuals
+                                  if hashlib.sha256(x.read_bytes()).hexdigest() == str(expected)),
+                                 manuals[0] if manuals else Path(_PROJ).parent / normalized)
+            elif normalized_upper.startswith("C-ACT/"):
+                candidate = Path(_PROJ) / normalized.split("/", 1)[1]
+            else:
+                candidate = Path(_PROJ) / normalized
+            if not candidate.is_file():
+                missing.append(normalized); continue
+            digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
+            if digest != str(expected):
+                mismatched.append(normalized)
+        if missing or mismatched:
+            raise ValueError(f"protocol release mismatch: missing={missing[:8]} mismatched={mismatched[:8]}")
 
     # -- Port management --
     @staticmethod
@@ -298,7 +336,11 @@ class ParallelRunner:
         if cfg.active_calib_rate:
             cmd.append(f"+cact_active_calib_rate={cfg.active_calib_rate}")
         if cfg.cact_kappa:
-            cmd.append(f"+cact_kappa={cfg.cact_kappa}")  # E2 direct select kappa override
+            cmd.append(f"+cact_kappa={cfg.cact_kappa}")
+        if cfg.cact_lambda:
+            cmd.append(f"+cact_lambda={cfg.cact_lambda}")
+        if cfg.future_opportunity_lookup:
+            cmd.append(f"+cact_future_opportunity_lookup={cfg.future_opportunity_lookup}")
         if not cfg.snapshot_hash:
             cfg.snapshot_hash = derive_snapshot_hash(cfg.task_idx, cfg.seed)
         if cfg.frozen and cfg.protocol_path and os.environ.get("CACT_REQUIRE_WORLD_SNAPSHOT_HASH") == "1" and not cfg.snapshot_hash:
@@ -352,10 +394,22 @@ class ParallelRunner:
                 gpu_key = f"{cfg.seed}:{cfg.task_idx}:{cfg.method}"
                 gpu_idx = int(hashlib.sha256(gpu_key.encode("utf-8")).hexdigest(), 16) % len(gpu_ids)
                 child_env["CACT_MC_GPU_ID"] = gpu_ids[gpu_idx]
-            with open(stdout_path, "w", encoding="utf-8") as stdout, open(stderr_path, "w", encoding="utf-8") as stderr:
-                result = _run_with_process_group(cmd, stdout=stdout, stderr=stderr, text=True,
-                                        timeout=cfg.timeout * cfg.env_times + 60,
-                                        cwd=_PROJ, env=child_env)
+            result = None
+            # Retry only transient endpoint/startup failures; never hide task or OOM failures.
+            for attempt in range(3):
+                with open(stdout_path, "w", encoding="utf-8") as stdout, open(stderr_path, "w", encoding="utf-8") as stderr:
+                    result = _run_with_process_group(cmd, stdout=stdout, stderr=stderr, text=True,
+                                            timeout=cfg.timeout * cfg.env_times + 60,
+                                            cwd=_PROJ, env=child_env)
+                if result.returncode == 0 or attempt == 2:
+                    break
+                try:
+                    transient = Path(stdout_path).read_text(encoding="utf-8", errors="replace") + Path(stderr_path).read_text(encoding="utf-8", errors="replace")
+                except OSError:
+                    transient = ""
+                if not any(token in transient for token in ("Connection refused", "Max retries exceeded", "Internal Server Error", "Failed to reset")):
+                    break
+                time.sleep(2.0 * (attempt + 1))
             elapsed = time.perf_counter() - t0
             try:
                 with open(stderr_path, encoding="utf-8", errors="replace") as fh:
@@ -420,6 +474,10 @@ class ParallelRunner:
 
         finally:
             _cleanup_owned_minecraft(log_id)
+
+    def _run_one_locked(self, cfg, lock):
+        with lock:
+            return self._run_one(cfg)
 
     def _snapshot_hash_for(self, task_idx: int, seed: int) -> str:
         key = f"{task_idx}|{seed}"
@@ -556,8 +614,9 @@ class ParallelRunner:
             to_run = len(pending)
 
             batch_failures = []
+            port_locks = {port: threading.Semaphore(1) for port in set(cfg.vlm_port for cfg in pending)}
             with ThreadPoolExecutor(max_workers=self.workers) as pool:
-                futures = {pool.submit(self._run_one, cfg): cfg for cfg in pending}
+                futures = {pool.submit(self._run_one_locked, cfg, port_locks[cfg.vlm_port]): cfg for cfg in pending}
                 for future in as_completed(futures):
                     result = future.result()
                     key = result["key"]
@@ -644,6 +703,8 @@ def main():
                        help="Comma-separated VLM ports for multi-GPU pool (e.g. 12345,12346,12347)")
     parser.add_argument("--world_snapshot_manifest", default="",
                        help="JSON mapping task_id|world_seed to canonical world snapshot hash")
+    parser.add_argument("--protocol-release-manifest", default=os.environ.get("CACT_PROTOCOL_RELEASE_MANIFEST", ""),
+                       help="Release manifest used to freeze code hashes")
     parser.add_argument("--plan_model", default="Qwen/Qwen2.5-VL-7B-Instruct",
                        help="VLM model name")
     parser.add_argument("--resume", action="store_true",
@@ -655,7 +716,9 @@ def main():
     parser.add_argument("--frozen", action="store_true")
     parser.add_argument("--calibration_path", default="")
     parser.add_argument("--active_calib_rate", type=float, default=0.0)
-    parser.add_argument("--kappa", default="", help="Override calibrated kappa for E2/E4 matched-policy rollouts")
+    parser.add_argument("--kappa", default="", help="Legacy override alias")
+    parser.add_argument("--lambda-value", dest="lambda_value", default="", help="Override unified CAP lambda for E2/E4 rollouts")
+    parser.add_argument("--future-opportunity-lookup", default="", help="Frozen JSON lookup for remaining opportunity counts")
     parser.add_argument("--store_path", default="")
     parser.add_argument("--snapshot_path", default="")
     parser.add_argument("--protocol_path", default="")
@@ -682,6 +745,7 @@ def main():
         vlm_port=args.vlm_port,
         vlm_ports=args.vlm_ports,
         world_snapshot_manifest=args.world_snapshot_manifest,
+        protocol_release_manifest=args.protocol_release_manifest,
         checkpoint_dir=args.checkpoint_dir,
     )
 
@@ -701,6 +765,8 @@ def main():
         cfg.calibration_path = args.calibration_path
         cfg.active_calib_rate = args.active_calib_rate
         cfg.cact_kappa = str(args.kappa or "")
+        cfg.cact_lambda = str(args.lambda_value or "")
+        cfg.future_opportunity_lookup = str(args.future_opportunity_lookup or "")
         if args.store_path:
             cfg.store_path = args.store_path
         if args.snapshot_path:

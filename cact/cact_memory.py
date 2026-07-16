@@ -58,7 +58,9 @@ class CactMemory:
                  branch_target_opportunity: str = "", branch_parent_id: str = "",
                  branch_prefix_assignment: int = 0,
                  branch_prefix_trace: str = "",
-                 kappa_override: str = None, snapshot_hash: str = ""):
+                 kappa_override: str = None, lambda_override: str = None,
+                 future_opportunity_lookup_path: str = None,
+                 snapshot_hash: str = ""):
 
         self._mem = xenon_memory
         requested_method = method
@@ -119,11 +121,26 @@ class CactMemory:
         if protocol_path and os.path.exists(protocol_path):
             use_ledger = method not in ("C-ACT-Pointwise", "Online-C-ACT-Pointwise")
             family = "pointwise" if method in ("C-ACT-Pointwise", "Online-C-ACT-Pointwise") else "full"
+            policy_variant = "full"
+            if "IndependentMargins" in method:
+                policy_variant = "independent_margins"
+            elif "HardBackoff" in method:
+                policy_variant = "hard_backoff"
+            elif "MyopicReserve" in method:
+                policy_variant = "myopic_reserve"
+            future_lookup = {}
+            if future_opportunity_lookup_path:
+                with open(future_opportunity_lookup_path, encoding="utf-8") as _fh:
+                    _lookup_data = json.load(_fh)
+                future_lookup = _lookup_data.get("lookup", _lookup_data)
             self._v2_policy = AdmissionPolicyV2.load(
-                protocol_path, use_ledger=use_ledger, family=family)
-            # E2 direct select: override calibrated kappa for matched-risk rollout
-            if kappa_override:
-                self._v2_policy.policy.kappa = float(kappa_override)
+                protocol_path, use_ledger=use_ledger, family=family,
+                future_opportunity_lookup=future_lookup, variant=policy_variant)
+            # E2 direct select: lambda is the sole CAP selector.  Accept the
+            # old kappa override only as a compatibility alias.
+            selected_lambda = lambda_override if lambda_override not in (None, "") else kappa_override
+            if selected_lambda not in (None, ""):
+                self._v2_policy.policy.lambda_value = float(selected_lambda)
         calibration_path = calibration_path or os.environ.get("CACT_CALIBRATION_PATH")
         if calibration_path:
             self._gate.load_calibration(calibration_path)
@@ -574,6 +591,10 @@ class CactMemory:
             "budget_before": getattr(last, "certificate_budget_before", None) if last else None,
             "budget_after": getattr(last, "certificate_budget_after", None) if last else None,
             "risk_charge": getattr(last, "certificate_risk_charge", None) if last else None,
+            "cap": getattr(last, "certificate_cap", None) if last else None,
+            "q_t": getattr(last, "certificate_q_t", None) if last else None,
+            "lambda": getattr(last, "certificate_lambda", None) if last else None,
+            "remaining_opportunities": getattr(last, "certificate_remaining_opportunities", None) if last else None,
             "pre_admit_contract_pass": csr_before,
             "contract_satisfied_before": csr_before,
             "contract_violation_after": contract_violated,
@@ -683,6 +704,9 @@ class CactMemory:
             prior_fallback_bin=str(self._current_info.get("prior_fallback_bin", "0")),
             prior_harm_flag=int(bool(self._harmful_count)),
             remaining_critical_resource_ratio=float(self._current_info.get("remaining_critical_resource_ratio", 1.0) or 1.0),
+            remaining_opportunities=int(self._current_info.get(
+                "remaining_opportunities",
+                self._current_info.get("remaining_critical_opportunities", 0)) or 0),
             time_since_last_window=int(self._current_info.get("time_since_last_window", 0) or 0),
             collection_exposure_count=int(self._current_info.get("collection_exposure_count", 0) or 0),
             assignment=int(assignment), propensity_reuse=float(propensity),

@@ -60,6 +60,7 @@ def main():
         policy.delta = 0.05
         policy.eps_abs = 0.10
         policy.eps_inc = 0.05
+        policy.lambda_value = 1.0
         loaded[1].episode_id = loaded[0].episode_id
         full = AdmissionPolicyV2(policy, use_ledger=True, initial_budget=0.05)
         assert full.decide(loaded[0])["decision"] == "ADMIT"

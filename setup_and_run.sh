@@ -56,5 +56,7 @@ export CACT_AUTO_GENERATE_E2_AUDIT="${CACT_AUTO_GENERATE_E2_AUDIT:-1}"
 export CACT_REQUIRE_TASK_CARDS="${CACT_REQUIRE_TASK_CARDS:-1}"
 export CACT_REQUIRE_E2_AUDIT="${CACT_REQUIRE_E2_AUDIT:-1}"
 export CACT_WORKERS="${CACT_WORKERS:-3}"
+# Keep Minecraft workers on the same GPU identities as the VLM pool.
+export MINERL_GPU_IDS="${MINERL_GPU_IDS:-${CACT_GPUS:-}}"
 
 exec bash "$PROJ/experiments/run_all.sh"

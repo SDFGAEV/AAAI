@@ -4,7 +4,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-MANUAL = next((x for x in ROOT.parent.glob("C-ACT_*\u624b\u518c*.md") if "\u65b0" in x.name), ROOT.parent / "C-ACT_\u5b8c\u6574\u7814\u7a76\u534f\u8bae\u4e0e\u8bba\u6587\u5199\u4f5c\u624b\u518c.md")
+MANUAL = ROOT.parent / "C-ACT终极.md"
+if not MANUAL.exists():
+    MANUAL = ROOT.parent / "C-ACT_PROTOCOL.md"
+if not MANUAL.exists():
+    MANUAL = next((x for x in ROOT.parent.glob("C-ACT_*手册*.md") if "新" in x.name), ROOT.parent / "C-ACT_完整研究协议与论文写作手册.md")
 
 def sha256(path):
     h = hashlib.sha256()
@@ -35,10 +39,10 @@ def parse_tasks(path):
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--out", default=str(ROOT / "protocol_release")); ap.add_argument("--label", default="protocol-candidate"); args = ap.parse_args()
     out = Path(args.out); out.mkdir(parents=True, exist_ok=True)
-    files = [MANUAL, ROOT/"README.md", ROOT/"protocol_inputs/task_cards.json", ROOT/"setup_and_run.sh", ROOT/"cact/protocol_v2.py", ROOT/"experiments/calibrate_v2.py", ROOT/"experiments/parallel_runner.py", ROOT/"experiments/run_all.sh", ROOT/"paper/main.tex", ROOT/"paper/PAPER_SUBMISSION_DRAFT.md", ROOT/"paper/PAPER_SUBMISSION_DRAFT_NEW.md", ROOT/"paper/PAPER_SUBMISSION_DRAFT_V2.md", ROOT/"cact/preference_gate.py", ROOT/"experiments/train_pairwise.py", ROOT/"cact/metrics.py", ROOT/"analysis/bootstrap.py", ROOT/"analysis/split_audit.py", ROOT/"analysis/validate_task_cards.py",
+    files = [MANUAL, ROOT/"README.md", ROOT/"protocol_inputs/task_cards.json", ROOT/"setup_and_run.sh", ROOT/"cact/protocol_v2.py", ROOT/"cact/joint_evidence.py", ROOT/"experiments/calibrate_v2.py", ROOT/"experiments/parallel_runner.py", ROOT/"experiments/run_all.sh", ROOT/"paper/main.tex", ROOT/"paper/PAPER_SUBMISSION_DRAFT.md", ROOT/"paper/PAPER_SUBMISSION_DRAFT_NEW.md", ROOT/"paper/PAPER_SUBMISSION_DRAFT_V2.md", ROOT/"cact/preference_gate.py", ROOT/"experiments/train_pairwise.py", ROOT/"cact/metrics.py", ROOT/"analysis/bootstrap.py", ROOT/"analysis/split_audit.py", ROOT/"analysis/validate_task_cards.py",
            ROOT/"experiments/e2_direct_select.py", ROOT/"experiments/run_e2_select_rollouts.py",
            ROOT/"experiments/generate_pair_train.py", ROOT/"experiments/build_task_card_registry.py", ROOT/"experiments/collect_world_snapshots.py",
-           ROOT/"experiments/run_e2_audit_rollouts.py", ROOT/"experiments/validate_e2_audit.py", ROOT/"experiments/world_identity.py",
+           ROOT/"experiments/run_e2_audit_rollouts.py", ROOT/"experiments/build_future_opportunity_lookup.py", ROOT/"experiments/validate_e2_audit.py", ROOT/"experiments/world_identity.py",
            ROOT/"experiments/online_runner.py", ROOT/"experiments/batch_proxy.py",
            ROOT/"app.py", ROOT/"src/optimus1/util/server_api.py",
            ROOT/"src/optimus1/server/api/utils.py", ROOT/"src/optimus1/env/__init__.py",
@@ -50,10 +54,14 @@ def main():
            ROOT/"experiments/release_protocol.py", ROOT/"experiments/health_check.py",
            ROOT/"analysis/validate_predicate_registry.py", ROOT/"protocol_inputs/predicate_registry.yaml",
            ROOT/"src/optimus1/util/prompt.py", ROOT/"cact/cact_memory.py",
-           ROOT/"tests/test_controller_ledger.py",
+           ROOT/"tests/test_controller_ledger.py", ROOT/"tests/test_joint_evidence.py",
            ROOT/"docs/UBUNTU_PERFORMANCE.md"]
     hashes = {p.relative_to(ROOT.parent).as_posix():sha256(p) for p in files if p.exists()}
-    manifest = {"schema_version":"cact.protocol_release.v1", "label":args.label, "created_utc":datetime.now(timezone.utc).isoformat(), "method":"C-ACT: Contextual Admission via Counterfactual Treatment Effects", "frozen_claims":["reliable admission", "applicability boundary and adaptive risk-coverage"], "hashes": hashes, "seeds":{"E0":[1001,1002],"E1a":list(range(2001,2006)),"E1b":list(range(2101,2106)),"E1b_expansion":list(range(2101,2111)),"E1c":list(range(2201,2216)),"D_select":list(range(3001,3007)),"D_select_expansion":list(range(3001,3009)),"D_audit":list(range(3011,3019)),"E3":list(range(4001,4009)),"E4":list(range(5001,5006)),"E5":[6001,6002,6003,6004,6005]}, "budgets":{"delta":.05,"eps_abs":.10,"eps_inc":.02,"kappas":[0,.5,1,1.5,2,2.5,3],"support_n":12,"ess":24}}
+    # Use an ASCII manifest key for the canonical manual so Ubuntu/SSH locale
+    # settings cannot corrupt the filename during release verification.
+    if MANUAL.name in hashes:
+        hashes["C-ACT_PROTOCOL.md"] = hashes.pop(MANUAL.name)
+    manifest = {"schema_version":"cact.protocol_release.v1", "label":args.label, "created_utc":datetime.now(timezone.utc).isoformat(), "method":"C-ACT: Contextual Admission via Counterfactual Treatment Effects", "frozen_claims":["reliable admission", "applicability boundary and adaptive risk-coverage"], "hashes": hashes, "seeds":{"E0":[1001,1002],"E1a":list(range(2001,2006)),"E1b":list(range(2101,2106)),"E1b_expansion":list(range(2101,2111)),"E1c":list(range(2201,2216)),"D_select":list(range(3001,3007)),"D_select_expansion":list(range(3001,3009)),"D_audit":list(range(3011,3019)),"E3":list(range(4001,4009)),"E4":list(range(5001,5006)),"E5":[6001,6002,6003,6004,6005]}, "budgets":{"delta0":.05,"eps_abs":.10,"eps_inc":.02,"lambdas":[0,.25,.5,1,2,4,8],"cap_alpha":.05,"initial_budget":.05,"future_opportunity_clip":6,"support_n":12,"ess":24}}
     (out/"manifest.json").write_text(json.dumps(manifest,indent=2,ensure_ascii=False),encoding="utf-8")
     benchmarks = {}
     for name in ("cact_e0","cact_train","cact_calib","cact_p3","cact_ablation","cact_online_stream","cact_online_retention","cact_online_hard_transfer"):

@@ -137,7 +137,7 @@ def chat(req: MCRequest) -> MCResponse:
     image_root = _safe_image_root(hydra_path, run_uuid)
     if agent is None:
         agent = AgentFactory.reset()
-    rgb_obs = base64_to_image(
+    rgb_obs = [] if req.type == "recipe" else base64_to_image(
         req.rgb_images,
         image_root=image_root,
         task=req.task_or_instruction,
@@ -146,6 +146,17 @@ def chat(req: MCRequest) -> MCResponse:
     # print(f"HERE req.type: {req.type}")
     response = None
     match req.type:
+        case "recipe":
+            examples = req.similar_wp_sg_dict or {}
+            try:
+                predicted = agent.predict_recipe(
+                    req.task_or_instruction,
+                    list(examples.keys()),
+                    list(examples.values()),
+                )
+                response = MCResponse(response=predicted)
+            except Exception as exc:
+                response = MCResponse(response=None, status_code=500, message=str(exc))
         case "decomposed_plan":
             retry = 0
             while retry < _MAX_RETRIES:

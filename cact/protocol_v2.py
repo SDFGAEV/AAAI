@@ -16,7 +16,7 @@ MAIN_METHODS = ("NoKnowledge", "NoGate", "FixedBayes",
                 "PairwisePreferenceGate", "C-ACT-Pointwise", "C-ACT")
 ONLINE_MAIN_METHODS = ("Online-NoGate", "Online-FixedBayes",
                        "Online-C-ACT-Pointwise", "Online-C-ACT")
-E4_ABLATION_METHODS = ("C-ACT", "C-ACT-NoApplicability")
+E4_ABLATION_METHODS = ("C-ACT", "C-ACT-IndependentMargins", "C-ACT-HardBackoff", "C-ACT-MyopicReserve")
 # Note: Global-Risk Only and w/o Ledger are controller-family/kappa variants
 # selected at calibration time, not separate method names.
 TRAIN_CALIB_METHODS = ("C-ACT",)
@@ -32,6 +32,13 @@ DEFAULT_EPS_INC = 0.02
 DEFAULT_DELTA = 0.05
 DEFAULT_BUDGET = 0.05
 DEFAULT_KAPPAS = (0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0)
+# CAP uses one conservatism parameter; kappa remains readable for legacy artifacts.
+DEFAULT_LAMBDAS = (0.0, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0)
+DEFAULT_CAP_ALPHA = 0.05
+DEFAULT_CAP_EPSILON = 1e-8
+DEFAULT_FUTURE_OPPORTUNITY_CLIP = 6
+EVIDENCE_NUS = (12.0, 24.0, 48.0)
+DEFAULT_EVIDENCE_NU = 24.0
 MIN_ARM_SUPPORT = 12
 MIN_ESS = 24.0
 K_COLLECT = 4  # §6.1/§9.7: max randomized exposure per episode
@@ -158,6 +165,8 @@ class Opportunity:
     prior_fallback_bin: str = "0"
     prior_harm_flag: int = 0
     remaining_critical_resource_ratio: float = 1.0
+    # Logged estimate of eligible opportunities after this checkpoint.
+    remaining_opportunities: int = 0
     time_since_last_window: int = 0
     collection_exposure_count: int = 0
     assignment: int = 0
@@ -216,7 +225,7 @@ class OpportunityLogger:
         "retrieval_score", "raw_text_hash", "task_group", "failure_type",
         "risk_tier", "resource_scarcity", "episode_phase",
         "prior_admission_bin", "prior_fallback_bin", "prior_harm_flag",
-        "remaining_critical_resource_ratio", "time_since_last_window",
+        "remaining_critical_resource_ratio", "remaining_opportunities", "time_since_last_window",
         "collection_exposure_count", "boundary_status", "inventory_signature",
         "start_step", "end_step", "censor_flag", "second_intervention_flag",
         "window_type", "label_source", "annotator_status", "exclusion_reason",
@@ -283,6 +292,11 @@ class GroupEstimate:
     se_inc: float
     supported: bool
     backoff_level: Optional[str] = None
+    parent_key: Optional[str] = None
+    evidence_weight: float = 1.0
+    evidence_nu: float = DEFAULT_EVIDENCE_NU
+    # Arrays share draw ids, preserving benefit-risk dependence.
+    joint_draws: Dict[str, List[float]] = field(default_factory=dict)
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
@@ -292,9 +306,12 @@ class AIPWEstimator:
                       "risk_tier", "resource_scarcity", "boundary_status",
                       "inventory_signature",
                       "episode_phase", "prior_admission_bin", "prior_fallback_bin",
-                      "prior_harm_flag", "remaining_critical_resource_ratio")
-    def __init__(self, n_folds: int = 5, seed: int = 17, ridge: float = 1.0):
+                      "prior_harm_flag", "remaining_critical_resource_ratio",
+                      "remaining_opportunities")
+    def __init__(self, n_folds: int = 5, seed: int = 17, ridge: float = 1.0,
+                 bootstrap_draws: int = 2000):
         self.n_folds, self.seed, self.ridge = int(n_folds), int(seed), float(ridge)
+        self.bootstrap_draws = max(200, int(bootstrap_draws))
     def _features(self, rows: Sequence[Opportunity]) -> np.ndarray:
         width = 64
         matrix = np.zeros((len(rows), width), dtype=float)
@@ -373,6 +390,32 @@ class AIPWEstimator:
             clusters.setdefault(row["episode_id"], []).append(float(row[field]))
         means = np.asarray([np.mean(v) for v in clusters.values()], dtype=float)
         return float(np.std(means, ddof=1) / math.sqrt(len(means))) if len(means) >= 2 else float("inf")
+
+    def _joint_bootstrap(self, rows: Sequence[Mapping[str, Any]], key: str) -> Dict[str, List[float]]:
+        """Episode-clustered paired draws for the unified CAP.
+
+        All three arrays use the same resampled episode ids, so CAP never
+        combines a benefit draw with an unrelated worst-case harm draw.
+        """
+        clusters: Dict[str, List[Mapping[str, Any]]] = {}
+        for row in rows:
+            clusters.setdefault(str(row["episode_id"]), []).append(row)
+        episodes = sorted(clusters)
+        if not episodes:
+            return {}
+        rng = np.random.default_rng(_stable_hash(f"joint|{self.seed}|{key}") % (2**32))
+        b = self.bootstrap_draws
+        out = {"delta_y": [], "risk_inc": [], "risk_abs": []}
+        # A single cluster has no empirical bootstrap variance.  Keep a
+        # deterministic degenerate draw rather than fabricating uncertainty.
+        for _ in range(b):
+            chosen = rng.integers(0, len(episodes), size=len(episodes))
+            sample = [row for idx in chosen for row in clusters[episodes[int(idx)]]]
+            out["delta_y"].append(float(np.mean([r["phi_y"] for r in sample])))
+            out["risk_inc"].append(float(np.mean([r["phi_h"] for r in sample])))
+            out["risk_abs"].append(float(np.mean([r["psi_h1"] for r in sample])))
+        return out
+
     def aggregate(self, pseudo: Sequence[Mapping[str, Any]]) -> List[GroupEstimate]:
         if not pseudo: return []
         # Protocol §7.1: 4-level hierarchy (g0=8 fields, g1=6, g2=4, g3=2)
@@ -399,7 +442,9 @@ class AIPWEstimator:
             return math.sqrt(max(0.0, weighted_var - sampling))
         estimates = []
         levels = list(groups.items())
+        # First compute raw group estimates and retain the parent relation.
         for level_index, (level, key_fn) in enumerate(levels):
+            parent_fn = levels[level_index + 1][1] if level_index + 1 < len(levels) else None
             for key in sorted({key_fn(r) for r in pseudo}):
                 rows = [r for r in pseudo if key_fn(r) == key]
                 nr = sum(r["assignment"] == 1 for r in rows); nb = len(rows) - nr
@@ -415,138 +460,296 @@ class AIPWEstimator:
                     se_inc = math.sqrt(se_inc ** 2 + _heterogeneity_se(rows, child_fn, "phi_h") ** 2)
                 estimates.append(GroupEstimate(
                     level=level, key=key, n=len(rows), n_reuse=nr, n_base=nb, ess=ess,
-                    delta_y=float(np.mean([r["phi_y"] for r in rows])),
-                    se_y=se_y,
-                    risk_abs=float(np.mean([r["psi_h1"] for r in rows])),
-                    se_abs=se_abs,
-                    risk_inc=float(np.mean([r["phi_h"] for r in rows])),
-                    se_inc=se_inc,
-                    supported=nr >= MIN_ARM_SUPPORT and nb >= MIN_ARM_SUPPORT and ess >= MIN_ESS))
+                    delta_y=float(np.mean([r["phi_y"] for r in rows])), se_y=se_y,
+                    risk_abs=float(np.mean([r["psi_h1"] for r in rows])), se_abs=se_abs,
+                    risk_inc=float(np.mean([r["phi_h"] for r in rows])), se_inc=se_inc,
+                    supported=nr >= MIN_ARM_SUPPORT and nb >= MIN_ARM_SUPPORT and ess >= MIN_ESS,
+                    parent_key=(parent_fn(rows[0]) if parent_fn else None),
+                    joint_draws=self._joint_bootstrap(rows, key)))
+        # Continuous evidence flow: each child is shrunk toward its parent with
+        # omega=ESS/(ESS+nu), preserving aligned joint draws. Root support is
+        # still a hard domain-validity requirement; children may borrow smoothly.
+        by_key = {e.key: e for e in estimates}
+        for e in sorted(estimates, key=lambda x: int(x.level[1:]), reverse=True):
+            if not e.parent_key or e.parent_key not in by_key:
+                continue
+            parent = by_key[e.parent_key]
+            nu = DEFAULT_EVIDENCE_NU
+            omega = float(np.clip(e.ess / max(e.ess + nu, 1e-12), 0.0, 1.0))
+            e.evidence_weight = omega; e.evidence_nu = nu
+            e.delta_y = omega * e.delta_y + (1.0 - omega) * parent.delta_y
+            e.risk_inc = omega * e.risk_inc + (1.0 - omega) * parent.risk_inc
+            e.risk_abs = omega * e.risk_abs + (1.0 - omega) * parent.risk_abs
+            e.se_y = math.sqrt((omega * e.se_y) ** 2 + ((1.0 - omega) * parent.se_y) ** 2)
+            e.se_inc = math.sqrt((omega * e.se_inc) ** 2 + ((1.0 - omega) * parent.se_inc) ** 2)
+            e.se_abs = math.sqrt((omega * e.se_abs) ** 2 + ((1.0 - omega) * parent.se_abs) ** 2)
+            e.supported = bool(e.supported or parent.supported)
+            child_draws, parent_draws = e.joint_draws, parent.joint_draws
+            n = min(len(child_draws.get("delta_y", [])), len(parent_draws.get("delta_y", [])))
+            if n >= 32:
+                for name in ("delta_y", "risk_inc", "risk_abs"):
+                    e.joint_draws[name] = (omega * np.asarray(child_draws[name][:n]) +
+                                           (1.0 - omega) * np.asarray(parent_draws[name][:n])).tolist()
         return estimates
 
 @dataclass
 class CalibratedPolicy:
-    kappa: float
+    # kappa is retained only to read pre-CAP artifacts.  Online decisions use
+    # lambda_value and the single CAP scalar below.
+    kappa: float = 0.0
     delta: float = DEFAULT_DELTA
     eps_abs: float = DEFAULT_EPS_ABS
     eps_inc: float = DEFAULT_EPS_INC
+    lambda_value: float = 1.0
+    alpha: float = DEFAULT_CAP_ALPHA
+    cap_epsilon: float = DEFAULT_CAP_EPSILON
+    future_opportunity_clip: int = DEFAULT_FUTURE_OPPORTUNITY_CLIP
     estimates: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     coverage: float = 0.0
     supported: bool = False
     audit_passed: bool = False
-    def to_dict(self): return asdict(self)
+
+    @property
+    def delta0(self) -> float:
+        """Preregistered CAP benefit scale (legacy ``delta`` alias)."""
+        return max(float(self.delta), DEFAULT_CAP_EPSILON)
+
+    def to_dict(self):
+        return asdict(self)
+
     @classmethod
     def from_dict(cls, data):
         allowed = set(cls.__dataclass_fields__)
-        return cls(**{k: v for k, v in dict(data).items() if k in allowed})
+        values = {k: v for k, v in dict(data).items() if k in allowed}
+        # Old artifacts have no lambda/CAP fields; loading them remains safe,
+        # while every newly selected artifact records the full schema.
+        values.setdefault("lambda_value", 1.0)
+        values.setdefault("alpha", DEFAULT_CAP_ALPHA)
+        values.setdefault("cap_epsilon", DEFAULT_CAP_EPSILON)
+        return cls(**values)
+
+
+def _estimate_draw_arrays(estimate: Mapping[str, Any], seed: int = 0,
+                          draws: int = 2000) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Load paired draws or make a deterministic compatibility envelope."""
+    jd = estimate.get("joint_draws") or {}
+    try:
+        y = np.asarray(jd.get("delta_y", []), dtype=float)
+        inc = np.asarray(jd.get("risk_inc", []), dtype=float)
+        abs_r = np.asarray(jd.get("risk_abs", []), dtype=float)
+        n = min(len(y), len(inc), len(abs_r))
+        if n >= 32 and np.all(np.isfinite(np.concatenate((y[:n], inc[:n], abs_r[:n])))):
+            return y[:n], inc[:n], abs_r[:n]
+    except (TypeError, ValueError):
+        pass
+    # Compatibility for legacy point estimates: use a shared normal draw for
+    # benefit/incremental harm, retaining their dependence rather than taking
+    # independent worst cases.
+    rng = np.random.default_rng(int(seed) % (2**32))
+    z = rng.standard_normal(max(200, int(draws)))
+    y0, sy = float(estimate.get("delta_y", 0.0)), max(0.0, float(estimate.get("se_y", 0.0)))
+    h0, sh = float(estimate.get("risk_inc", 0.0)), max(0.0, float(estimate.get("se_inc", 0.0)))
+    a0, sa = float(estimate.get("risk_abs", 0.0)), max(0.0, float(estimate.get("se_abs", 0.0)))
+    return y0 + sy * z, h0 + sh * z, a0 + sa * rng.standard_normal(len(z))
+
+
+def _cap_draws(estimate: Mapping[str, Any], lambda_value: float,
+               q_t: float, delta0: float, epsilon: float,
+               seed: int = 0, alpha: float = DEFAULT_CAP_ALPHA) -> Dict[str, Any]:
+    y, inc, abs_r = _estimate_draw_arrays(estimate, seed=seed)
+    cap_draw = y / max(delta0, epsilon) - float(lambda_value) * np.maximum(inc, 0.0) / max(q_t + epsilon, epsilon)
+    return {
+        "cap": float(np.quantile(cap_draw, alpha)),
+        "benefit_lcb": float(np.quantile(y, alpha)),
+        "risk_inc_ucb": float(np.quantile(inc, 1.0 - alpha)),
+        "risk_abs_ucb": float(np.quantile(abs_r, 1.0 - alpha)),
+        "risk_charge": float(max(0.0, np.quantile(inc, 1.0 - alpha))),
+        "draw_count": int(len(cap_draw)),
+    }
+
 
 class PolicyCalibrator:
     def __init__(self, kappas=DEFAULT_KAPPAS, delta=DEFAULT_DELTA,
-                 eps_abs=DEFAULT_EPS_ABS, eps_inc=DEFAULT_EPS_INC):
-        self.kappas, self.delta, self.eps_abs, self.eps_inc = tuple(kappas), delta, eps_abs, eps_inc
-    def select(self, estimates: Sequence[GroupEstimate]) -> CalibratedPolicy:
+                 eps_abs=DEFAULT_EPS_ABS, eps_inc=DEFAULT_EPS_INC,
+                 lambdas=DEFAULT_LAMBDAS, alpha=DEFAULT_CAP_ALPHA):
+        self.kappas = tuple(kappas)  # compatibility metadata only
+        self.lambdas = tuple(float(x) for x in lambdas)
+        self.delta, self.eps_abs, self.eps_inc = float(delta), float(eps_abs), float(eps_inc)
+        self.alpha = float(alpha)
+
+    def _candidate(self, estimates, lambda_value):
         supported = [e for e in estimates if e.supported]
+        admitted = []
+        for e in supported:
+            stats = _cap_draws(e.to_dict(), lambda_value, DEFAULT_BUDGET,
+                               self.delta, DEFAULT_CAP_EPSILON,
+                               seed=_stable_hash(e.key), alpha=self.alpha)
+            if stats["risk_abs_ucb"] <= self.eps_abs and stats["cap"] > 0.0:
+                admitted.append(e)
+        return supported, admitted
+
+    def select(self, estimates: Sequence[GroupEstimate]) -> CalibratedPolicy:
         best = None
-        for kappa in self.kappas:
-            admitted = []
-            for e in supported:
-                if e.delta_y-kappa*e.se_y >= self.delta and e.risk_abs+kappa*e.se_abs <= self.eps_abs and e.risk_inc+kappa*e.se_inc <= self.eps_inc:
-                    admitted.append(e)
-            if supported:
-                candidate = CalibratedPolicy(kappa=float(kappa), estimates={e.key:e.to_dict() for e in admitted},
-                                             coverage=len(admitted)/len(supported), supported=True)
-                if best is None or candidate.coverage > best.coverage or (candidate.coverage == best.coverage and kappa < best.kappa):
-                    best = candidate
-        return best or CalibratedPolicy(kappa=max(self.kappas), supported=bool(supported))
+        for lam in self.lambdas:
+            supported, admitted = self._candidate(estimates, lam)
+            if not supported:
+                continue
+            candidate = CalibratedPolicy(
+                kappa=0.0, delta=self.delta, eps_abs=self.eps_abs,
+                eps_inc=self.eps_inc, lambda_value=float(lam), alpha=self.alpha,
+                estimates={e.key: e.to_dict() for e in admitted},
+                coverage=len(admitted) / len(supported), supported=True)
+            if best is None or candidate.coverage > best.coverage or \
+                    (candidate.coverage == best.coverage and lam < best.lambda_value):
+                best = candidate
+        return best or CalibratedPolicy(lambda_value=max(self.lambdas),
+                                        delta=self.delta, eps_abs=self.eps_abs,
+                                        eps_inc=self.eps_inc, alpha=self.alpha,
+                                        supported=bool(estimates))
+
     def audit(self, policy: CalibratedPolicy, estimates: Sequence[GroupEstimate]) -> CalibratedPolicy:
-        if not policy.supported: policy.audit_passed = False; return policy
-        by_key = {e.key:e for e in estimates if e.supported}
+        if not policy.supported:
+            policy.audit_passed = False
+            return policy
+        by_key = {e.key: e for e in estimates if e.supported}
         policy.audit_passed = bool(policy.estimates) and all(
-            key in by_key
-            and by_key[key].risk_abs + policy.kappa * by_key[key].se_abs <= policy.eps_abs
-            and by_key[key].risk_inc + policy.kappa * by_key[key].se_inc <= policy.eps_inc
+            key in by_key and
+            _cap_draws(by_key[key].to_dict(), policy.lambda_value, DEFAULT_BUDGET,
+                       policy.delta0, policy.cap_epsilon,
+                       seed=_stable_hash(key), alpha=policy.alpha)["risk_abs_ucb"] <= policy.eps_abs and
+            _cap_draws(by_key[key].to_dict(), policy.lambda_value, DEFAULT_BUDGET,
+                       policy.delta0, policy.cap_epsilon,
+                       seed=_stable_hash(key), alpha=policy.alpha)["cap"] > 0.0
             for key in policy.estimates)
         return policy
 
+
 class AdmissionPolicyV2:
-    def __init__(self, policy: CalibratedPolicy,
-                 use_ledger: bool = True,
-                 initial_budget: float = DEFAULT_BUDGET):
+    """Online unified CAP policy with deterministic no-credit budget updates."""
+    def __init__(self, policy: CalibratedPolicy, use_ledger: bool = True,
+                 initial_budget: float = DEFAULT_BUDGET,
+                 future_opportunity_lookup: Optional[Mapping[str, Any]] = None,
+                 variant: str = "full"):
         self.policy, self._est = policy, policy.estimates
+        self.variant = str(variant or "full").lower().replace("-", "_")
         self.use_ledger = bool(use_ledger)
-        self.initial_budget = float(initial_budget)
+        self.initial_budget = max(0.0, float(initial_budget))
+        self.future_opportunity_lookup = dict(future_opportunity_lookup or {})
         self._budget_by_episode: Dict[str, float] = {}
+
     @classmethod
     def load(cls, path, use_ledger: bool = True,
-             initial_budget: float = DEFAULT_BUDGET, family: str = "full"):
+             initial_budget: float = DEFAULT_BUDGET, family: str = "full",
+             future_opportunity_lookup: Optional[Mapping[str, Any]] = None,
+             variant: str = "full"):
         with open(path, encoding="utf-8") as handle:
             data = json.load(handle)
         families = data.get("families")
         if isinstance(families, dict):
             if family not in families:
                 raise ValueError(f"policy artifact missing family '{family}'; available: {sorted(families)}")
-            data = families[family]
+            selected = families[family]
+            # A lookup may be frozen alongside the policy artifact.
+            if future_opportunity_lookup is None:
+                future_opportunity_lookup = data.get("future_opportunity_lookup", {})
         elif family != "full":
             raise ValueError(f"policy artifact missing 'families' key; cannot load family '{family}'")
-        return cls(CalibratedPolicy.from_dict(data),
-                   use_ledger=use_ledger, initial_budget=initial_budget)
+        else:
+            selected = data
+        draw_path = data.get("joint_evidence_draws_path")
+        if draw_path:
+            candidate = Path(draw_path)
+            if not candidate.is_absolute():
+                candidate = Path(path).resolve().parent / candidate
+            if candidate.exists():
+                from .joint_evidence import JointEvidenceDrawStore
+                external = JointEvidenceDrawStore.read(candidate)
+                selected = dict(selected)
+                estimates = {k: dict(v) for k, v in (selected.get("estimates", {}) or {}).items()}
+                for key, draws in external.items():
+                    if key in estimates:
+                        estimates[key]["joint_draws"] = draws
+                selected["estimates"] = estimates
+        return cls(CalibratedPolicy.from_dict(selected), use_ledger=use_ledger,
+                   initial_budget=initial_budget,
+                   future_opportunity_lookup=future_opportunity_lookup, variant=variant)
+
     def _budget_before(self, episode_id: str) -> float:
-        return self._budget_by_episode.setdefault(episode_id, self.initial_budget)
-    def decide(self, opportunity: Opportunity, applicable: bool = True) -> Dict[str, Any]:
-        budget_before = self._budget_before(opportunity.episode_id)
-        base = {"episode_id": opportunity.episode_id,
+        return self._budget_by_episode.setdefault(str(episode_id), self.initial_budget)
+
+    def _remaining_opportunities(self, opportunity: Opportunity) -> int:
+        value = getattr(opportunity, "remaining_opportunities", 0)
+        keys = (opportunity.opportunity_id, opportunity.episode_id, opportunity.task_id)
+        for key in keys:
+            if key in self.future_opportunity_lookup:
+                value = self.future_opportunity_lookup[key]
+                break
+        try:
+            return max(0, min(int(value), int(self.policy.future_opportunity_clip)))
+        except (TypeError, ValueError):
+            return 0
+
+    @staticmethod
+    def _base_certificate(opportunity, budget_before, q_t, n_remaining, applicable):
+        return {"episode_id": opportunity.episode_id,
                 "opportunity_id": opportunity.opportunity_id,
                 "candidate_id": opportunity.knowledge_id,
-                "applicable": bool(applicable)}
+                "applicable": bool(applicable),
+                "remaining_opportunities": n_remaining,
+                "q_t": q_t, "lambda": None, "cap": float("-inf"),
+                "draw_count": 0,
+                "benefit_lcb": 0.0, "risk_abs_ucb": 0.0,
+                "risk_inc_ucb": 0.0, "risk_charge": 0.0,
+                "budget_before": budget_before, "budget_after": budget_before}
+
+    def decide(self, opportunity: Opportunity, applicable: bool = True) -> Dict[str, Any]:
+        budget_before = self._budget_before(opportunity.episode_id)
+        n_remaining = self._remaining_opportunities(opportunity)
+        if self.variant == "myopic_reserve":
+            n_remaining = 0
+        q_t = budget_before / (1.0 + n_remaining)
+        base = self._base_certificate(opportunity, budget_before, q_t, n_remaining, applicable)
+        base["lambda"] = float(self.policy.lambda_value)
         if not opportunity.eligible or not applicable:
-            return {**base,
-                    "decision":"FALLBACK", "reason":"ineligible_or_inapplicable", "depth":None,
-                    "support_level": None, "benefit_lcb": 0.0, "risk_abs_ucb": 0.0,
-                    "risk_inc_ucb": 0.0, "risk_charge": 0.0,
-                    "budget_before": budget_before, "budget_after": budget_before}
+            return {**base, "decision": "FALLBACK", "reason": "ineligible_or_inapplicable",
+                    "depth": None, "support_level": None}
         candidates = [
-            # Protocol Section 7.1: g0(8) -> g1(6) -> g2(4) -> g3(2)
             ("g0", f"{opportunity.source}|{opportunity.type}|{opportunity.task_group}|{opportunity.failure_type}|{opportunity.risk_tier}|{opportunity.resource_scarcity}|{opportunity.episode_phase}|{opportunity.prior_admission_bin}"),
             ("g1", f"{opportunity.source}|{opportunity.type}|{opportunity.task_group}|{opportunity.failure_type}|{opportunity.risk_tier}|{opportunity.episode_phase}"),
             ("g2", f"{opportunity.source}|{opportunity.type}|{opportunity.task_group}|{opportunity.resource_scarcity}"),
             ("g3", f"{opportunity.source}|{opportunity.type}")]
         for depth, key in candidates:
             row = self._est.get(key)
-            # Support is defined by the preregistered arm/ESS rules in the
-            # estimator (12 per arm and ESS >= 24); do not add an
-            # undocumented n>=40 gate at deployment time.
             if not row or not row.get("supported", False):
                 continue
-            benefit = float(row["delta_y"]) - self.policy.kappa * float(row["se_y"])
-            abs_risk = float(row["risk_abs"]) + self.policy.kappa * float(row["se_abs"])
-            inc_risk = float(row["risk_inc"]) + self.policy.kappa * float(row["se_inc"])
-            charge = max(0.0, inc_risk)
-            if benefit < self.policy.delta:
-                reason = "benefit_too_low"
-            elif abs_risk > self.policy.eps_abs:
-                reason = "absolute_risk"
-            elif inc_risk > self.policy.eps_inc:
-                reason = "incremental_risk"
-            elif self.use_ledger and charge > budget_before:
-                reason = "budget_exhausted"
-            else:
-                budget_after = budget_before - charge if self.use_ledger else budget_before
-                self._budget_by_episode[opportunity.episode_id] = budget_after
-                return {**base,
-                        "decision":"ADMIT", "reason":"admit", "depth":depth,
-                        "support_level": depth, "key":key,
-                        "benefit_lcb":benefit, "risk_abs_ucb":abs_risk,
-                        "risk_inc_ucb":inc_risk, "risk_charge": charge,
-                        "budget_before": budget_before, "budget_after": budget_after}
-            if benefit >= self.policy.delta and abs_risk <= self.policy.eps_abs and inc_risk <= self.policy.eps_inc:
-                return {**base,
-                        "decision":"FALLBACK", "reason":reason, "depth":depth,
-                        "support_level": depth, "key":key,
-                        "benefit_lcb":benefit, "risk_abs_ucb":abs_risk,
-                        "risk_inc_ucb":inc_risk, "risk_charge": charge,
-                        "budget_before": budget_before, "budget_after": budget_before}
-        return {**base,
-                "decision":"FALLBACK", "reason":"unsupported", "depth":None,
-                "support_level": None, "benefit_lcb": 0.0, "risk_abs_ucb": 0.0,
-                "risk_inc_ucb": 0.0, "risk_charge": 0.0,
-                "budget_before": budget_before, "budget_after": budget_before}
+            stats = _cap_draws(row, self.policy.lambda_value, q_t,
+                               self.policy.delta0, self.policy.cap_epsilon,
+                               seed=_stable_hash(key), alpha=self.policy.alpha)
+            if self.variant == "hard_backoff" and depth != "g0":
+                continue
+            if self.variant == "independent_margins":
+                benefit_lcb = float(row.get("delta_y", 0.0)) - self.policy.lambda_value * float(row.get("se_y", 0.0))
+                abs_ucb = float(row.get("risk_abs", 0.0)) + self.policy.lambda_value * float(row.get("se_abs", 0.0))
+                inc_ucb = float(row.get("risk_inc", 0.0)) + self.policy.lambda_value * float(row.get("se_inc", 0.0))
+                stats.update({"cap": benefit_lcb / self.policy.delta0 - self.policy.lambda_value * max(inc_ucb, 0.0) / max(q_t + self.policy.cap_epsilon, self.policy.cap_epsilon),
+                              "benefit_lcb": benefit_lcb, "risk_abs_ucb": abs_ucb,
+                              "risk_inc_ucb": inc_ucb, "risk_charge": max(0.0, inc_ucb)})
+            certificate = {**base, **stats, "depth": depth,
+                           "support_level": depth, "key": key}
+            if stats["risk_abs_ucb"] > self.policy.eps_abs:
+                return {**certificate, "decision": "FALLBACK", "reason": "absolute_risk"}
+            if self.variant == "independent_margins" and stats["benefit_lcb"] < self.policy.delta0:
+                return {**certificate, "decision": "FALLBACK", "reason": "benefit_too_low"}
+            if self.variant == "independent_margins" and stats["risk_inc_ucb"] > self.policy.eps_inc:
+                return {**certificate, "decision": "FALLBACK", "reason": "incremental_risk"}
+            if stats["risk_charge"] > budget_before + self.policy.cap_epsilon:
+                return {**certificate, "decision": "FALLBACK", "reason": "budget_exhausted"}
+            if stats["cap"] <= 0.0:
+                return {**certificate, "decision": "FALLBACK", "reason": "cap_nonpositive"}
+            budget_after = budget_before - stats["risk_charge"] if self.use_ledger else budget_before
+            if self.use_ledger:
+                self._budget_by_episode[opportunity.episode_id] = max(0.0, budget_after)
+            return {**certificate, "decision": "ADMIT", "reason": "admit",
+                    "budget_after": budget_after}
+        return {**base, "decision": "FALLBACK", "reason": "unsupported",
+                "depth": None, "support_level": None}

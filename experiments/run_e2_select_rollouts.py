@@ -22,7 +22,8 @@ _PROJ = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_PROJ))
 from experiments.world_identity import derive_snapshot_hash
 
-KAPPAS = (0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0)
+LAMBDAS = (0.0, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0)
+# Method labels retain the historical numeric suffix for sealed-table compatibility.
 
 def _ensure_vlm(port: int, model: str):
     try:
@@ -114,7 +115,9 @@ def _run_one(task_idx: int, seed: int, method: str, cfg: dict) -> dict:
            f"plan_model={cfg.get('plan_model', 'Qwen/Qwen2.5-VL-7B-Instruct')}" ]
     if cfg.get("protocol_path") and actual_method.startswith("C-ACT"):
         cmd.append(f"+cact_protocol_path={cfg['protocol_path']}")
-        cmd.append(f"+cact_kappa={method.split(':', 1)[1]}")
+        cmd.append(f"+cact_lambda={method.split(':', 1)[1]}")
+    if cfg.get("future_opportunity_lookup"):
+        cmd.append(f"+cact_future_opportunity_lookup={cfg['future_opportunity_lookup']}")
     t0 = time.perf_counter(); log_dir = _PROJ / "exp_results" / "runner_logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     stdout_path, stderr_path = log_dir / f"{run_id}.stdout.log", log_dir / f"{run_id}.stderr.log"
@@ -130,10 +133,18 @@ def _run_one(task_idx: int, seed: int, method: str, cfg: dict) -> dict:
     except subprocess.TimeoutExpired: rc = 124
     episode_file = _PROJ / "exp_results" / "cact_logs" / run_id / "episode" / "episode.jsonl"
     reuse_file = _PROJ / "exp_results" / "cact_logs" / run_id / "reuse" / "reuse_decision.jsonl"
-    out_success = out_harm = None; coverage = hrr = eahr = None
+    out_success = out_harm = None; hard_sr = None; hard_sr_source = "missing"; coverage = hrr = eahr = None
     if episode_file.exists():
         lines = [json.loads(x) for x in episode_file.read_text(encoding="utf-8").splitlines() if x.strip()]
-        if lines: out_success = int(bool(lines[-1].get("success", False)))
+        if lines:
+            last = lines[-1]
+            out_success = int(bool(last.get("success", False)))
+            if "hard_success" in last or "hard_sr" in last:
+                hard_sr = float(last.get("hard_success", last.get("hard_sr")))
+                hard_sr_source = "episode_hard_success"
+            else:
+                hard_sr = float(out_success)
+                hard_sr_source = "task_success_fallback"
     decision_rows = []
     if reuse_file.exists():
         decision_rows = [json.loads(x) for x in reuse_file.read_text(encoding="utf-8").splitlines() if x.strip()]
@@ -142,10 +153,11 @@ def _run_one(task_idx: int, seed: int, method: str, cfg: dict) -> dict:
     coverage = len(admitted) / len(decision_rows) if decision_rows else 0.0
     hrr = len(harmful) / len(admitted) if admitted else 0.0
     eahr = int(bool(harmful)); out_harm = eahr
-    if rc != 0 or out_success is None or out_harm is None:
+    if rc != 0 or out_success is None or out_harm is None or hard_sr is None:
         raise RuntimeError(f"E2 rollout failed/incomplete: {run_id} rc={rc}")
     return {"task_id": str(task_idx), "world_seed": seed, "episode_id": cell_id,
             "matched_cell_id": cell_id, "method": method, "success": out_success,
+            "hard_sr": hard_sr, "hard_sr_source": hard_sr_source,
             "harmful_reuse": out_harm, "snapshot_hash": world_hash,
             "store_hash": store_hash, "coverage": coverage, "hrr": hrr, "eahr": eahr,
             "run_id": run_id, "returncode": rc, "elapsed_sec": round(time.perf_counter()-t0, 1)}
@@ -154,9 +166,9 @@ def _run_one(task_idx: int, seed: int, method: str, cfg: dict) -> dict:
 def _methods():
     """Generate the 15 method names: Base + 7 Full κ + 7 Pointwise κ."""
     yield "Base"
-    for k in KAPPAS:
+    for k in LAMBDAS:
         yield f"Full:{k:g}"
-    for k in KAPPAS:
+    for k in LAMBDAS:
         yield f"Pointwise:{k:g}"
 
 
@@ -173,6 +185,7 @@ def main():
     ap.add_argument("--world-snapshot-manifest", default="",
                     help="optional filesystem/procedural snapshot manifest")
     ap.add_argument("--protocol-path", default="")
+    ap.add_argument("--future-opportunity-lookup", default="")
     ap.add_argument("--calibration-path", default="")
     ap.add_argument("--out", required=True)
     ap.add_argument("--plan-model", default="Qwen/Qwen2.5-VL-7B-Instruct")
@@ -202,10 +215,12 @@ def main():
            "store_path": args.store_path, "snapshot_path": args.snapshot_path,
            "world_snapshot_hashes": {str(k): str(v) for k, v in hashes.items()},
            "protocol_path": args.protocol_path,
-           "calibration_path": args.calibration_path, "plan_model": args.plan_model}
+           "calibration_path": args.calibration_path, "future_opportunity_lookup": args.future_opportunity_lookup,
+           "plan_model": args.plan_model}
 
     from concurrent.futures import ThreadPoolExecutor, as_completed
-    owned_vlm = _ensure_vlm(args.vlm_port, args.plan_model)
+    primary_vlm_port = int(args.vlm_ports.split(",", 1)[0]) if args.vlm_ports.strip() else args.vlm_port
+    owned_vlm = _ensure_vlm(primary_vlm_port, args.plan_model)
     all_results = []
     try:
         with ThreadPoolExecutor(max_workers=min(args.workers, os.cpu_count() or 2)) as pool:
