@@ -32,6 +32,8 @@ image="${CACT_MINECRAFT_IMAGE:-sjlee1218/xenon:latest}"
 if command -v docker >/dev/null 2>&1 && docker image inspect "$image" >/dev/null 2>&1; then
   # Label each container for exact per-episode cleanup.
   run_label="${CACT_RUN_ID:-run_${run_dir}}"
+  run_label="${run_label//$'\r'/}"
+  run_label="${run_label//$'\n'/}"
   exec docker run --rm -t --label "cact.run_id=$run_label" --user "$(id -u):$(id -g)" --gpus "device=$gpu" \
     -v "$SCRIPT_DIR:/app/mcp" --network host --shm-size=4g \
     -e HOME=/tmp -e DISPLAY=:99 "$image" bash -lc \

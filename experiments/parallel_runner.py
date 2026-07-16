@@ -331,7 +331,7 @@ class ParallelRunner:
         try:
             runner_log_dir = os.path.join(_PROJ, "exp_results", "runner_logs")
             os.makedirs(runner_log_dir, exist_ok=True)
-            log_id = cfg.run_id or f"{cfg.benchmark}_{cfg.seed}_{cfg.task_idx}_{cfg.method}"
+            log_id = str(cfg.run_id or f"{cfg.benchmark}_{cfg.seed}_{cfg.task_idx}_{cfg.method}").replace("\r", "").replace("\n", "")
             stdout_path = os.path.join(runner_log_dir, f"{log_id}.stdout.log")
             stderr_path = os.path.join(runner_log_dir, f"{log_id}.stderr.log")
             child_env = {**os.environ, "PYTHONUNBUFFERED": "1",
