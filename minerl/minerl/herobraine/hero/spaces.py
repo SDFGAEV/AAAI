@@ -223,7 +223,12 @@ class Discrete(gym.spaces.Discrete, MineRLSpace):
 
     def sample(self, bs=None):
         bdim = () if bs is None else (bs,)
-        return self.np_random.randint(self.n, size=bdim)
+        # NumPy < 2 used RandomState.randint; Gym's newer seeding API may
+        # provide a Generator instead, whose equivalent is integers.
+        randint = getattr(self.np_random, "randint", None)
+        if randint is not None:
+            return randint(self.n, size=bdim)
+        return self.np_random.integers(self.n, size=bdim)
 
 
 class Enum(Discrete, MineRLSpace):
