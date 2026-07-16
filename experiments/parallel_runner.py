@@ -39,6 +39,17 @@ DEFAULT_METHODS = ["NoKnowledge", "NoGate", "FixedBayes",
                    "PairwisePreferenceGate", "C-ACT-Pointwise", "C-ACT"]
 DEFAULT_SEEDS = [4001, 4002, 4003, 4004, 4005, 4006, 4007, 4008]
 
+def _cleanup_owned_minecraft(run_id: str) -> None:
+    """Remove only the Docker container labeled for this episode."""
+    if not run_id or os.name == "nt":
+        return
+    try:
+        listed = subprocess.run(["docker", "ps", "-q", "--filter", f"label=cact.run_id={run_id}"], check=False, capture_output=True, text=True, timeout=5)
+        ids = [x for x in listed.stdout.splitlines() if x.strip()]
+        if ids:
+            subprocess.run(["docker", "rm", "-f", *ids], check=False, capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        pass
 def _run_with_process_group(args, *, timeout=None, **kwargs):
     """Run a child in its own process group so Minecraft descendants are cleaned up."""
     kwargs.pop("text", None)
@@ -320,6 +331,7 @@ class ParallelRunner:
             stdout_path = os.path.join(runner_log_dir, f"{log_id}.stdout.log")
             stderr_path = os.path.join(runner_log_dir, f"{log_id}.stderr.log")
             child_env = {**os.environ, "PYTHONUNBUFFERED": "1",
+                         "CACT_RUN_ID": log_id,
                          "PYTHONPATH": os.pathsep.join([_PROJ, os.path.join(_PROJ, "src"), os.path.join(_PROJ, "minerl")]),
                          # External multi-GPU pools already expose one
                          # endpoint per worker; do not collapse all requests
@@ -388,6 +400,7 @@ class ParallelRunner:
                 "frozen_policy_hash": protocol_hash_after if cfg.frozen else None,
                 "frozen_error": frozen_error,
             }
+
         except subprocess.TimeoutExpired:
             return {
                 "key": key, "run_id": cfg.run_id, "task": cfg.task, "seed": cfg.seed,
@@ -400,6 +413,9 @@ class ParallelRunner:
                 "method": cfg.method, "status": "error",
                 "error": str(e),
             }
+
+        finally:
+            _cleanup_owned_minecraft(log_id)
 
     def _snapshot_hash_for(self, task_idx: int, seed: int) -> str:
         key = f"{task_idx}|{seed}"
