@@ -67,6 +67,29 @@ def _clone_store(source: Path, destination: Path) -> str:
     else: shutil.copytree(source, destination)
     return _hash_tree(source)
 
+def _assigned_gpu(task_idx: int, seed: int, method: str) -> str | None:
+    """Return a deterministic Minecraft GPU for one E2 cell."""
+    gpu_ids = [x.strip() for x in os.environ.get("MINERL_GPU_IDS", "").split(",") if x.strip()]
+    if not gpu_ids:
+        return None
+    key = f"{seed}:{task_idx}:{method}".encode("utf-8")
+    return gpu_ids[int(hashlib.sha256(key).hexdigest(), 16) % len(gpu_ids)]
+
+
+def _assigned_port(task_idx: int, seed: int, method: str, cfg: dict) -> int:
+    """Pair an E2 cell with the VLM port serving its Minecraft GPU."""
+    ports = [int(p) for p in cfg.get("vlm_ports", []) if str(p).strip()]
+    if not ports:
+        return int(cfg["vlm_port"])
+    gpu_ids = [x.strip() for x in os.environ.get("MINERL_GPU_IDS", "").split(",") if x.strip()]
+    if gpu_ids:
+        gpu = _assigned_gpu(task_idx, seed, method)
+        if gpu is not None and gpu_ids.index(gpu) < len(ports):
+            return ports[gpu_ids.index(gpu)]
+    key = f"{seed}:{task_idx}:{method}".encode("utf-8")
+    return ports[int(hashlib.sha256(key).hexdigest(), 16) % len(ports)]
+
+
 def _run_one(task_idx: int, seed: int, method: str, cfg: dict) -> dict:
     """Run one frozen cell with an isolated store and common episode ID."""
     actual_method = ("NoKnowledge" if method == "Base" else
@@ -80,8 +103,9 @@ def _run_one(task_idx: int, seed: int, method: str, cfg: dict) -> dict:
     cell_key = f"{task_idx}|{seed}"
     world_hash = cfg.get("world_snapshot_hashes", {}).get(cell_key)
     if not world_hash: raise RuntimeError(f"missing world identity for E2 cell {cell_key}")
+    vlm_port = _assigned_port(task_idx, seed, method, cfg)
     cmd = [sys.executable, "-m", "optimus1.main_planning",
-           f"server.port={cfg['vlm_port']}", "server.url=http://127.0.0.1",
+           f"server.port={vlm_port}", "server.url=http://127.0.0.1",
            f"benchmark={cfg['benchmark']}", f"+evaluate=[{task_idx}]",
            "env.times=1", f"seed={seed}", f"world_seed={seed}", "prefix=cact_e2",
            f"+cact_method={actual_method}", f"+cact_store_path={run_store}",
@@ -99,6 +123,8 @@ def _run_one(task_idx: int, seed: int, method: str, cfg: dict) -> dict:
             result = subprocess.run(cmd, stdout=out, stderr=err, text=True,
                                     timeout=cfg.get("timeout", 240), cwd=str(_PROJ),
                                     env={**os.environ, "PYTHONUNBUFFERED": "1",
+                                         "CACT_RUN_ID": run_id,
+                                         "CACT_MC_GPU_ID": _assigned_gpu(task_idx, seed, method) or "",
                                          "PYTHONPATH": os.pathsep.join([str(_PROJ), str(_PROJ / "src"), str(_PROJ / "minerl")])})
         rc = result.returncode
     except subprocess.TimeoutExpired: rc = 124
@@ -141,6 +167,7 @@ def main():
     ap.add_argument("--seeds", required=True)
     ap.add_argument("--workers", type=int, default=2)
     ap.add_argument("--vlm-port", type=int, default=12345)
+    ap.add_argument("--vlm-ports", default="", help="comma-separated external VLM ports paired with MINERL_GPU_IDS")
     ap.add_argument("--store-path", default="", help="legacy alias for frozen snapshot path")
     ap.add_argument("--snapshot-path", default="", help="immutable frozen store snapshot")
     ap.add_argument("--world-snapshot-manifest", default="",
@@ -171,7 +198,7 @@ def main():
         if missing: raise SystemExit(f"world snapshot manifest missing {len(missing)} required cells")
     else:
         hashes = {f"{task}|{seed}": derive_snapshot_hash(task, seed) for task in task_indices for seed in seeds}
-    cfg = {"vlm_port": args.vlm_port, "benchmark": args.benchmark,
+    cfg = {"vlm_port": args.vlm_port, "vlm_ports": [int(x) for x in args.vlm_ports.split(",") if x.strip()], "benchmark": args.benchmark,
            "store_path": args.store_path, "snapshot_path": args.snapshot_path,
            "world_snapshot_hashes": {str(k): str(v) for k, v in hashes.items()},
            "protocol_path": args.protocol_path,
