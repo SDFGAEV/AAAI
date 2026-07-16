@@ -776,7 +776,7 @@ def main(cfg: DictConfig):
             # Per-task timeout (300s = 5 min) with wall-time + token tracking
             from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
             _t_start = time.time()
-            TASK_TIMEOUT = max(60, int(os.environ.get("CACT_TASK_TIMEOUT", "300")))
+            TASK_TIMEOUT = 300
             with ThreadPoolExecutor(max_workers=1) as executor:
                 future = executor.submit(
                     new_agent_do, cfg, env, logger, current_monitos, obs, action_memory, task, goal, run_uuid
