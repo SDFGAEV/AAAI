@@ -474,12 +474,14 @@ class Text(MineRLSpace):
         super().__init__(shape, np.str_)
 
     def sample(self,batch_size=None):
-        total_strings = np.prod(self.shape)
+        # np.prod returns a NumPy scalar; Python range requires a native int
+        # under NumPy 2.x.
+        total_strings = int(np.prod(self.shape))
         strings = [
             "".join([random.choice(string.ascii_lowercase) for _ in range(random.randint(0, Text.MAX_STR_LEN))])
             for _ in range(total_strings)
         ]
-        return np.array(np.reshape(strings, self.shape), np.dtype)
+        return np.array(np.reshape(strings, self.shape), dtype=np.str_)
 
     def contains(self, x):
         contained = False  # ? TODO (R): Look back in git.
