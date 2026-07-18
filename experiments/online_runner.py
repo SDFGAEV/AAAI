@@ -331,6 +331,11 @@ class OnlineRunner:
     # -- Full experiment --
     def run(self, methods: List[str] = None, seed: int = DEFAULT_SEED):
         methods = methods or DEFAULT_METHODS
+        # Namespace all stream outputs (phase checkpoints, round_XX.json,
+        # e5_report.json) by seed so the five governance-isolated streams
+        # neither overwrite each other sequentially nor collide in parallel.
+        self._results_root = os.path.join(self._results_root, f"seed_{seed}")
+        os.makedirs(self._results_root, exist_ok=True)
 
         print(f"\n{'='*70}")
         print(f"  C-ACT E5: Online Knowledge-Growth Evaluation")

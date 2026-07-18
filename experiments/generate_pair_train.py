@@ -96,6 +96,8 @@ def main() -> None:
     ap.add_argument("--pilot-task-indices", required=True)
     ap.add_argument("--pilot-seeds", required=True)
     ap.add_argument("--target", type=int, default=320)
+    ap.add_argument("--strict-preregistered-target", action="store_true",
+                    help="require the E1c preregistered target of exactly 320")
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--out", default=str(ROOT / "exp_results/cact_pair_train/paired/pairs.jsonl"))
     ap.add_argument("--world-snapshot-manifest", default="", help="optional filesystem/procedural snapshot manifest")
@@ -105,7 +107,9 @@ def main() -> None:
     if "-" in args.pilot_seeds:
         lo, hi = args.pilot_seeds.split("-"); seeds = list(range(int(lo), int(hi) + 1))
     else: seeds = [int(x) for x in args.pilot_seeds.split(",") if x]
-    if args.target != 320:
+    if args.target < 1:
+        raise SystemExit("target must be positive")
+    if args.strict_preregistered_target and args.target != 320:
         raise SystemExit("The preregistered E1c target is exactly 320 pairs")
     if args.dry_run:
         print(json.dumps({"pilot_episodes": len(task_indices) * len(seeds),

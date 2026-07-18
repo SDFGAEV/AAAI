@@ -114,7 +114,8 @@ def main():
     ap.add_argument("--workers", type=int, default=2)
     ap.add_argument("--vlm-port", type=int, default=12345)
     ap.add_argument("--vlm-ports", default="", help="comma-separated external VLM ports")
-    ap.add_argument("--timeout", type=int, default=240)
+    ap.add_argument("--timeout", type=int, default=0,
+                    help="0 = auto (difficulty-tiered wall guard); explicit value overrides")
     ap.add_argument("--plan-model", default="Qwen/Qwen2.5-VL-7B-Instruct")
     args = ap.parse_args()
     tasks = [int(x) for x in args.task_indices.split(",") if x.strip()]

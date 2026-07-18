@@ -35,7 +35,9 @@ DEFAULT_KAPPAS = (0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0)
 # CAP uses one conservatism parameter; kappa remains readable for legacy artifacts.
 DEFAULT_LAMBDAS = (0.0, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0)
 DEFAULT_CAP_ALPHA = 0.05
-DEFAULT_CAP_EPSILON = 1e-8
+# Matches the preregistered CAP algorithm in aaai-paper/main.tex.
+# Keep this frozen across calibration and deployment for reproducible certificates.
+DEFAULT_CAP_EPSILON = 1e-6
 DEFAULT_FUTURE_OPPORTUNITY_CLIP = 6
 EVIDENCE_NUS = (12.0, 24.0, 48.0)
 DEFAULT_EVIDENCE_NU = 24.0

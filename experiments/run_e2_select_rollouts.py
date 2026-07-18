@@ -21,6 +21,7 @@ from typing import Any, Dict, List
 _PROJ = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_PROJ))
 from experiments.world_identity import derive_snapshot_hash
+from experiments.parallel_runner import timeout_for_benchmark_task
 
 LAMBDAS = (0.0, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0)
 # Method labels retain the historical numeric suffix for sealed-table compatibility.
@@ -124,7 +125,9 @@ def _run_one(task_idx: int, seed: int, method: str, cfg: dict) -> dict:
     try:
         with stdout_path.open("w", encoding="utf-8") as out, stderr_path.open("w", encoding="utf-8") as err:
             result = subprocess.run(cmd, stdout=out, stderr=err, text=True,
-                                    timeout=cfg.get("timeout", 240), cwd=str(_PROJ),
+                                    timeout=cfg.get("timeout")
+                                    or timeout_for_benchmark_task(cfg["benchmark"], task_idx, 240),
+                                    cwd=str(_PROJ),
                                     env={**os.environ, "PYTHONUNBUFFERED": "1",
                                          "CACT_RUN_ID": run_id,
                                          "CACT_MC_GPU_ID": _assigned_gpu(task_idx, seed, method) or "",

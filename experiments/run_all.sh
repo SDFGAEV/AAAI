@@ -110,6 +110,9 @@ _runner_args() {
   if [ -n "${CACT_CHECKPOINT_DIR:-}" ]; then
     RUNNER_ARGS+=(--checkpoint_dir "$CACT_CHECKPOINT_DIR")
   fi
+  if [[ "${CACT_RESUME:-0}" == "1" ]]; then
+    RUNNER_ARGS+=(--resume)
+  fi
   if [ -n "${CACT_FUTURE_OPPORTUNITY_LOOKUP:-}" ] && [ -f "$CACT_FUTURE_OPPORTUNITY_LOOKUP" ]; then
     RUNNER_ARGS+=(--future-opportunity-lookup "$CACT_FUTURE_OPPORTUNITY_LOOKUP")
   fi
@@ -168,7 +171,11 @@ fi
 
 # E1a freezes the shared knowledge store; E1b collects 120 opportunities initially.
 # Set CACT_E1B_SEEDS=2101-2110 only for the preregistered 240-episode expansion.
-run_serial --benchmark cact_train --task_indices 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23 --seeds 2001-2005 --methods C-ACT --store_path "$CAL_STORE"
+if [[ "${CACT_SKIP_E1A:-0}" != "1" ]]; then
+  run_serial --benchmark cact_train --task_indices 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23 --seeds 2001-2005 --methods C-ACT --store_path "$CAL_STORE"
+else
+  echo '[E1a] skipped by CACT_SKIP_E1A=1; using existing calibration store'
+fi
 run_serial --benchmark cact_train --task_indices 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23 --seeds "${CACT_E1B_SEEDS:-2101-2105}" --methods C-ACT --store_path "$CAL_STORE" --protocol_path collect
 
 # D_select/D_audit opportunity logging is required before a provisional
@@ -221,6 +228,7 @@ if (( ${#PAIR_FILES[@]} == 0 )); then
   "$PYTHON" experiments/generate_pair_train.py \
     --pilot-task-indices "${CACT_E1C_TASK_INDICES:-0,1,2,3,4,5,6,7,8,9,10,11}" \
     --pilot-seeds "${CACT_E1C_SEEDS:-2201-2215}" --workers 1 \
+    --strict-preregistered-target \
     --out "$RESULTS/cact_pair_train/generated/pairs.jsonl"
   PAIR_FILES=("$RESULTS/cact_pair_train/generated/pairs.jsonl")
 fi
@@ -264,8 +272,21 @@ CACT_CHECKPOINT_DIR="$RESULTS/ckpt/e4_structural" run --benchmark cact_ablation 
   --frozen --snapshot_path "$CAL_STORE" --protocol_path "$POLICY_FILE"
 
 # E5: five independent controlled streams, ten rounds each.
+# Streams are governance-isolated (per-seed stores and results roots), so they
+# run in parallel with a small per-stream worker count; any stream failure
+# fails the pipeline after all streams finish.
+E5_PIDS=()
 for seed in 6001 6002 6003 6004 6005; do
-  run_online --rounds 10 --seed "$seed" \
-    --methods Online-NoGate Online-FixedBayes Online-C-ACT-Pointwise Online-C-ACT
+  WORKERS="${CACT_E5_STREAM_WORKERS:-2}" run_online --rounds 10 --seed "$seed" \
+    --methods Online-NoGate Online-FixedBayes Online-C-ACT-Pointwise Online-C-ACT &
+  E5_PIDS+=($!)
 done
+E5_FAIL=0
+for pid in "${E5_PIDS[@]}"; do
+  wait "$pid" || E5_FAIL=1
+done
+if (( E5_FAIL )); then
+  echo "STOP: one or more E5 streams failed." >&2
+  exit 2
+fi
 echo "C-ACT manual protocol complete. Results: $RESULTS"

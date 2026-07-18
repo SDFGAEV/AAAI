@@ -39,6 +39,44 @@ DEFAULT_METHODS = ["NoKnowledge", "NoGate", "FixedBayes",
                    "PairwisePreferenceGate", "C-ACT-Pointwise", "C-ACT"]
 DEFAULT_SEEDS = [4001, 4002, 4003, 4004, 4005, 4006, 4007, 4008]
 
+# -- Difficulty-tiered wall-clock guard (deviation-logged 2026-07-18) --
+# The env-enforced episode budget stays 2400 steps (task cards, frozen).
+# The wall-clock guard exists to bound runner time; with CACT_TIERED_TIMEOUT=1
+# it is set per benchmark-task difficulty instead of one global value.
+_TIER_CACHE: Dict[str, Dict[int, str]] = {}
+
+def tiered_timeout_enabled() -> bool:
+    return os.environ.get("CACT_TIERED_TIMEOUT", "0") == "1"
+
+def _tier_values() -> Dict[str, int]:
+    return {"easy": int(os.environ.get("CACT_TIMEOUT_EASY", "300")),
+            "medium": int(os.environ.get("CACT_TIMEOUT_MEDIUM", "600")),
+            "hard": int(os.environ.get("CACT_TIMEOUT_HARD", "300"))}
+
+def timeout_for_benchmark_task(benchmark: str, task_idx: int, default: int = 240) -> int:
+    """Tiered guard for one benchmark task.
+
+    `task_idx` is the task *id* field (the value passed to `+evaluate=[...]`,
+    resolved by id in optimus1.util.get_evaluate_task_and_goal), which in
+    cact_p3 differs from the YAML list position.
+    """
+    if not tiered_timeout_enabled():
+        return default
+    if benchmark not in _TIER_CACHE:
+        mapping: Dict[int, str] = {}
+        bench_path = os.path.join(_PROJ, "src", "optimus1", "conf",
+                                  "benchmark", f"{benchmark}.yaml")
+        try:
+            import yaml
+            with open(bench_path, encoding="utf-8") as f:
+                for pos, t in enumerate((yaml.safe_load(f) or {}).get("all_task", [])):
+                    if isinstance(t, dict):
+                        mapping[int(t.get("id", pos))] = str(t.get("difficulty", "")).strip().lower()
+        except Exception:
+            mapping = {}
+        _TIER_CACHE[benchmark] = mapping
+    return _tier_values().get(_TIER_CACHE[benchmark].get(task_idx, ""), default)
+
 def _cleanup_owned_minecraft(run_id: str) -> None:
     """Remove only the Docker container labeled for this episode."""
     if not run_id or os.name == "nt":
@@ -536,6 +574,7 @@ class ParallelRunner:
                         task=task_name, task_idx=idx, seed=seed,
                         method=method, benchmark=benchmark,
                         vlm_port=self.vlm_port, mc_port=0,
+                        timeout=timeout_for_benchmark_task(benchmark, idx, 180),
                         store_path=os.path.join(_PROJ, "exp_results", "stores",
                                                 benchmark,
                                                 method.replace("/", "_").replace("-", "_"),
@@ -776,6 +815,13 @@ def main():
         cfg.branch_target_opportunity = args.branch_target_opportunity
         cfg.branch_parent_id = args.branch_parent_id
         cfg.branch_prefix_assignment = args.branch_prefix_assignment
+    # Evidence-collection stages (E1a store build, E1b/D_select/D_audit
+    # opportunity logging via --protocol_path collect) keep the legacy 180 s
+    # wall guard for within-stage consistency with already-collected data.
+    # Evaluation stages (E2+/E3/E4/E5) use the difficulty-tiered guard.
+    if args.protocol_path in ("", "collect"):
+        for cfg in grid:
+            cfg.timeout = 180
     runner._t_start = time.perf_counter()
     runner.run(
         benchmark=args.benchmark,
